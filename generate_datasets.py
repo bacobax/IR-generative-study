@@ -97,7 +97,10 @@ def generate_sd15(args, entries: List[Dict]):
 
     dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
     weight_dtype = dtype_map[args.precision]
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if args.device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
 
     print(f"[SD1.5] Loading base model: {args.base_model}")
     tokenizer = CLIPTokenizer.from_pretrained(args.base_model, subfolder="tokenizer")
@@ -144,7 +147,7 @@ def generate_sd15(args, entries: List[Dict]):
 
     autocast_ctx = (
         torch.autocast(device_type="cuda", dtype=weight_dtype)
-        if device == "cuda" and weight_dtype != torch.float32
+        if device.startswith("cuda") and weight_dtype != torch.float32
         else nullcontext()
     )
 
@@ -221,7 +224,10 @@ def generate_fm(args, entries: List[Dict]):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipelines"))
     from flow_matching_pipeline import StableFlowMatchingPipeline
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if args.device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
 
     print(f"[FM] Building pipeline from {args.fm_pipeline_dir}")
     pipe = StableFlowMatchingPipeline(
@@ -334,6 +340,13 @@ def parse_args():
                     help="Number of Euler sampling steps.")
     fm.add_argument("--fm_batch_size", type=int, default=8,
                     help="Batch size for FM sampling.")
+
+    p.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device string for torch (e.g., 'cuda', 'cuda:1', or 'cpu'). Defaults to auto.",
+    )
 
     return p.parse_args()
 

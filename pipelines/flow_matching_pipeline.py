@@ -254,7 +254,7 @@ class FlowMatchingPipeline:
 
         z = self.sample_euler(steps=steps, batch_size=batch_size, sample_shape=sample_shape)
         x_gen = self.decode_fm_output(z)
-
+        #[-1, 1] -> [0, 2] -> [0, 1]
         x_vis = ((x_gen + 1) / 2).clamp(0, 1)
         writer.add_images(tag, x_vis, epoch)
 
