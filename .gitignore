@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+
+# Logs and experiment tracking
+*.log
+wandb/
+lightning_logs/
+tensorboard/
+
+# Local configs/secrets
+.env
+.env.*
+
+# Large data/artifacts
+*.npy
+**/*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.onnx
+
+# Project-specific outputs
+/generated/
+/debug_samples/
+/runs/
+/serious_runs/
+/stable_diffusion_15_out/
+/fm_src/**/runs/
+/fm_src/**/UNET/
+/fm_src/**/VAE/
