@@ -9,12 +9,12 @@ TRAIN_DIR="./v18/train/"
 VAL_DIR="./v18/val/"
 
 # Model configs
-UNET_CONFIG="stable_unet_config.json"
-VAE_CONFIG="vae_config.json"
-VAE_WEIGHTS="./vae_best.pt"
+UNET_CONFIG="fm_src/stable_unet_config.json"
+VAE_CONFIG="fm_src/vae_config.json"
+VAE_WEIGHTS="fm_src/vae_best.pt"
 
 # Output directory
-MODEL_DIR="./serious_runs/stable_training_t_scaled/"
+MODEL_DIR="./fake_runs/stable_training_t_scaled/"
 
 # Training params
 EPOCHS=300
@@ -44,10 +44,10 @@ P_ROT_MAX=0.05
 P_ROT_FINAL=0.05
 
 # Resume checkpoint (leave empty for fresh training)
-RESUME_CKPT="serious_runs/stable_training_t_scaled/UNET/unet_fm_epoch_150_ckpt.pt"
+# RESUME_CKPT="serious_runs/stable_training_t_scaled/UNET/unet_fm_epoch_150_ckpt.pt"
 
 # Build the command
-CMD="python stable_flow_matching.py \
+CMD="python train_sfm.py \
     --train_dir $TRAIN_DIR \
     --val_dir $VAL_DIR \
     --unet_config $UNET_CONFIG \

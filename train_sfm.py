@@ -6,8 +6,12 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 
-from pipelines.flow_matching_pipeline import StableFlowMatchingPipeline
-
+from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline
+P0001_PERCENTILE_RAW_IMAGES = 11667.0  # p0.001 percentile
+P9999_PERCENTILE_RAW_IMAGES = 13944.0  # p99.999 percentile
+A = P0001_PERCENTILE_RAW_IMAGES
+B = P9999_PERCENTILE_RAW_IMAGES
+S = B - A
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stable Flow Matching Training")
@@ -116,6 +120,15 @@ def _save_tensor_image(x: torch.Tensor, out_base: str) -> None:
         Image.fromarray(img).save(f"{out_base}.png")
     except Exception:
         pass
+    
+
+
+to_sd_tensor_and_x = lambda x: (x.to(torch.float32) / 65535.0) * 2 - 1
+
+from_norm_to_raw_to_display = lambda recon: recon * 65535.0
+from_norm_to_raw_to_save = lambda recon: ((recon + 1)/2) * 65535.0
+
+
 
 
 def _resize_and_normalize_256(x: torch.Tensor) -> torch.Tensor:
@@ -128,9 +141,7 @@ def _resize_and_normalize_256(x: torch.Tensor) -> torch.Tensor:
     ).squeeze(0)
 
     # normalize to [-1,1] (simple per-image)
-    x = x - x.min()
-    x = x / (x.max() + 1e-8)
-    x = 2 * x - 1
+    x = to_sd_tensor_and_x(x)
 
     return x
 
