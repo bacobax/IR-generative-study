@@ -14,7 +14,7 @@ VAE_CONFIG="fm_src/vae_config.json"
 VAE_WEIGHTS="fm_src/vae_best.pt"
 
 # Output directory
-MODEL_DIR="./fake_runs/stable_training_t_scaled/"
+MODEL_DIR="./serious_runs/stable_training_no_norm/"
 
 # Training params
 EPOCHS=300
@@ -25,23 +25,25 @@ SAMPLE_BATCH_SIZE=4
 T_SCALE=1000
 
 # Augmentation schedule (warmup -> ramp -> decay)
+WARMUP_FRAC=0.1
+RAMP_FRAC=0.4
+
+P_CROP_WARMUP=0.05
+P_CROP_MAX=0.20
+P_CROP_FINAL=0.05
+
+P_ROT_WARMUP=0.05
+P_ROT_MAX=0.30
+P_ROT_FINAL=0.05
+
 # WARMUP_FRAC=0.1
 # RAMP_FRAC=0.3
-# P_CROP_WARMUP=0.05
-# P_CROP_MAX=0.20
-# P_CROP_FINAL=0.05
+# P_CROP_WARMUP=0.01
+# P_CROP_MAX=0.01
+# P_CROP_FINAL=0.01
 # P_ROT_WARMUP=0.05
-# P_ROT_MAX=0.30
+# P_ROT_MAX=0.05
 # P_ROT_FINAL=0.05
-
-WARMUP_FRAC=0.1
-RAMP_FRAC=0.3
-P_CROP_WARMUP=0.01
-P_CROP_MAX=0.01
-P_CROP_FINAL=0.01
-P_ROT_WARMUP=0.05
-P_ROT_MAX=0.05
-P_ROT_FINAL=0.05
 
 # Resume checkpoint (leave empty for fresh training)
 # RESUME_CKPT="serious_runs/stable_training_t_scaled/UNET/unet_fm_epoch_150_ckpt.pt"

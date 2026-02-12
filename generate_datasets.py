@@ -4,7 +4,7 @@ Generate synthetic datasets using either:
   1. Pretrained Stable-Diffusion 1.5 with LoRA weights (prompt-conditioned)
   2. Pretrained Stable Flow-Matching pipeline      (unconditional)
 
-Both generators output 1-channel float32 .npy arrays in [-1, 1].
+Both generators output 1-channel uint16 .npy arrays and uint8 .png previews.
 
 Usage examples:
 
@@ -43,30 +43,44 @@ B_RAW = 13944.0  # p99.999 percentile
 S_RAW = B_RAW - A_RAW
 
 
-def sd_output_to_raw_m1t1(image_pil) -> np.ndarray:
+def sd_output_to_uint16(image_pil) -> np.ndarray:
     """
-    SD 1.5 output → 1-ch float32 in [-1, 1].
-    Mirrors the conversion in sd_src/scripts/sd_demo.py.
+    SD 1.5 output → 1-ch uint16.
+    Reverse the percentile normalisation used during SD training:
+    training mapped raw uint16 from [A, B] → [-1, 1], so the inverse is
+    uint16 = A + grey_01 * S,  where grey_01 is the [0,1] grayscale output.
     """
     raw = np.asarray(image_pil).astype(np.float32) / 255.0
-    # 3-ch RGB → grayscale (mean)
     if raw.ndim == 3:
-        raw = raw.mean(axis=-1)
-    # map [0,1] back through the uint16 IR range → [-1, 1]
-    rawu16 = A_RAW + raw * S_RAW
-    rawm1t1 = 2.0 * np.clip((rawu16 - A_RAW) / S_RAW, 0.0, 1.0) - 1.0
-    return rawm1t1.astype(np.float32)
+        raw = raw.mean(axis=-1)  # RGB → grayscale
+    uint16_val = A_RAW + np.clip(raw, 0.0, 1.0) * S_RAW
+    return np.clip(uint16_val, 0, 65535).astype(np.uint16)
 
 
-def fm_output_to_raw_m1t1(tensor: torch.Tensor) -> np.ndarray:
+def fm_output_to_uint16(tensor: torch.Tensor) -> np.ndarray:
     """
-    Flow-matching output tensor (1, H, W) already in [-1, 1].
-    Clamp and return as float32 numpy.
+    Flow-matching output tensor (1, H, W) in [-1, 1] → uint16 [0, 65535].
+    Reverse of the full linear normalisation: ((x + 1) / 2) * 65535.
     """
     arr = tensor.detach().cpu().float().numpy()
     if arr.ndim == 3:
         arr = arr[0]  # (1, H, W) → (H, W)
-    return np.clip(arr, -1.0, 1.0).astype(np.float32)
+    uint16_val = ((np.clip(arr, -1.0, 1.0) + 1.0) / 2.0) * 65535.0
+    return uint16_val.astype(np.uint16)
+
+
+def uint16_to_png_uint8(arr_uint16: np.ndarray) -> np.ndarray:
+    """Convert uint16 image to uint8 for PNG visualization only.
+
+    Uses per-image min/max stretch to avoid low-contrast previews.
+    """
+    arr = arr_uint16.astype(np.float32)
+    mn = float(arr.min())
+    mx = float(arr.max())
+    if mx <= mn:
+        return np.zeros_like(arr_uint16, dtype=np.uint8)
+    norm = (arr - mn) / (mx - mn)
+    return (norm * 255.0).clip(0, 255).astype(np.uint8)
 
 
 # ---------------------------------------------------------------------------
@@ -190,13 +204,13 @@ def generate_sd15(args, entries: List[Dict]):
         if last_flagged:
             print(f"  [SD1.5] NSFW detected for sample {idx:05d}; saved last retry seed={seed}")
 
-        raw_m1t1 = sd_output_to_raw_m1t1(image)
+        raw_uint16 = sd_output_to_uint16(image)
         out_path = os.path.join(args.output_dir, f"sample_{idx:05d}.npy")
-        np.save(out_path, raw_m1t1)
+        np.save(out_path, raw_uint16)
 
         png_path = os.path.join(args.output_dir, f"sample_{idx:05d}.png")
-        # grayscale from [-1,1] → [0,255]
-        vis = ((raw_m1t1 + 1.0) / 2.0 * 255.0).clip(0, 255).astype(np.uint8)
+        # PNG visualization only (normalized to [0, 255])
+        vis = uint16_to_png_uint8(raw_uint16)
         Image.fromarray(vis, mode="L").save(png_path)
 
         if (idx + 1) % 50 == 0 or idx == len(entries) - 1:
@@ -265,12 +279,13 @@ def generate_fm(args, entries: List[Dict]):
         x_gen = pipe.decode_fm_output(z)  # (bs, 1, H, W), [-1, 1]
 
         for j in range(bs):
-            raw_m1t1 = fm_output_to_raw_m1t1(x_gen[j])
+            raw_uint16 = fm_output_to_uint16(x_gen[j])
             out_path = os.path.join(args.output_dir, f"sample_{generated:05d}.npy")
-            np.save(out_path, raw_m1t1)
+            np.save(out_path, raw_uint16)
 
             png_path = os.path.join(args.output_dir, f"sample_{generated:05d}.png")
-            vis = ((raw_m1t1 + 1.0) / 2.0 * 255.0).clip(0, 255).astype(np.uint8)
+            # PNG visualization only (normalized to [0, 255])
+            vis = uint16_to_png_uint8(raw_uint16)
             Image.fromarray(vis, mode="L").save(png_path)
 
             generated += 1

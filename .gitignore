@@ -37,6 +37,7 @@ tensorboard/
 # Large data/artifacts
 *.npy
 **/*.npy
+
 *.npz
 *.pt
 *.pth
@@ -47,6 +48,7 @@ tensorboard/
 
 # Project-specific outputs
 /generated/
+/generated_old/
 /debug_samples/
 /runs/
 /serious_runs/

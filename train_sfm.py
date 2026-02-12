@@ -7,11 +7,6 @@ from torch.utils.data import Dataset, DataLoader
 
 
 from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline
-P0001_PERCENTILE_RAW_IMAGES = 11667.0  # p0.001 percentile
-P9999_PERCENTILE_RAW_IMAGES = 13944.0  # p99.999 percentile
-A = P0001_PERCENTILE_RAW_IMAGES
-B = P9999_PERCENTILE_RAW_IMAGES
-S = B - A
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stable Flow Matching Training")
@@ -97,36 +92,45 @@ def _random_rotate_90(x: torch.Tensor) -> torch.Tensor:
 
 
 def _save_tensor_image(x: torch.Tensor, out_base: str) -> None:
-    x = x.detach().cpu()
+    """Save a tensor image as .npy (uint16) and .png (uint8 grayscale).
 
-    if x.min() < 0:
-        x = (x + 1) / 2
+    Handles both raw uint16 tensors and [-1, 1] normalised tensors.
+    """
+    x = x.detach().cpu().float()
+
+    if x.min() < 0:  # already in [-1, 1]
+        x_01 = ((x + 1) / 2).clamp(0, 1)
+    else:  # raw uint16 values
+        x_01 = (x / 65535.0).clamp(0, 1)
+
+    # .npy in uint16 domain
+    x_uint16 = (x_01 * 65535.0).numpy().astype(np.uint16)
+    if x_uint16.ndim == 3 and x_uint16.shape[0] == 1:
+        x_uint16 = x_uint16[0]
+    np.save(f"{out_base}.npy", x_uint16)
+
+    # .png in uint8 for visualisation
+    x_uint8 = (x_01 * 255).clamp(0, 255).byte()
+    if x_uint8.shape[0] == 1:
+        img = x_uint8[0].numpy()
     else:
-        x = x - x.min()
-        x = x / (x.max() + 1e-8)
-
-    x = x.clamp(0, 1)
-    x = (x * 255).byte()
-
-    if x.shape[0] == 1:
-        img = x[0].numpy()
-    else:
-        img = x.permute(1, 2, 0).numpy()
-
-    np.save(f"{out_base}.npy", img)
+        img = x_uint8.permute(1, 2, 0).numpy()
     try:
         from PIL import Image
-
         Image.fromarray(img).save(f"{out_base}.png")
     except Exception:
         pass
     
 
 
+# Full linear normalization: uint16 [0, 65535] → [-1, 1]
 to_sd_tensor_and_x = lambda x: (x.to(torch.float32) / 65535.0) * 2 - 1
 
-from_norm_to_raw_to_display = lambda recon: recon * 65535.0
-from_norm_to_raw_to_save = lambda recon: ((recon + 1)/2) * 65535.0
+# Reverse: [-1, 1] → [0, 1] for display / TensorBoard
+from_norm_to_display = lambda recon: (recon + 1) / 2
+
+# Reverse: [-1, 1] → uint16 [0, 65535] for saving
+from_norm_to_uint16 = lambda recon: ((recon + 1) / 2) * 65535.0
 
 
 

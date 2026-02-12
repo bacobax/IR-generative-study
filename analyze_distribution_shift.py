@@ -59,27 +59,16 @@ def setup_environment(output_dir: str, seed: int):
     os.makedirs(output_dir, exist_ok=True)
 
 
-# Raw IR normalization constants (from sd_src/helpers.py)
-_A_RAW = 11667.0
-_B_RAW = 13944.0
+def _normalize_uint16_to_m1p1(arr: np.ndarray) -> np.ndarray:
+    """Normalize uint16 values [0, 65535] to [-1, 1] using full linear mapping."""
+    return (arr.astype(np.float32) / 65535.0) * 2.0 - 1.0
 
 
-def _normalize_to_m1p1(arr: np.ndarray) -> np.ndarray:
-    """Normalize raw IR values to [-1, 1]."""
-    return (2.0 * np.clip((arr - _A_RAW) / (_B_RAW - _A_RAW), 0.0, 1.0) - 1.0).astype(np.float32)
-
-
-def _needs_normalization(images: np.ndarray) -> bool:
-    """Detect whether images are raw IR (large values) vs already [-1, 1]."""
-    sample = images[:min(5, len(images))]
-    return float(np.abs(sample).max()) > 2.0
-
-
-def load_images(image_path, max_images=None, normalize=True):
+def load_images(image_path, max_images=None):
     """Load 1-channel .npy images from a directory.
 
-    If images appear to be raw IR values (range >> [-1,1]),
-    they are automatically normalized to [-1,1].
+    Expects uint16 .npy files.  All images are normalised to [-1, 1]
+    via the full linear mapping: (x / 65535) * 2 - 1.
     """
     images = []
     image_paths = []
@@ -97,7 +86,7 @@ def load_images(image_path, max_images=None, normalize=True):
 
     for img_file in tqdm(image_files, desc=f"Loading {Path(image_path).name}"):
         try:
-            arr = np.load(img_file).astype(np.float32)
+            arr = np.load(img_file)
             if arr.ndim == 3 and arr.shape[0] == 1:
                 arr = arr[0]
             if arr.ndim != 2:
@@ -108,10 +97,13 @@ def load_images(image_path, max_images=None, normalize=True):
             print(f"Error loading {img_file}: {e}")
             continue
 
+    if len(images) == 0:
+        return np.array([]), []
+
     result = np.array(images)
-    if normalize and len(result) > 0 and _needs_normalization(result):
-        print(f"  → Auto-normalizing raw IR values to [-1, 1]")
-        result = _normalize_to_m1p1(result)
+    print(f"  → Loaded dtype={result.dtype}, range=[{result.min():.1f}, {result.max():.1f}]")
+    result = _normalize_uint16_to_m1p1(result)
+    print(f"  → Normalised to [-1, 1]  range=[{result.min():.4f}, {result.max():.4f}]")
 
     return result, image_paths
 
