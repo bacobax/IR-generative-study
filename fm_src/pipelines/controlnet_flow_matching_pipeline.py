@@ -14,7 +14,7 @@ Nothing in the base pipeline or its training logic is modified.
 
 import copy
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -288,12 +288,14 @@ class ControlNetFlowMatchingPipeline(StableFlowMatchingPipeline):
         t_scale: Optional[float] = None,
         model_dir: str = "./pipeline_model",
         sample_shape: Optional[Tuple[int, int, int]] = None,
+        from_norm_to_display: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ):
         super().__init__(
             device=device,
             t_scale=t_scale,
             model_dir=model_dir,
             sample_shape=sample_shape,
+            from_norm_to_display=from_norm_to_display,
         )
         self.controlnet_config: Optional[Dict[str, Any]] = None
 
@@ -549,7 +551,7 @@ class ControlNetFlowMatchingPipeline(StableFlowMatchingPipeline):
             conditioning_scale=conditioning_scale,
         )
         x_gen = self.decode_fm_output(z)
-        x_vis = ((x_gen + 1) / 2).clamp(0, 1)
+        x_vis = self.from_norm_to_display(x_gen).clamp(0, 1)
 
         writer.add_images(tag, x_vis, epoch)
         # Log the conditioning masks alongside

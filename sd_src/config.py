@@ -29,6 +29,7 @@ class TrainingConfig:
     train_data_dir: Optional[str] = None
     image_column: str = "image"
     caption_column: str = "text"
+    generic_prompt: bool = False
     max_train_samples: Optional[int] = None
     cache_dir: Optional[str] = None
     
@@ -169,6 +170,14 @@ def parse_args() -> TrainingConfig:
         type=str,
         default="text",
         help="The column of the dataset containing a caption.",
+    )
+    data_group.add_argument(
+        "--generic_prompt",
+        action="store_true",
+        help=(
+            "Use a fixed prompt for all samples: "
+            "'overhead infrared surveillance image, circular field of view'."
+        ),
     )
     data_group.add_argument(
         "--max_train_samples",

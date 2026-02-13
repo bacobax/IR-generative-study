@@ -122,16 +122,27 @@ def _save_tensor_image(x: torch.Tensor, out_base: str) -> None:
         pass
     
 
+P0001_PERCENTILE_RAW_IMAGES = 11667.0  # p0.001 percentile
+P9999_PERCENTILE_RAW_IMAGES = 13944.0  # p99.999 percentile
+A = P0001_PERCENTILE_RAW_IMAGES
+B = P9999_PERCENTILE_RAW_IMAGES
+
+S = B - A
+
 
 # Full linear normalization: uint16 [0, 65535] → [-1, 1]
-to_sd_tensor_and_x = lambda x: (x.to(torch.float32) / 65535.0) * 2 - 1
+def to_sd_tensor_and_x(x: torch.Tensor) -> torch.Tensor:
+    # Full linear normalization: uint16 [0, 65535] -> [-1, 1]
+    return torch.clamp((x.to(torch.float32) - A) / S, 0, 1) * 2 - 1
 
-# Reverse: [-1, 1] → [0, 1] for display / TensorBoard
-from_norm_to_display = lambda recon: (recon + 1) / 2
+def from_norm_to_display(recon: torch.Tensor) -> torch.Tensor:
+    # Reverse: [-1, 1] -> [0, 1] for display / TensorBoard
+    return (recon + 1) / 2
 
-# Reverse: [-1, 1] → uint16 [0, 65535] for saving
-from_norm_to_uint16 = lambda recon: ((recon + 1) / 2) * 65535.0
 
+def from_norm_to_uint16(recon: torch.Tensor) -> torch.Tensor:
+    # Reverse: [-1, 1] -> uint16 [0, 65535] for saving
+    return ((recon + 1) / 2) * S + A
 
 
 
@@ -306,6 +317,7 @@ def main():
         device=device,
         t_scale=args.t_scale,
         model_dir=args.model_dir,
+        from_norm_to_display=from_norm_to_display,
     ).build_from_configs(
         unet_json=args.unet_config,
         vae_json=args.vae_config,

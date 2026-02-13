@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import torch
 from torch.optim import Adam
@@ -11,6 +11,12 @@ from torch.utils.tensorboard import SummaryWriter
 # You already use these outside; now we instantiate inside.
 from diffusers import UNet2DModel
 from generative.networks.nets import AutoencoderKL
+
+
+# Default normalization helpers (simple full-range [-1,1] <-> [0,1])
+def _default_from_norm_to_display(x: torch.Tensor) -> torch.Tensor:
+    """[-1, 1] -> [0, 1] for display / TensorBoard."""
+    return (x + 1) / 2
 
 
 class FlowMatchingPipeline:
@@ -33,6 +39,7 @@ class FlowMatchingPipeline:
         t_scale: Optional[float] = None,
         model_dir: str = "./pipeline_model",
         sample_shape: Optional[Tuple[int, int, int]] = None,
+        from_norm_to_display: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,6 +53,10 @@ class FlowMatchingPipeline:
 
         # Default sampling shape (C, H, W). If None, derived from UNet config.
         self.sample_shape = sample_shape
+
+        # Normalization: [-1,1] -> [0,1] for TensorBoard display.
+        # Override this to match whatever normalization the training script uses.
+        self.from_norm_to_display = from_norm_to_display or _default_from_norm_to_display
 
         # Remember config if provided
         self.unet_config: Optional[Dict[str, Any]] = None
@@ -254,8 +265,7 @@ class FlowMatchingPipeline:
 
         z = self.sample_euler(steps=steps, batch_size=batch_size, sample_shape=sample_shape)
         x_gen = self.decode_fm_output(z)
-        #[-1, 1] -> [0, 2] -> [0, 1]
-        x_vis = ((x_gen + 1) / 2).clamp(0, 1)
+        x_vis = self.from_norm_to_display(x_gen).clamp(0, 1)
         writer.add_images(tag, x_vis, epoch)
 
     def train_flow_matching(
@@ -546,8 +556,9 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
         t_scale: Optional[float] = None,
         model_dir: str = "./pipeline_model",
         sample_shape: Optional[Tuple[int, int, int]] = None,
+        from_norm_to_display: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ):
-        super().__init__(device=device, t_scale=t_scale, model_dir=model_dir, sample_shape=sample_shape)
+        super().__init__(device=device, t_scale=t_scale, model_dir=model_dir, sample_shape=sample_shape, from_norm_to_display=from_norm_to_display)
         self.vae_config: Optional[Dict[str, Any]] = None
 
     def _vae_dir(self) -> str:
@@ -689,6 +700,16 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
         optimizer = Adam(self.vae.parameters(), lr=1e-4)
         writer = SummaryWriter(log_dir)
         kl_weight = 1e-4
+        max_grad_norm = 1.0
+        logvar_clamp = (-30.0, 20.0)
+
+        def _stretch_for_vis(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+            # Per-image min/max stretch to improve contrast for TensorBoard only.
+            x = self.from_norm_to_display(x).clamp(0, 1)
+            flat = x.view(x.size(0), -1)
+            mn = flat.min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+            mx = flat.max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+            return ((x - mn) / (mx - mn + eps)).clamp(0, 1)
 
         best_eval = float("inf")
         best_epoch = -1
@@ -707,11 +728,13 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
                 recon_mse = F.mse_loss(recon, x)
                 recon_mae = F.l1_loss(recon, x)
 
+                logvar = logvar.clamp(*logvar_clamp)
                 kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
                 loss = recon_mse + kl_weight * kl_loss
 
                 optimizer.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.vae.parameters(), max_grad_norm)
                 optimizer.step()
 
                 bs = x.size(0)
@@ -738,6 +761,7 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
                     recon_mse = F.mse_loss(recon, x)
                     recon_mae = F.l1_loss(recon, x)
 
+                    logvar = logvar.clamp(*logvar_clamp)
                     kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
                     loss = recon_mse + kl_weight * kl_loss
 
@@ -776,15 +800,15 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
             with torch.no_grad():
                 x_tr = next(iter(dataloader)).to(self.device)
                 recon_tr, _, _ = self.vae(x_tr)
-                x_tr_vis = ((x_tr[:4] + 1) / 2).clamp(0, 1)
-                recon_tr_vis = ((recon_tr[:4] + 1) / 2).clamp(0, 1)
+                x_tr_vis = _stretch_for_vis(x_tr[:4])
+                recon_tr_vis = _stretch_for_vis(recon_tr[:4])
                 writer.add_images("train/input", x_tr_vis, epoch)
                 writer.add_images("train/reconstruction", recon_tr_vis, epoch)
 
                 x_ev = next(iter(eval_dataloader)).to(self.device)
                 recon_ev, _, _ = self.vae(x_ev)
-                x_ev_vis = ((x_ev[:4] + 1) / 2).clamp(0, 1)
-                recon_ev_vis = ((recon_ev[:4] + 1) / 2).clamp(0, 1)
+                x_ev_vis = _stretch_for_vis(x_ev[:4])
+                recon_ev_vis = _stretch_for_vis(recon_ev[:4])
                 writer.add_images("eval/input", x_ev_vis, epoch)
                 writer.add_images("eval/reconstruction", recon_ev_vis, epoch)
 

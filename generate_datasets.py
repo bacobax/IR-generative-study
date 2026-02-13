@@ -65,21 +65,22 @@ def fm_output_to_uint16(tensor: torch.Tensor) -> np.ndarray:
     arr = tensor.detach().cpu().float().numpy()
     if arr.ndim == 3:
         arr = arr[0]  # (1, H, W) → (H, W)
+    # Clamp tiny out-of-range values, then round to nearest uint16.
     uint16_val = ((np.clip(arr, -1.0, 1.0) + 1.0) / 2.0) * 65535.0
-    return uint16_val.astype(np.uint16)
+    return np.rint(uint16_val).astype(np.uint16)
 
 
 def uint16_to_png_uint8(arr_uint16: np.ndarray) -> np.ndarray:
     """Convert uint16 image to uint8 for PNG visualization only.
 
-    Uses per-image min/max stretch to avoid low-contrast previews.
+    Uses per-image percentile stretch (p1–p99) to avoid low-contrast previews.
     """
     arr = arr_uint16.astype(np.float32)
-    mn = float(arr.min())
-    mx = float(arr.max())
-    if mx <= mn:
+    p1 = float(np.percentile(arr, 1.0))
+    p99 = float(np.percentile(arr, 99.0))
+    if p99 <= p1:
         return np.zeros_like(arr_uint16, dtype=np.uint8)
-    norm = (arr - mn) / (mx - mn)
+    norm = (arr - p1) / (p99 - p1)
     return (norm * 255.0).clip(0, 255).astype(np.uint8)
 
 
@@ -236,7 +237,7 @@ def generate_fm(args, entries: List[Dict]):
     import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipelines"))
-    from flow_matching_pipeline import StableFlowMatchingPipeline
+    from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline
 
     if args.device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"

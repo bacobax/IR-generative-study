@@ -60,6 +60,7 @@ from sd_src.models import (
 )
 from sd_src.training import Trainer
 from sd_src.utils import setup_logging, save_model_card
+from best_nvidia_gpu import get_least_used_cuda_gpu
 
 
 # Require minimum diffusers version
@@ -74,6 +75,17 @@ def main():
     
     # Setup accelerator
     print("Initializing accelerator...")
+    # Only select GPU for single-process training; multi-GPU (accelerate launch) handles this automatically
+    import sys
+    if "RANK" not in os.environ:  # Single-process training
+        device, smi_out = get_least_used_cuda_gpu(
+            prefer="memory",
+            min_free_mb=0,
+            return_type="torch",
+        )
+        if device is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(device.index)
+            print(f"Selected GPU: {device}\nGPU Info:\n{smi_out}")
     logging_dir = Path(config.output_dir, config.logging_dir)
     accelerator_project_config = ProjectConfiguration(
         project_dir=config.output_dir,
@@ -157,6 +169,7 @@ def main():
             seed=config.seed,
             accelerator=accelerator,
             use_ir_preprocessing=config.use_ir_preprocessing,
+            generic_prompt=config.generic_prompt,
         )
     
     # Create trainer

@@ -172,6 +172,7 @@ class TextImageDataset:
         image_column: str = "image",
         caption_column: str = "text",
         image_preprocessor: Optional[Callable] = None,
+        generic_prompt: bool = False,
     ):
         """
         Initialize the dataset.
@@ -189,6 +190,7 @@ class TextImageDataset:
         self.image_transforms = image_transforms
         self.image_column = image_column
         self.caption_column = caption_column
+        self.generic_prompt = generic_prompt
 
         self.image_preprocessor = image_preprocessor or (lambda x: x.convert("RGB"))
     
@@ -207,9 +209,12 @@ class TextImageDataset:
         pixel_values = self.image_transforms(image)
         
         # Process caption
-        caption = example[self.caption_column]
-        if isinstance(caption, (list, np.ndarray)):
-            caption = random.choice(caption)
+        if self.generic_prompt:
+            caption = "overhead infrared surveillance image, circular field of view"
+        else:
+            caption = example[self.caption_column]
+            if isinstance(caption, (list, np.ndarray)):
+                caption = random.choice(caption)
         
         input_ids = self.tokenizer(
             caption,
@@ -316,6 +321,7 @@ def create_dataloader(
     seed: Optional[int] = None,
     accelerator=None,
     use_ir_preprocessing: bool = True,
+    generic_prompt: bool = False,
 ) -> DataLoader:
     """
     Create the training dataloader.
@@ -382,6 +388,7 @@ def create_dataloader(
         image_column=img_col,
         caption_column=cap_col,
         image_preprocessor=image_preprocessor,
+        generic_prompt=generic_prompt,
     )
     
     # Create dataloader
