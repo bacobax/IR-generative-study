@@ -65,6 +65,7 @@ runs/
 count_adapter_runs/
 serious_runs/
 vae_runs/
+vae_runs/**
 **/tb/
 **/runs/
 events.out.tfevents.*
