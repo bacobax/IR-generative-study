@@ -56,3 +56,16 @@ tensorboard/
 /fm_src/**/runs/
 /fm_src/**/UNET/
 /fm_src/**/VAE/
+analysis_results/subsampling_coverage/**/*.json
+old_generated
+
+
+logs/
+runs/
+count_adapter_runs/
+serious_runs/
+vae_runs/
+**/tb/
+**/runs/
+events.out.tfevents.*
+*.tfevents.*

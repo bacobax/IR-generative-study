@@ -9,11 +9,15 @@ else
 fi
 
 python "$ROOT_DIR/analyze_distribution_shift.py" \
-    --real_dir "$ROOT_DIR/v18/images" \
+    --real_dir "$ROOT_DIR/v18/test" \
     --generated_dir "$ROOT_DIR/generated" \
     --output_dir "$ROOT_DIR/analysis_results" \
     --max_samples 500 \
     --metrics_max_samples 500 \
-    --device cuda:0 \
     --metrics_pca_dim 128 \
     --tsne_perplexity 20 \
+    --precision_coverage_k 5 \
+    --dino_model "dinov2_vits14" \
+    --vae_config "$ROOT_DIR/vae_runs/vae_fm_x4/VAE/config.json" \
+    --vae_weights "$ROOT_DIR/vae_runs/vae_fm_x4/VAE/vae_best.pt" \
+    --device cuda:0

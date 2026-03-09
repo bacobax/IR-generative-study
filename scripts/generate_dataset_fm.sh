@@ -11,7 +11,7 @@ fi
 python "$ROOT_DIR/generate_datasets.py" \
     --mode fm \
     --fm_pipeline_dir "$ROOT_DIR/serious_runs/stable_training_no_norm" \
-    --fm_vae_weights "$ROOT_DIR/fm_src/vae_best.pt" \
+    --fm_vae_weights "$ROOT_DIR/serious_runs/stable_training_no_norm/VAE/vae_best.pt" \
     --max_samples 200 \
     --output_dir "$ROOT_DIR/generated/fm_100_steps" \
     --fm_steps 100 \

@@ -516,6 +516,8 @@ class Trainer:
             revision=self.config.revision,
             variant=self.config.variant,
             torch_dtype=self.models.weight_dtype,
+            safety_checker=None,
+            requires_safety_checker=False,
         )
         
         images = log_validation(
@@ -576,6 +578,8 @@ class Trainer:
                     revision=self.config.revision,
                     variant=self.config.variant,
                     torch_dtype=self.models.weight_dtype,
+                    safety_checker=None,
+                    requires_safety_checker=False,
                 )
                 
                 log_validation(

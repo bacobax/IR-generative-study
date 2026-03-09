@@ -135,7 +135,7 @@ def main():
     
     # Setup LoRA
     logger.info("Setting up LoRA...")
-    lora_config = get_lora_config(rank=config.rank)
+    lora_config = get_lora_config(rank=config.rank, lora_alpha_scale=config.lora_alpha_scale)
     models.unet = setup_lora(
         unet=models.unet,
         lora_config=lora_config,

@@ -53,6 +53,7 @@ class TrainingConfig:
     
     # LoRA configuration
     rank: int = 4
+    lora_alpha_scale: float = 1.0
     
     # Optimizer configuration
     use_8bit_adam: bool = False
@@ -101,6 +102,9 @@ class TrainingConfig:
         """Validate configuration parameters."""
         if self.dataset_name is None and self.train_data_dir is None:
             raise ValueError("Need either a dataset name or a training folder.")
+
+        if not (0.0 <= self.lora_alpha_scale <= 1.0):
+            raise ValueError("--lora_alpha_scale must be between 0 and 1.")
         
         if self.report_to == "wandb" and self.hub_token is not None:
             raise ValueError(
@@ -288,6 +292,12 @@ def parse_args() -> TrainingConfig:
         type=int,
         default=4,
         help="LoRA rank (dimension of update matrices).",
+    )
+    lora_group.add_argument(
+        "--lora_alpha_scale",
+        type=float,
+        default=1.0,
+        help="Scale factor for LoRA alpha in [0, 1]. Effective alpha = rank * lora_alpha_scale.",
     )
     
     # Optimizer arguments

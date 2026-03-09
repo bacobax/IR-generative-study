@@ -210,7 +210,7 @@ class TextImageDataset:
         
         # Process caption
         if self.generic_prompt:
-            caption = "overhead infrared surveillance image, circular field of view"
+            caption = "overhead infrared surveillance image with any people or objects"
         else:
             caption = example[self.caption_column]
             if isinstance(caption, (list, np.ndarray)):

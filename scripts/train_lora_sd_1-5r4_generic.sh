@@ -15,7 +15,7 @@ export VALID_PROMPT="overhead infrared surveillance image with any people or obj
 # ========================
 
 # Optional: choose GPU(s)
-# export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 # Recommended for stability / speed
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:256"
@@ -31,7 +31,7 @@ accelerate launch --mixed_precision=fp16 \
   --train_data_dir "$TRAIN_DIR" \
   --image_column "image" \
   --caption_column "text" \
-  --resolution 512 \
+  --resolution 256 \
   --center_crop \
   --train_batch_size 4 \
   --gradient_accumulation_steps 4 \
@@ -45,9 +45,11 @@ accelerate launch --mixed_precision=fp16 \
   --validation_epochs 1 \
   --num_validation_images 4 \
   --rank 4 \
+  --lora_alpha_scale 1 \
   --output_dir "$OUTPUT_DIR" \
   --report_to "tensorboard" \
   --logging_dir "$ROOT_DIR/logs" \
   --seed 42 \
   --use_ir_preprocessing \
   --generic_prompt
+

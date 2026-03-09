@@ -43,29 +43,33 @@ T_SCALE=1000
 # RESUME_CKPT="$ROOT_DIR/controlnet_runs/bbox_controlnet/CONTROLNET/controlnet_epoch_10_ckpt.pt"
 
 # ---------- Build command ----------
-CMD="conda run --no-capture-output -n diffusers-dev python \"$ROOT_DIR/train_controlnet.py\" \
-    --train_dir $TRAIN_DIR \
-    --val_dir $VAL_DIR \
-    --train_annotations $TRAIN_ANNOTATIONS \
-    --val_annotations $VAL_ANNOTATIONS \
-    --stage1_pipeline_dir $STAGE1_PIPELINE_DIR \
-    --model_dir $MODEL_DIR \
-    --epochs $EPOCHS \
-    --batch_size $BATCH_SIZE \
-    --num_workers $NUM_WORKERS \
-    --lr $LR \
-    --conditioning_scale $CONDITIONING_SCALE \
-    --conditioning_dropout $CONDITIONING_DROPOUT \
-    --save_every_n_epochs $SAVE_EVERY_N_EPOCHS \
-    --sample_steps $SAMPLE_STEPS \
-    --t_scale $T_SCALE"
+CMD=(
+    conda run --no-capture-output -n diffusers-dev
+    python "$ROOT_DIR/train_controlnet.py"
+    --train_dir "$TRAIN_DIR"
+    --val_dir "$VAL_DIR"
+    --train_annotations "$TRAIN_ANNOTATIONS"
+    --val_annotations "$VAL_ANNOTATIONS"
+    --stage1_pipeline_dir "$STAGE1_PIPELINE_DIR"
+    --model_dir "$MODEL_DIR"
+    --epochs "$EPOCHS"
+    --batch_size "$BATCH_SIZE"
+    --num_workers "$NUM_WORKERS"
+    --lr "$LR"
+    --conditioning_scale "$CONDITIONING_SCALE"
+    --conditioning_dropout "$CONDITIONING_DROPOUT"
+    --save_every_n_epochs "$SAVE_EVERY_N_EPOCHS"
+    --sample_steps "$SAMPLE_STEPS"
+    --t_scale "$T_SCALE"
+)
 
 # Add resume flag if checkpoint provided
 if [ -n "$RESUME_CKPT" ]; then
-    CMD="$CMD --resume $RESUME_CKPT"
+    CMD+=(--resume "$RESUME_CKPT")
     echo "Resuming from checkpoint: $RESUME_CKPT"
 fi
 
 echo "Starting ControlNet training (stage 2)..."
-echo "$CMD"
-exec $CMD
+printf '%q ' "${CMD[@]}"
+printf '\n'
+exec "${CMD[@]}"

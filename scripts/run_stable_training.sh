@@ -19,16 +19,16 @@ VAL_DIR="$ROOT_DIR/v18/val/"
 # Model configs
 UNET_CONFIG="$ROOT_DIR/fm_src/stable_unet_config.json"
 VAE_CONFIG="$ROOT_DIR/fm_src/vae_config.json"
-VAE_WEIGHTS="$ROOT_DIR/fm_src/vae_best.pt"
+VAE_WEIGHTS="$ROOT_DIR/vae_runs/vae_fm_x4/VAE/vae_best.pt"
 
 # Output directory
-MODEL_DIR="$ROOT_DIR/serious_runs/stable_training_no_norm/"
+MODEL_DIR="$ROOT_DIR/serious_runs/stable_training_no_norm_longrun/"
 
 # Training params
-EPOCHS=300
+EPOCHS=500
 BATCH_SIZE=8
 NUM_WORKERS=4
-SAVE_EVERY_N_EPOCHS=30
+SAVE_EVERY_N_EPOCHS=50
 SAMPLE_BATCH_SIZE=4
 T_SCALE=1000
 
@@ -55,36 +55,39 @@ P_ROT_FINAL=0.05
 
 # Resume checkpoint (leave empty for fresh training)
 # RESUME_CKPT="$ROOT_DIR/serious_runs/stable_training_t_scaled/UNET/unet_fm_epoch_150_ckpt.pt"
-
+RESUME_CKPT=
 # Build the command
-CMD="python \"$ROOT_DIR/train_sfm.py\" \
-    --train_dir $TRAIN_DIR \
-    --val_dir $VAL_DIR \
-    --unet_config $UNET_CONFIG \
-    --vae_config $VAE_CONFIG \
-    --vae_weights $VAE_WEIGHTS \
-    --model_dir $MODEL_DIR \
-    --epochs $EPOCHS \
-    --batch_size $BATCH_SIZE \
-    --num_workers $NUM_WORKERS \
-    --save_every_n_epochs $SAVE_EVERY_N_EPOCHS \
-    --sample_batch_size $SAMPLE_BATCH_SIZE \
-    --t_scale $T_SCALE \
-    --warmup_frac $WARMUP_FRAC \
-    --ramp_frac $RAMP_FRAC \
-    --p_crop_warmup $P_CROP_WARMUP \
-    --p_crop_max $P_CROP_MAX \
-    --p_crop_final $P_CROP_FINAL \
-    --p_rot_warmup $P_ROT_WARMUP \
-    --p_rot_max $P_ROT_MAX \
-    --p_rot_final $P_ROT_FINAL"
+CMD=(
+    python "$ROOT_DIR/train_sfm.py"
+    --train_dir "$TRAIN_DIR"
+    --val_dir "$VAL_DIR"
+    --unet_config "$UNET_CONFIG"
+    --vae_config "$VAE_CONFIG"
+    --vae_weights "$VAE_WEIGHTS"
+    --model_dir "$MODEL_DIR"
+    --epochs "$EPOCHS"
+    --batch_size "$BATCH_SIZE"
+    --num_workers "$NUM_WORKERS"
+    --save_every_n_epochs "$SAVE_EVERY_N_EPOCHS"
+    --sample_batch_size "$SAMPLE_BATCH_SIZE"
+    --t_scale "$T_SCALE"
+    --warmup_frac "$WARMUP_FRAC"
+    --ramp_frac "$RAMP_FRAC"
+    --p_crop_warmup "$P_CROP_WARMUP"
+    --p_crop_max "$P_CROP_MAX"
+    --p_crop_final "$P_CROP_FINAL"
+    --p_rot_warmup "$P_ROT_WARMUP"
+    --p_rot_max "$P_ROT_MAX"
+    --p_rot_final "$P_ROT_FINAL"
+)
 
 # Add resume flag if checkpoint provided
 if [ -n "$RESUME_CKPT" ]; then
-    CMD="$CMD --resume $RESUME_CKPT"
+    CMD+=(--resume "$RESUME_CKPT")
     echo "Resuming from checkpoint: $RESUME_CKPT"
 fi
 
 echo "Starting training..."
-echo "$CMD"
-exec $CMD
+printf '%q ' "${CMD[@]}"
+printf '\n'
+exec "${CMD[@]}"

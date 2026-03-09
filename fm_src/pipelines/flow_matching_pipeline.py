@@ -40,6 +40,7 @@ class FlowMatchingPipeline:
         model_dir: str = "./pipeline_model",
         sample_shape: Optional[Tuple[int, int, int]] = None,
         from_norm_to_display: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        train_target: str = "v",
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -57,6 +58,10 @@ class FlowMatchingPipeline:
         # Normalization: [-1,1] -> [0,1] for TensorBoard display.
         # Override this to match whatever normalization the training script uses.
         self.from_norm_to_display = from_norm_to_display or _default_from_norm_to_display
+
+        # Prediction target: "v" (velocity) or "x0" (clean sample)
+        assert train_target in ("v", "x0"), f"train_target must be 'v' or 'x0', got '{train_target}'"
+        self.train_target = train_target
 
         # Remember config if provided
         self.unet_config: Optional[Dict[str, Any]] = None
@@ -225,11 +230,21 @@ class FlowMatchingPipeline:
         B = x_fm.shape[0]
         z0 = torch.randn_like(x_fm)
         t = torch.rand(B, device=x_fm.device)
+        t_expanded = t[:, None, None, None]
 
-        zt = (1 - t[:, None, None, None]) * z0 + t[:, None, None, None] * x_fm
+        zt = (1 - t_expanded) * z0 + t_expanded * x_fm
         v_target = x_fm - z0
 
-        v_pred = self.unet(zt, t * self.t_scale).sample
+        unet_out = self.unet(zt, t * self.t_scale).sample
+
+        if self.train_target == "x0":
+            # UNet predicts x0; reconstruct velocity for loss
+            x0_pred = unet_out
+            v_pred = (x0_pred - zt) / (1 - t_expanded).clamp(min=1e-5)
+        else:
+            # UNet directly predicts velocity
+            v_pred = unet_out
+
         return F.mse_loss(v_pred, v_target)
 
     @torch.no_grad()
@@ -244,10 +259,20 @@ class FlowMatchingPipeline:
 
         shape = sample_shape or self._get_unet_sample_shape()
         z = torch.randn(batch_size, *shape, device=self.device)
+        dt = 1.0 / steps
         for i in range(steps):
-            t = torch.full((batch_size,), i / steps, device=self.device)
-            v = self.unet(z, t * self.t_scale).sample
-            z = z + v / steps
+            t_val = i / steps
+            t = torch.full((batch_size,), t_val, device=self.device)
+            unet_out = self.unet(z, t * self.t_scale).sample
+
+            if self.train_target == "x0":
+                # UNet predicts x0; derive velocity
+                t_expanded = t[:, None, None, None]
+                v = (unet_out - z) / (1 - t_expanded).clamp(min=1e-5)
+            else:
+                v = unet_out
+
+            z = z + v * dt
         return z
 
     @torch.no_grad()
@@ -349,6 +374,7 @@ class FlowMatchingPipeline:
                 "best_epoch": best_epoch,
                 "bad_epochs": bad_epochs,
                 "t_scale": self.t_scale,
+                "train_target": self.train_target,
                 "rng_state": torch.random.get_rng_state(),
             }
             if torch.cuda.is_available():
@@ -557,8 +583,9 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
         model_dir: str = "./pipeline_model",
         sample_shape: Optional[Tuple[int, int, int]] = None,
         from_norm_to_display: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        train_target: str = "v",
     ):
-        super().__init__(device=device, t_scale=t_scale, model_dir=model_dir, sample_shape=sample_shape, from_norm_to_display=from_norm_to_display)
+        super().__init__(device=device, t_scale=t_scale, model_dir=model_dir, sample_shape=sample_shape, from_norm_to_display=from_norm_to_display, train_target=train_target)
         self.vae_config: Optional[Dict[str, Any]] = None
 
     def _vae_dir(self) -> str:
@@ -882,6 +909,99 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
             sample_shape=sample_shape,
         )
 
+    def log_fm_samples_to_tensorboard_guided(
+        self,
+        writer: SummaryWriter,
+        epoch: int,
+        guidance=None,              # Optional[ScorePredictorGuidance]
+        guidance_scale: float = 1.0,
+        steps: int = 50,
+        batch_size: int = 4,
+        tag_unguided: str = "fm_samples/unguided",
+        tag_guided: str = "fm_samples/guided",
+        tag_suffix: str = "",
+        sample_shape: Optional[Tuple[int, int, int]] = None,
+        log_score_scalars: bool = True,
+    ):
+        """Log both unguided and guided FM samples side-by-side to TensorBoard.
+
+        Generates one unguided batch and one guided batch and logs them under
+        separate tags.  Optionally logs mean predicted surprise / GMM scores
+        as scalars so you can verify the guidance effect directionally.
+
+        Parameters
+        ----------
+        writer : SummaryWriter
+        epoch : int
+        guidance : :class:`ScorePredictorGuidance`, optional
+            If ``None``, only the unguided samples are logged.
+        guidance_scale : float
+        steps, batch_size, sample_shape : standard sampling args
+        tag_unguided, tag_guided : str
+            TensorBoard image tags.
+        tag_suffix : str
+            Optional suffix appended to both tags (useful for multi-run comparison).
+        log_score_scalars : bool
+            Log mean_surprise / mean_gmm scalars when *guidance* is provided.
+        """
+        assert hasattr(self, "vae"),  "VAE not set."
+        assert hasattr(self, "unet"), "UNet not set."
+        self.vae.eval()
+        self.unet.eval()
+
+        t_ug = (tag_unguided + tag_suffix) if tag_suffix else tag_unguided
+        t_g  = (tag_guided   + tag_suffix) if tag_suffix else tag_guided
+
+        # -- Unguided samples --
+        z_plain = self.sample_euler_guided(
+            steps=steps,
+            batch_size=batch_size,
+            sample_shape=sample_shape,
+            guidance=None,
+            guidance_scale=0.0,
+        )
+        with torch.no_grad():
+            x_plain = self.decode_fm_output(z_plain)
+        x_plain_vis = self.from_norm_to_display(x_plain).clamp(0, 1)
+        writer.add_images(t_ug, x_plain_vis, epoch)
+
+        if guidance is not None:
+            # -- Guided samples --
+            z_guided = self.sample_euler_guided(
+                steps=steps,
+                batch_size=batch_size,
+                sample_shape=sample_shape,
+                guidance=guidance,
+                guidance_scale=guidance_scale,
+            )
+            with torch.no_grad():
+                x_guided = self.decode_fm_output(z_guided)
+            x_guided_vis = self.from_norm_to_display(x_guided).clamp(0, 1)
+            writer.add_images(t_g, x_guided_vis, epoch)
+
+            if log_score_scalars:
+                scores_plain  = guidance.log_scores(z_plain)
+                scores_guided = guidance.log_scores(z_guided)
+                writer.add_scalars(
+                    f"guided_scores{tag_suffix}/mean_surprise",
+                    {"unguided": scores_plain["mean_surprise"],
+                     "guided":   scores_guided["mean_surprise"]},
+                    epoch,
+                )
+                writer.add_scalars(
+                    f"guided_scores{tag_suffix}/mean_gmm",
+                    {"unguided": scores_plain["mean_gmm"],
+                     "guided":   scores_guided["mean_gmm"]},
+                    epoch,
+                )
+                print(
+                    f"[log_guided] epoch={epoch}  "
+                    f"unguided: surprise={scores_plain['mean_surprise']:.4f}  "
+                    f"gmm={scores_plain['mean_gmm']:.4f}  |  "
+                    f"guided:   surprise={scores_guided['mean_surprise']:.4f}  "
+                    f"gmm={scores_guided['mean_gmm']:.4f}"
+                )
+
     # -------------------------
     # Training: Flow Matching (latent space)
     # -------------------------
@@ -929,6 +1049,375 @@ class StableFlowMatchingPipeline(FlowMatchingPipeline):
             save_every_n_epochs=save_every_n_epochs,
             resume_from_checkpoint=resume_from_checkpoint,
         )
+
+    # =========================================================================
+    # Guided sampling methods (non-destructive additions; default sample_euler
+    # is inherited unchanged from FlowMatchingPipeline).
+    # =========================================================================
+
+    # ------------------------------------------------------------------
+    # 1. Euler + predictor guidance
+    # ------------------------------------------------------------------
+
+    def sample_euler_guided(
+        self,
+        steps: int = 50,
+        batch_size: int = 4,
+        sample_shape: Optional[Tuple[int, int, int]] = None,
+        guidance=None,       # Optional[ScorePredictorGuidance]
+        guidance_scale: float = 1.0,
+        return_logs: bool = False,
+    ):
+        """Euler ODE sampler with optional energy-based guidance.
+
+        When *guidance* is ``None`` or *guidance_scale* == 0 the result is
+        identical to :meth:`sample_euler` (the base Euler sampler).
+
+        The UNet forward is always executed inside ``torch.no_grad()``.
+        Gradients for the guidance signal are computed separately via
+        :meth:`ScorePredictorGuidance.guidance_grad`, which creates a fresh
+        leaf tensor internally and does not interfere with the velocity graph.
+
+        Parameters
+        ----------
+        steps : int
+        batch_size : int
+        sample_shape : (C, H, W), optional
+        guidance : :class:`ScorePredictorGuidance`, optional
+        guidance_scale : float
+            Global multiplier applied *on top of* the λ(t) schedule baked
+            into the guidance object.  Set to 0 to disable at call-site.
+        return_logs : bool
+            If ``True``, also return a list of per-step dicts containing
+            ``t``, ``grad_norm`` (mean over batch), and predicted scores.
+
+        Returns
+        -------
+        z : (B, C, H, W) final latent
+        logs : list of dicts  (only when *return_logs* is ``True``)
+        """
+        assert hasattr(self, "unet"), "UNet not set."
+        assert hasattr(self, "vae"),  "VAE not set."
+        self.unet.eval()
+        self.vae.eval()
+
+        shape = sample_shape or self._get_unet_sample_shape()
+        z = torch.randn(batch_size, *shape, device=self.device)
+        dt = 1.0 / steps
+        logs = []
+
+        for i in range(steps):
+            t_val = i / steps
+            t = torch.full((batch_size,), t_val, device=self.device)
+
+            # -- UNet velocity (no grad needed here) --
+            with torch.no_grad():
+                unet_out = self.unet(z, t * self.t_scale).sample
+                if self.train_target == "x0":
+                    t_exp = t[:, None, None, None]
+                    v = (unet_out - z) / (1.0 - t_exp).clamp(min=1e-5)
+                else:
+                    v = unet_out
+
+            # -- Guidance gradient --
+            if guidance is not None and guidance_scale > 0.0:
+                g = guidance.guidance_grad(z, t=t_val, pipeline=self, velocity=v)
+                guided_v = v + guidance_scale * g
+
+                if return_logs:
+                    grad_norm = g.view(batch_size, -1).norm(dim=1).mean().item()
+                    step_log: dict = {"step": i, "t": t_val, "grad_norm": grad_norm}
+                    with torch.no_grad():
+                        scores = guidance.log_scores(z)
+                    step_log.update(scores)
+                    logs.append(step_log)
+            else:
+                guided_v = v
+
+            z = (z + guided_v * dt).detach()
+
+        if return_logs:
+            return z, logs
+        return z
+
+    # ------------------------------------------------------------------
+    # 2. Rejection / reranking over N candidates
+    # ------------------------------------------------------------------
+
+    def sample_euler_with_candidates(
+        self,
+        steps: int = 50,
+        n_candidates: int = 8,
+        keep_top_k: int = 1,
+        batch_size: int = 4,
+        sample_shape: Optional[Tuple[int, int, int]] = None,
+        guidance=None,       # Optional[ScorePredictorGuidance]
+        guidance_scale: float = 0.0,
+        return_all_scores: bool = False,
+    ):
+        """Generate *n_candidates* independent trajectories and keep the best.
+
+        No guidance is applied to the ODE by default (``guidance_scale=0``);
+        selection is done purely by the predictor energy at the end.
+
+        Parameters
+        ----------
+        steps, batch_size, sample_shape :
+            As in :meth:`sample_euler_guided`.
+        n_candidates : int
+            Number of candidate trajectories to generate per request.
+        keep_top_k : int
+            Number of best candidates (by *lowest* energy) to return.
+        guidance : :class:`ScorePredictorGuidance`, optional
+            If given, its energy function is used for scoring.  If ``None``
+            and guidance_scale > 0, raises ValueError.
+        guidance_scale : float
+            Guidance scale during trajectory sampling (0 = unguided).
+        return_all_scores : bool
+            Also return the energy tensor for all candidates.
+
+        Returns
+        -------
+        z_best : (keep_top_k * batch_size, C, H, W) or (batch_size, C, H, W)
+            Selected latents (sorted ascending by energy).
+        scores : tensor, optional  (when *return_all_scores* is ``True``)
+        """
+        if guidance_scale > 0.0 and guidance is None:
+            raise ValueError("guidance must be provided when guidance_scale > 0.")
+
+        shape = sample_shape or self._get_unet_sample_shape()
+        all_z = []
+
+        for _ in range(n_candidates):
+            z_c = self.sample_euler_guided(
+                steps=steps,
+                batch_size=batch_size,
+                sample_shape=shape,
+                guidance=guidance,
+                guidance_scale=guidance_scale,
+                return_logs=False,
+            )
+            all_z.append(z_c)
+
+        # Stack: (n_candidates, B, C, H, W) → (n_candidates * B, C, H, W)
+        all_z_cat = torch.cat(all_z, dim=0)   # (n_candidates * B, C, H, W)
+
+        if guidance is not None:
+            with torch.no_grad():
+                E = guidance.energy(all_z_cat)   # (n_candidates * B,)
+        else:
+            # No scoring possible – return first keep_top_k candidates.
+            if return_all_scores:
+                return all_z_cat[: keep_top_k * batch_size], None
+            return all_z_cat[: keep_top_k * batch_size]
+
+        # For each position in [0, B), pick the candidate with lowest energy.
+        # Reshape: (n_candidates, B)
+        E_mat = E.view(n_candidates, batch_size)
+        z_mat = all_z_cat.view(n_candidates, batch_size, *shape)
+
+        # Rank candidates per sample position.
+        order = E_mat.argsort(dim=0)           # ascending energy = better sample
+
+        kept_indices = order[:keep_top_k]      # (keep_top_k, B)
+        # Gather selected latents: result shape (keep_top_k, B, C, H, W)
+        z_best_list = []
+        for k in range(keep_top_k):
+            idx = kept_indices[k]              # (B,)
+            z_best_list.append(
+                z_mat[idx, torch.arange(batch_size)]   # (B, C, H, W)
+            )
+        z_best = torch.cat(z_best_list, dim=0)  # (keep_top_k * B, C, H, W)
+
+        if return_all_scores:
+            return z_best, E
+        return z_best
+
+    # ------------------------------------------------------------------
+    # 3. Beam / branching sampling
+    # ------------------------------------------------------------------
+
+    def sample_euler_beam(
+        self,
+        steps: int = 50,
+        batch_size: int = 4,
+        beam_size: int = 4,
+        branch_factor: int = 2,
+        sigma_perturb: float = 0.05,
+        sample_shape: Optional[Tuple[int, int, int]] = None,
+        guidance=None,       # Optional[ScorePredictorGuidance]
+        guidance_scale: float = 0.0,
+        return_all_beams: bool = False,
+    ):
+        """Beam sampling: maintain *beam_size* parallel latent trajectories.
+
+        At each step each beam candidate is expanded into *branch_factor*
+        perturbed copies, all are advanced one Euler step, the predictor
+        scores them, and only the *beam_size* lowest-energy candidates survive.
+
+        Memory note: the total number of latents processed per step is
+        ``batch_size × beam_size × branch_factor``.  Keep these small.
+
+        Parameters
+        ----------
+        steps, batch_size, sample_shape :
+            Standard args.
+        beam_size : int
+            Number of surviving trajectories per sample position.
+        branch_factor : int
+            Number of (noise-perturbed) children expanded from each beam candidate.
+        sigma_perturb : float
+            Std-dev of Gaussian noise added to branch.  Set to 0 to disable branching.
+        guidance : :class:`ScorePredictorGuidance`, optional
+            Used for scoring and optionally velocity guidance.
+        guidance_scale : float
+            Guidance scale for the velocity field (0 = use predictor only for pruning).
+        return_all_beams : bool
+            If ``True``, return all surviving beams; if ``False``, return the
+            single best (lowest-energy) beam per sample position.
+
+        Returns
+        -------
+        z_out : (batch_size, C, H, W)  or  (beam_size * batch_size, C, H, W)
+        """
+        assert hasattr(self, "unet"), "UNet not set."
+        assert hasattr(self, "vae"),  "VAE not set."
+        self.unet.eval()
+        self.vae.eval()
+
+        shape = sample_shape or self._get_unet_sample_shape()
+        C, H, W = shape
+        dt = 1.0 / steps
+
+        # Initialise beams: (beam_size, B, C, H, W)
+        z_beams = torch.randn(beam_size, batch_size, C, H, W, device=self.device)
+
+        for i in range(steps):
+            t_val = i / steps
+            t_scalar = torch.full((batch_size,), t_val, device=self.device)
+
+            expanded_beams = []
+
+            for b in range(beam_size):
+                z_b = z_beams[b]                               # (B, C, H, W)
+
+                for _ in range(branch_factor):
+                    if sigma_perturb > 0.0:
+                        z_branch = z_b + sigma_perturb * torch.randn_like(z_b)
+                    else:
+                        z_branch = z_b.clone()
+
+                    with torch.no_grad():
+                        unet_out = self.unet(z_branch, t_scalar * self.t_scale).sample
+                        if self.train_target == "x0":
+                            t_exp = t_scalar[:, None, None, None]
+                            v = (unet_out - z_branch) / (1.0 - t_exp).clamp(min=1e-5)
+                        else:
+                            v = unet_out
+
+                    if guidance is not None and guidance_scale > 0.0:
+                        g = guidance.guidance_grad(z_branch, t=t_val, pipeline=self, velocity=v)
+                        v = v + guidance_scale * g
+
+                    z_next = (z_branch + v * dt).detach()
+                    expanded_beams.append(z_next)
+
+            # expanded_beams: list of (B, C, H, W), length = beam_size * branch_factor
+            z_expanded = torch.stack(expanded_beams, dim=0)  # (K, B, C, H, W)
+            K = z_expanded.shape[0]
+
+            if guidance is not None:
+                # Score all expanded candidates and prune to beam_size.
+                z_flat = z_expanded.view(K * batch_size, C, H, W)
+                with torch.no_grad():
+                    E_flat = guidance.energy(z_flat)           # (K * B,)
+                E_mat = E_flat.view(K, batch_size)             # (K, B)
+                order = E_mat.argsort(dim=0)                   # ascending energy
+
+                z_mat = z_expanded                             # (K, B, C, H, W)
+                new_beams = []
+                for b_new in range(min(beam_size, K)):
+                    idx = order[b_new]                         # (B,)
+                    new_beams.append(z_mat[idx, torch.arange(batch_size)])
+                z_beams = torch.stack(new_beams, dim=0)        # (beam_size, B, C, H, W)
+            else:
+                # No scoring – just keep first beam_size candidates.
+                z_beams = z_expanded[:beam_size]
+
+        if return_all_beams:
+            # (beam_size * B, C, H, W)
+            return z_beams.view(beam_size * batch_size, C, H, W)
+
+        # Return best beam per sample position (index 0 = lowest energy after pruning).
+        if guidance is not None:
+            z_flat = z_beams.view(beam_size * batch_size, C, H, W)
+            with torch.no_grad():
+                E_final = guidance.energy(z_flat).view(beam_size, batch_size)
+            best_idx = E_final.argmin(dim=0)               # (B,)
+            z_best = z_beams[best_idx, torch.arange(batch_size)]
+        else:
+            z_best = z_beams[0]
+
+        return z_best
+
+    # ------------------------------------------------------------------
+    # 4. Post-sampling latent refinement
+    # ------------------------------------------------------------------
+
+    def refine_latents_energy(
+        self,
+        z: torch.Tensor,
+        guidance,       # ScorePredictorGuidance
+        num_steps: Optional[int] = None,
+        step_size: Optional[float] = None,
+        clamp_latent_norm: Optional[float] = None,
+    ) -> torch.Tensor:
+        """Refine latents via gradient descent / ascent on energy.
+
+        Runs ``num_steps`` iterations of::
+
+            z ← z + step_size · guidance_grad(z)
+
+        The guidance object's ``sign`` field determines direction
+        (``"minimize"`` → descend energy; ``"maximize"`` → ascend).
+
+        Parameters
+        ----------
+        z : (B, C, H, W)
+            Initial latents (e.g. output of :meth:`sample_euler_guided`).
+        guidance : :class:`ScorePredictorGuidance`
+        num_steps : int, optional
+            Overrides ``guidance.config.num_refine_steps``.
+        step_size : float, optional
+            Overrides ``guidance.config.refine_step_size``.
+        clamp_latent_norm : float, optional
+            After each step, clamp per-sample latent ℓ₂ norm to this value.
+            Helps prevent divergence.  ``None`` = no clamping.
+
+        Returns
+        -------
+        z : (B, C, H, W) refined latent
+        """
+        cfg = guidance.config
+        n_steps   = num_steps  if num_steps  is not None else cfg.num_refine_steps
+        step_sz   = step_size  if step_size  is not None else cfg.refine_step_size
+        B = z.shape[0]
+
+        z = z.detach()
+        for _ in range(n_steps):
+            g = guidance.guidance_grad(z, t=1.0, pipeline=self)
+            z = (z + step_sz * g).detach()
+
+            if clamp_latent_norm is not None:
+                norms = z.view(B, -1).norm(dim=1).view(B, 1, 1, 1).clamp(min=1e-8)
+                scale = torch.where(
+                    norms > clamp_latent_norm,
+                    torch.full_like(norms, clamp_latent_norm) / norms,
+                    torch.ones_like(norms),
+                )
+                z = (z * scale).detach()
+
+        return z
 
     # -------------------------
     # Restore from folder (VAE + UNet)

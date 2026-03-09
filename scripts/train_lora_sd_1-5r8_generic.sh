@@ -31,7 +31,7 @@ accelerate launch --mixed_precision=fp16 \
   --train_data_dir "$TRAIN_DIR" \
   --image_column "image" \
   --caption_column "text" \
-  --resolution 512 \
+  --resolution 256 \
   --center_crop \
   --train_batch_size 4 \
   --gradient_accumulation_steps 4 \
@@ -45,6 +45,7 @@ accelerate launch --mixed_precision=fp16 \
   --validation_epochs 1 \
   --num_validation_images 4 \
   --rank 8 \
+  --lora_alpha_scale 0.5 \
   --output_dir "$OUTPUT_DIR" \
   --report_to "tensorboard" \
   --logging_dir "$ROOT_DIR/logs" \

@@ -44,6 +44,10 @@ def parse_args():
     # Resume
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from (e.g. UNET/unet_fm_epoch_10_ckpt.pt)")
     
+    # Prediction target
+    parser.add_argument("--train-target", type=str, default="v", choices=["v", "x0"],
+                        help="Prediction target: 'v' for velocity, 'x0' for clean sample (velocity is reconstructed from x0 for the loss)")
+    
     return parser.parse_args()
 
 
@@ -318,6 +322,7 @@ def main():
         t_scale=args.t_scale,
         model_dir=args.model_dir,
         from_norm_to_display=from_norm_to_display,
+        train_target=args.train_target,
     ).build_from_configs(
         unet_json=args.unet_config,
         vae_json=args.vae_config,

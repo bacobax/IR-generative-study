@@ -132,19 +132,20 @@ def load_models(
     )
 
 
-def get_lora_config(rank: int = 4) -> LoraConfig:
+def get_lora_config(rank: int = 4, lora_alpha_scale: float = 1.0) -> LoraConfig:
     """
     Create LoRA configuration for UNet.
     
     Args:
         rank: LoRA rank (dimension of update matrices).
+        lora_alpha_scale: Scale factor in [0, 1] for LoRA alpha.
     
     Returns:
         LoraConfig for PEFT.
     """
     return LoraConfig(
         r=rank,
-        lora_alpha=rank,
+        lora_alpha=rank * lora_alpha_scale,
         init_lora_weights="gaussian",
         target_modules=["to_k", "to_q", "to_v", "to_out.0", "proj_in", "proj_out"],
     )
