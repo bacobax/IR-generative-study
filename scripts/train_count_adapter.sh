@@ -19,8 +19,8 @@ fi
 # Paths
 # ==========================================================
 
-DATA_DIR="$ROOT_DIR/v18/train"
-OUTPUT_DIR="$ROOT_DIR/count_adapter_runs/run_07"
+DATA_DIR="$ROOT_DIR/data/raw/v18/train"
+OUTPUT_DIR="$ROOT_DIR/artifacts/checkpoints/count_adapter/runs/run_07"
 
 # ==========================================================
 # Model
@@ -76,14 +76,14 @@ SEED=42
 # ==========================================================
 
 CACHE=true
-CACHE_DIR="$ROOT_DIR/.dino_cache"
+CACHE_DIR="$ROOT_DIR/data/cache/dino_cache"
 PATIENCE=50
 
 # ==========================================================
 # Launch training
 # ==========================================================
 
-python "$ROOT_DIR/train_count_adapter.py" \
+python "$ROOT_DIR/scripts/train_count_adapter.py" \
   --data-dir "$DATA_DIR" \
   --output-dir "$OUTPUT_DIR" \
   --model-name "$MODEL_NAME" \

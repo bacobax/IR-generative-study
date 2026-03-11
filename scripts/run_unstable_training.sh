@@ -13,14 +13,14 @@ fi
 # To resume: RESUME_CKPT=./path/to/checkpoint.pt ./run_unstable_training.sh
 
 # Data paths
-TRAIN_DIR="$ROOT_DIR/v18/train/"
-VAL_DIR="$ROOT_DIR/v18/val/"
+TRAIN_DIR="$ROOT_DIR/data/raw/v18/train/"
+VAL_DIR="$ROOT_DIR/data/raw/v18/val/"
 
 # Model configs
-UNET_CONFIG="$ROOT_DIR/fm_src/non_stable_unet_config.json"
+UNET_CONFIG="$ROOT_DIR/configs/models/fm/non_stable_unet_config.json"
 
 # Output directory
-MODEL_DIR="$ROOT_DIR/serious_runs/pixel_fm_x0/"
+MODEL_DIR="$ROOT_DIR/artifacts/checkpoints/flow_matching/serious_runs/pixel_fm_x0/"
 
 # Training params
 EPOCHS=300
@@ -44,11 +44,11 @@ P_ROT_MAX=0.30
 P_ROT_FINAL=0.05
 
 # Resume checkpoint (leave empty for fresh training)
-# RESUME_CKPT="$ROOT_DIR/serious_runs/pixel_fm_x0/UNET/unet_fm_epoch_150_ckpt.pt"
+# RESUME_CKPT="$ROOT_DIR/artifacts/checkpoints/flow_matching/serious_runs/pixel_fm_x0/UNET/unet_fm_epoch_150_ckpt.pt"
 RESUME_CKPT=
 # Build the command
 CMD=(
-    python "$ROOT_DIR/train_fm.py"
+    python "$ROOT_DIR/scripts/train_fm.py"
     --train_dir "$TRAIN_DIR"
     --val_dir "$VAL_DIR"
     --unet_config "$UNET_CONFIG"

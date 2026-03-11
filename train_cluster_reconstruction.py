@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save_best", action="store_true", default=True)
     parser.add_argument("--no_save_best", action="store_false", dest="save_best")
 
-    parser.add_argument("--runs_root", type=str, default="./runs/cluster_reconstruction",
+    parser.add_argument("--runs_root", type=str, default="./artifacts/runs/main/cluster_reconstruction",
                         help="Root directory for training runs (weights + tensorboard).")
     parser.add_argument("--run_name", type=str, default="",
                         help="Run folder name under runs_root. Empty = auto-generated.")

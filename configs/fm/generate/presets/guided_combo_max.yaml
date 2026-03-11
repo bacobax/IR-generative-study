@@ -1,0 +1,23 @@
+# FM guided: combo (surprise + GMM), MAXIMIZE
+# Launcher: scripts/generate/fm_guided_combo_max.sh
+mode: fm
+fm_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm_longrun
+fm_vae_weights: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm_longrun/VAE/vae_best.pt
+max_samples: 200
+output_dir: ./artifacts/generated/main/fm_guided_combo_max
+fm_steps: 100
+fm_batch_size: 4
+fm_guidance_method: euler_guided
+fm_surprise_ckpt: ./artifacts/runs/main/surprise_predictor_longer_run/vae_x4_best_minmax_h256_s0/best_model.pt
+fm_energy_mode: combo
+fm_sign: maximize
+fm_w_surprise: 1.0
+fm_w_gmm: 0.5
+fm_guidance_scale: 1.2
+fm_lambda_start: 0.2
+fm_lambda_end: 6
+fm_lambda_schedule: cosine
+fm_grad_clip_norm: 2
+fm_normalize_grad: true
+fm_use_ddim_hat: true
+device: cuda:2

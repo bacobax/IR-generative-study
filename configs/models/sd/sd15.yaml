@@ -1,0 +1,4 @@
+# SD 1.5 model reference (placeholder / documentation)
+pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+revision: null
+variant: null

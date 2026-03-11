@@ -10,16 +10,16 @@ else
 fi
 
 # -------- Required arguments --------
-CREATED_DATASET="$ROOT_DIR/surprise_pred_dataset"
+CREATED_DATASET="$ROOT_DIR/data/derived/surprise_pred_dataset"
 VAE_MODEL_NAME="vae_x4_best"
-VAE_CONFIG="$ROOT_DIR/fm_src/vae_config.json"
-VAE_WEIGHTS="$ROOT_DIR/vae_runs/vae_fm_x4/VAE/vae_best.pt"
-MASKED_MODEL_CKPT="$ROOT_DIR/runs/cluster_reconstruction/emb32_hidden256_proj_mask50_k5/best_model.pt"
+VAE_CONFIG="$ROOT_DIR/configs/models/fm/vae_config.json"
+VAE_WEIGHTS="$ROOT_DIR/artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+MASKED_MODEL_CKPT="$ROOT_DIR/artifacts/runs/main/cluster_reconstruction/emb32_hidden256_proj_mask50_k5/best_model.pt"
 DINO_NAME="dinov2_vits14"
 N_CLUSTERS="5"
 
 # -------- Data / split --------
-DATA_ROOT="$ROOT_DIR/v18"
+DATA_ROOT="$ROOT_DIR/data/raw/v18"
 SPLIT="train"
 MAX_ITEMS="0"            # 0 = all items
 
@@ -44,7 +44,7 @@ OVERWRITE_LATENTS="1"    # 1=true, 0=false
 
 # -------- Build command --------
 CMD=(
-  python "$ROOT_DIR/build_surprise_pred_dataset.py"
+  python "$ROOT_DIR/scripts/build_surprise_pred_dataset.py"
   --created_dataset "$CREATED_DATASET"
   --vae_model_name "$VAE_MODEL_NAME"
   --vae_config "$VAE_CONFIG"

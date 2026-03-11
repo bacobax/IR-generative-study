@@ -1,0 +1,20 @@
+# Flow-Matching sampling – default configuration
+# Matches the built-in CLI defaults exactly.
+#
+# Usage:
+#   python -m src.cli.sample --config configs/fm/sample/default.yaml
+#
+# CLI overrides work the same way:
+#   python -m src.cli.sample --config configs/fm/sample/default.yaml --steps 100
+
+pipeline_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/"
+vae_weights: null
+t_scale: 1000.0
+train_target: "v"
+steps: 50
+batch_size: 8
+
+# Sampling output (not part of FMSampleConfig – passed separately)
+max_samples: 64
+output_dir: "./artifacts/generated/main/fm_cli"
+device: null

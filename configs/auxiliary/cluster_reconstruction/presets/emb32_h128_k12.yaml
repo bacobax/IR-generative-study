@@ -1,0 +1,7 @@
+# Cluster reconstruction: emb32, hidden128, k12
+# Launcher: scripts/train/cluster_emb32_h128_k12.sh
+# Only values that differ from train_cluster_reconstruction.py defaults are listed.
+hidden_dim: 128
+k_regions: 12
+device: cuda:2
+run_name: emb32_hidden128_proj_mask50_k12

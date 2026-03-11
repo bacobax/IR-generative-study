@@ -34,6 +34,14 @@ from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
+from src.core.constants import (
+    P0001_PERCENTILE_RAW_IMAGES,
+    P9999_PERCENTILE_RAW_IMAGES,
+    RAW_RANGE,
+    IMAGENET_MEAN,
+    IMAGENET_STD,
+)
+from src.core.normalization import raw_to_norm_numpy as _normalize_uint16_to_m1p1
 from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline
 
 # ---------------------------------------------------------------------------
@@ -44,11 +52,11 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Distribution shift analysis for real vs generated IR samples (.npy)."
     )
-    parser.add_argument("--real_dir", type=str, default="./v18/images",
+    parser.add_argument("--real_dir", type=str, default="./data/raw/v18/images",
                         help="Folder containing real .npy samples.")
-    parser.add_argument("--generated_dir", type=str, default="./generated",
+    parser.add_argument("--generated_dir", type=str, default="./artifacts/generated/main",
                         help="Folder containing generated subfolders with .npy files.")
-    parser.add_argument("--output_dir", type=str, default="./analysis_results",
+    parser.add_argument("--output_dir", type=str, default="./artifacts/analysis/main",
                         help="Where to save plots and metrics.")
     parser.add_argument("--max_samples", type=int, default=None,
                         help="Max samples to load per dataset (real + each generator).")
@@ -63,9 +71,9 @@ def parse_args():
     parser.add_argument("--device", type=str, default=None,
                         help="Torch device override, e.g. 'cuda:0' or 'cpu'.")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--vae_config", type=str, default="./vae_runs/vae_fm_x4/VAE/config.json",
+    parser.add_argument("--vae_config", type=str, default="./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/config.json",
                         help="Path to VAE config JSON for VAE-based feature extraction.")
-    parser.add_argument("--vae_weights", type=str, default="./vae_runs/vae_fm_x4/VAE/vae_best.pt",
+    parser.add_argument("--vae_weights", type=str, default="./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt",
                         help="Path to VAE weights for VAE-based feature extraction.")
     parser.add_argument("--dino_model", type=str, default="dinov2_vits14",
                         help="DINOv2 model name for torch.hub (e.g. dinov2_vits14, dinov2_vitb14).")
@@ -78,11 +86,9 @@ def parse_args():
 # Constants
 # ---------------------------------------------------------------------------
 
-P0001_PERCENTILE_RAW_IMAGES = 11667.0  # p0.001 percentile
-P9999_PERCENTILE_RAW_IMAGES = 13944.0  # p99.999 percentile
 A = P0001_PERCENTILE_RAW_IMAGES
 B = P9999_PERCENTILE_RAW_IMAGES
-S = B - A
+S = RAW_RANGE
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +102,6 @@ def setup_environment(output_dir: str, seed: int):
     plt.rcParams["figure.figsize"] = (12, 8)
     plt.rcParams["font.size"] = 10
     os.makedirs(output_dir, exist_ok=True)
-
-
-def _normalize_uint16_to_m1p1(arr: np.ndarray) -> np.ndarray:
-    """Normalize uint16 values [0, 65535] to [-1, 1] using full linear mapping."""
-    return (arr.astype(np.float32) - A) / S * 2.0 - 1.0
 
 
 def load_images(image_path, max_images=None):
@@ -169,8 +170,8 @@ def extract_features_inception(images, model, device, batch_size=16):
     features = []
     num_batches = (len(images) + batch_size - 1) // batch_size
 
-    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
+    mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
+    std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
 
     with torch.no_grad():
         for i in tqdm(range(num_batches), desc="Extracting features (Inception)"):
@@ -221,8 +222,8 @@ def extract_features_dinov2(images, model, device, batch_size=16):
     features = []
     num_batches = (len(images) + batch_size - 1) // batch_size
 
-    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
+    mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
+    std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
 
     with torch.no_grad():
         for i in tqdm(range(num_batches), desc="Extracting features (DINOv2)"):

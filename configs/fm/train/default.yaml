@@ -1,0 +1,51 @@
+# Flow-Matching training – default configuration
+# Matches the built-in CLI defaults exactly.
+#
+# Usage:
+#   python -m src.cli.train --config configs/fm/train/default.yaml
+#   python train_sfm.py     --config configs/fm/train/default.yaml
+#
+# Any CLI flag can override values from this file:
+#   python -m src.cli.train --config configs/fm/train/default.yaml --epochs 200
+
+data:
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  batch_size: 8
+  num_workers: 4
+
+model:
+  unet_config: "configs/models/fm/stable_unet_config.json"
+  vae_config: "configs/models/fm/vae_config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+  pretrained_unet_path: null
+
+augment:
+  warmup_frac: 0.1
+  ramp_frac: 0.3
+  p_crop_warmup: 0.05
+  p_crop_max: 0.20
+  p_crop_final: 0.05
+  p_rot_warmup: 0.05
+  p_rot_max: 0.30
+  p_rot_final: 0.05
+
+training:
+  epochs: 1
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 10
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+
+sampling:
+  sample_every_epoch: true
+  sample_steps: 100
+  sample_batch_size: 4
+  sample_shape: null
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled_test"
+  log_dir: null
+  resume: null

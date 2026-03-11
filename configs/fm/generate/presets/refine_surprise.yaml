@@ -1,0 +1,17 @@
+# FM refine: latent gradient refinement after Euler
+# Launcher: scripts/generate/fm_refine.sh
+mode: fm
+fm_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm_longrun
+fm_vae_weights: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm_longrun/VAE/vae_best.pt
+max_samples: 200
+output_dir: ./artifacts/generated/main/fm_refine_surprise
+fm_steps: 100
+fm_batch_size: 4
+fm_guidance_method: refine
+fm_surprise_ckpt: ./artifacts/runs/main/surprise_predictor/best_model.pt
+fm_energy_mode: surprise
+fm_sign: maximize
+fm_num_refine_steps: 20
+fm_refine_step_size: 0.005
+fm_grad_clip_norm: 1.0
+device: cuda:2

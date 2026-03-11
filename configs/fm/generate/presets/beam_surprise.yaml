@@ -1,0 +1,17 @@
+# FM beam sampling (surprise predictor guided)
+# Launcher: scripts/generate/fm_beam.sh
+mode: fm
+fm_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm
+fm_vae_weights: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm/VAE/vae_best.pt
+max_samples: 200
+output_dir: ./artifacts/generated/main/fm_beam_surprise
+fm_steps: 100
+fm_batch_size: 2
+fm_guidance_method: beam
+fm_surprise_ckpt: ./artifacts/runs/main/surprise_predictor_longer_run/vae_x4_best_minmax_h256_s0/best_model.pt
+fm_energy_mode: surprise
+fm_sign: minimize
+fm_beam_size: 4
+fm_branch_factor: 2
+fm_sigma_perturb: 0.05
+device: cuda:2

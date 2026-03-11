@@ -1,0 +1,8 @@
+# Pixel-space Flow Matching: x0-prediction (no VAE)
+# Launcher: scripts/train/fm_pixel.sh
+# Only values that differ from train_fm.py defaults are listed.
+model_dir: ./artifacts/checkpoints/flow_matching/serious_runs/pixel_fm_x0/
+epochs: 300              # default 100
+save_every_n_epochs: 30  # default 10
+train_target: x0         # default v
+ramp_frac: 0.4           # default 0.3

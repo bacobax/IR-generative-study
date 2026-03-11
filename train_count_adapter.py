@@ -476,7 +476,7 @@ class TrainConfig:
     base_warmup_epochs: int = 0
 
     cache: bool = False
-    cache_dir: str = ".dino_cache"
+    cache_dir: str = "data/cache/dino_cache"
 
     patience: int = 0
 
@@ -1053,7 +1053,7 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--counts", type=int, nargs="*", default=None)
 
     parser.add_argument("--cache", action="store_true", help="Cache DINO features for reuse")
-    parser.add_argument("--cache-dir", type=str, default=".dino_cache")
+    parser.add_argument("--cache-dir", type=str, default="data/cache/dino_cache")
     parser.add_argument("--patience", type=int, default=0, help="Early stopping patience (0=disabled)")
     parser.add_argument("--loco", action="store_true", help="Run Leave-One-Count-Out validation")
     parser.add_argument("--val-counts", type=int, nargs="*", default=None, help="Held-out counts for validation")

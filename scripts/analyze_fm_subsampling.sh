@@ -10,14 +10,14 @@ else
 fi
 
 # Define paths and parameters
-OUT_DIR="$ROOT_DIR/analysis_results/subsampling_coverage"
-FM_PIPELINE_DIR="$ROOT_DIR/serious_runs/stable_training_no_norm"
-VAE_WEIGHTS="$ROOT_DIR/vae_runs/vae_fm_x4/VAE/vae_best.pt"
-SURPRISE_CKPT="$ROOT_DIR/runs/surprise_predictor_longrun/vae_x4_best_minmax_h256_s0/best_model.pt"
-REAL_DATA_ROOT="$ROOT_DIR/v18"
+OUT_DIR="$ROOT_DIR/artifacts/analysis/main/subsampling_coverage"
+FM_PIPELINE_DIR="$ROOT_DIR/artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm"
+VAE_WEIGHTS="$ROOT_DIR/artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+SURPRISE_CKPT="$ROOT_DIR/artifacts/runs/main/surprise_predictor_longrun/vae_x4_best_minmax_h256_s0/best_model.pt"
+REAL_DATA_ROOT="$ROOT_DIR/data/raw/v18"
 
 # Launch analysis
-python "$ROOT_DIR/analyze_fm_subsampling_coverage.py" \
+python "$ROOT_DIR/scripts/analyze_fm_subsampling_coverage.py" \
     --out_dir "$OUT_DIR" \
     --fm_pipeline_dir "$FM_PIPELINE_DIR" \
     --vae_weights "$VAE_WEIGHTS" \

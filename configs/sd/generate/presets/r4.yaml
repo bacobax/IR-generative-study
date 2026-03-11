@@ -1,0 +1,9 @@
+# SD 1.5 generation: LoRA rank 4, specific prompt
+# Launcher: scripts/generate/sd_r4.sh
+mode: sd15
+lora_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/out_ir_lora_sd15r4_p_norm/checkpoint-42000
+max_samples: 200
+output_dir: ./artifacts/generated/main/sd15_r4
+max_tries: 25
+sd_steps: 100
+device: cuda:1

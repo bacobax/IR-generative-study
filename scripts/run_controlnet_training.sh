@@ -17,13 +17,13 @@ fi
 # =====================================================================
 
 # ---------- Data paths ----------
-TRAIN_DIR="$ROOT_DIR/v18/train/"
-VAL_DIR="$ROOT_DIR/v18/val/"
-TRAIN_ANNOTATIONS="$ROOT_DIR/v18/train/annotations.json"
-VAL_ANNOTATIONS="$ROOT_DIR/v18/val/annotations.json"
+TRAIN_DIR="$ROOT_DIR/data/raw/v18/train/"
+VAL_DIR="$ROOT_DIR/data/raw/v18/val/"
+TRAIN_ANNOTATIONS="$ROOT_DIR/data/raw/v18/train/annotations.json"
+VAL_ANNOTATIONS="$ROOT_DIR/data/raw/v18/val/annotations.json"
 
 # ---------- Stage-1 pipeline (frozen UNet + VAE) ----------
-STAGE1_PIPELINE_DIR="$ROOT_DIR/serious_runs/stable_training_t_scaled/"
+STAGE1_PIPELINE_DIR="$ROOT_DIR/artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/"
 
 # ---------- Output ----------
 MODEL_DIR="$ROOT_DIR/controlnet_runs/bbox_controlnet/"

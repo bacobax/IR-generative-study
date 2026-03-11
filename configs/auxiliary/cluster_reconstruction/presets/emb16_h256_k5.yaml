@@ -1,0 +1,6 @@
+# Cluster reconstruction: emb16, hidden256, k5
+# Launcher: scripts/train/cluster_emb16_h256_k5.sh
+# Only values that differ from train_cluster_reconstruction.py defaults are listed.
+emb_dim: 16
+device: cuda:1
+run_name: emb16_hidden256_proj_mask50_k5

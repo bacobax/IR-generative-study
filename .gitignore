@@ -46,29 +46,39 @@ tensorboard/
 *.bin
 *.onnx
 
-# Project-specific outputs
-/generated/
-/generated_old/
-/debug_samples/
-/runs/
-/serious_runs/
-/stable_diffusion_15_out/
+# Project-specific outputs (now under artifacts/)
 /fm_src/**/runs/
 /fm_src/**/UNET/
 /fm_src/**/VAE/
-analysis_results/subsampling_coverage/**/*.json
-old_generated
 
 
 logs/
-runs/
-count_adapter_runs/
-serious_runs/
-vae_runs/
-vae_runs/**
 **/tb/
-**/runs/
 events.out.tfevents.*
 *.tfevents.*
 
-artifacts
+# ── New layout: data / artifacts / archive ────────────────────────────
+# Ignore heavy contents but keep directory structure (.gitkeep files).
+/data/raw/*
+/data/derived/*
+/data/cache/*
+!/data/raw/.gitkeep
+!/data/derived/.gitkeep
+!/data/cache/.gitkeep
+
+/artifacts/checkpoints/**
+/artifacts/runs/**
+/artifacts/generated/**
+/artifacts/analysis/**
+/artifacts/debug/**
+/artifacts/logs/**
+!/artifacts/checkpoints/**/.gitkeep
+!/artifacts/runs/.gitkeep
+!/artifacts/generated/.gitkeep
+!/artifacts/analysis/.gitkeep
+!/artifacts/debug/.gitkeep
+!/artifacts/logs/.gitkeep
+
+/archive/legacy_outputs/*
+!/archive/legacy_outputs/.gitkeep
+# archive/legacy_code/ is tracked (source code)

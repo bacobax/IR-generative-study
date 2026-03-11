@@ -10,7 +10,7 @@ else
 fi
 export MODEL_NAME="runwayml/stable-diffusion-v1-5"
 export TRAIN_DIR="$ROOT_DIR/v18"   # must contain images + metadata.jsonl
-export OUTPUT_DIR="$ROOT_DIR/stable_diffusion_15_out/out_ir_lora_sd15r8_p_norm"
+export OUTPUT_DIR="$ROOT_DIR/artifacts/checkpoints/stable_diffusion/lora_runs/out_ir_lora_sd15r8_p_norm"
 export VALID_PROMPT="overhead infrared surveillance image of a room with 2 people"
 # ========================
 

@@ -46,6 +46,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline  # noqa: E402
+from src.core.constants import IMAGENET_MEAN, IMAGENET_STD  # noqa: E402
 
 # ── optional scipy ─────────────────────────────────────────────────────────────
 try:
@@ -88,11 +89,11 @@ def pearson_corr(pred: np.ndarray, target: np.ndarray) -> float:
 
 
 # =============================================================================
-# ImageNet stats (same as build_surprise_pred_dataset.py / dinov2_study.ipynb)
+# ImageNet stats (from src.core.constants)
 # =============================================================================
 
-IMNET_MEAN = [0.485, 0.456, 0.406]
-IMNET_STD  = [0.229, 0.224, 0.225]
+IMNET_MEAN = list(IMAGENET_MEAN)
+IMNET_STD  = list(IMAGENET_STD)
 
 
 # =============================================================================
@@ -594,7 +595,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--min_delta", type=float, default=1e-4)
 
     # ── checkpointing ─────────────────────────────────────────────────────────
-    p.add_argument("--out_dir", type=str, default="./runs/surprise_predictor",
+    p.add_argument("--out_dir", type=str, default="./artifacts/runs/main/surprise_predictor",
                    help="Output directory for checkpoints + TB logs.")
     p.add_argument("--run_name", type=str, default="",
                    help="Run sub-folder name.  Empty = auto-generated.")

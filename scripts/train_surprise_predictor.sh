@@ -10,10 +10,10 @@ else
 fi
 
 # -------- Dataset (must match build_surprise_pred_dataset.sh output) --------
-DS_ROOT="$ROOT_DIR/surprise_pred_dataset"
+DS_ROOT="$ROOT_DIR/data/derived/surprise_pred_dataset"
 VAE_MODEL_NAME="vae_x4_best"
-VAE_CONFIG="$ROOT_DIR/fm_src/vae_config.json"
-VAE_WEIGHTS="$ROOT_DIR/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+VAE_CONFIG="$ROOT_DIR/configs/models/fm/vae_config.json"
+VAE_WEIGHTS="$ROOT_DIR/artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
 
 # -------- Model --------
 DINO_NAME="dinov2_vits14"
@@ -45,14 +45,14 @@ PATIENCE="400"
 MIN_DELTA="1e-4"
 
 # -------- Checkpointing --------
-OUT_DIR="$ROOT_DIR/runs/surprise_predictor_longer_run"
+OUT_DIR="$ROOT_DIR/artifacts/runs/main/surprise_predictor_longer_run"
 RUN_NAME=""                 # empty = auto-generated
 SAVE_EVERY="0"              # 0 = only best + final
 RESUME=""                   # path to checkpoint to resume from
 
 # -------- Build command --------
 CMD=(
-  python "$ROOT_DIR/train_surprise_predictor.py"
+  python "$ROOT_DIR/scripts/train_surprise_predictor.py"
   --ds_root "$DS_ROOT"
   --vae_model_name "$VAE_MODEL_NAME"
   --vae_config "$VAE_CONFIG"

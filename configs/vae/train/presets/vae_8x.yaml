@@ -1,0 +1,7 @@
+# VAE training: 8x compression
+# Launcher: scripts/train/vae_8x.sh
+# Only values that differ from train_vae.py defaults are listed.
+train_dir: ./data/raw/v18/train
+val_dir: ./data/raw/v18/val
+model_dir: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x8
+vae_json: configs/models/fm/vae_config_x8.json

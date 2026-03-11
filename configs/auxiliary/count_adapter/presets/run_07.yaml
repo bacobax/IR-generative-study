@@ -1,0 +1,16 @@
+# Residual count adapter training (run_07)
+# Launcher: scripts/train/count_adapter.sh
+# Only values that differ from train_count_adapter.py defaults are listed.
+data_dir: ./data/raw/v18/train
+output_dir: ./artifacts/checkpoints/count_adapter/runs/run_07
+rank: 16
+hidden: 16
+epochs: 300
+weight_decay: 1e-3
+lambda_smooth: 0.2
+min_count_samples: 10
+save_every: 100
+base_warmup_epochs: 100
+patience: 50
+cache: true
+loco: true

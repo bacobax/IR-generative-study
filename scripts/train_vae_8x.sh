@@ -10,17 +10,17 @@ else
 fi
 
 python "$ROOT_DIR/train_vae.py" \
-  --train-dir "$ROOT_DIR/v18/train" \
-  --val-dir "$ROOT_DIR/v18/val" \
+  --train-dir "$ROOT_DIR/data/raw/v18/train" \
+  --val-dir "$ROOT_DIR/data/raw/v18/val" \
   --image-size 256 \
   --batch-size 8 \
   --num-workers 4 \
   --pin-memory \
   --epochs 200 \
   --t-scale 1000 \
-  --model-dir "$ROOT_DIR/vae_runs/vae_fm_x8" \
-  --vae-json "$ROOT_DIR/fm_src/vae_config_x8.json" \
-  --log-dir "$ROOT_DIR/runs/autoencoder_kl" \
+  --model-dir "$ROOT_DIR/artifacts/checkpoints/vae/vae_runs/vae_fm_x8" \
+  --vae-json "$ROOT_DIR/configs/models/fm/vae_config_x8.json" \
+  --log-dir "$ROOT_DIR/artifacts/runs/main/autoencoder_kl" \
   --patience 4 \
   --min-delta 0 \
   --gpu-prefer memory \
