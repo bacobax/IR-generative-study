@@ -70,3 +70,5 @@ vae_runs/**
 **/runs/
 events.out.tfevents.*
 *.tfevents.*
+
+artifacts
