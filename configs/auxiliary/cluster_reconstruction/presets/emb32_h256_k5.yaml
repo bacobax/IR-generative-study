@@ -1,0 +1,5 @@
+# Cluster reconstruction: emb32, hidden256, k5
+# Launcher: scripts/train/cluster_emb32_h256_k5.sh
+# Only values that differ from train_cluster_reconstruction.py defaults are listed.
+device: cuda:3
+run_name: emb32_hidden256_proj_mask50_k5

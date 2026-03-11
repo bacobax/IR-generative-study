@@ -1,0 +1,23 @@
+# Build surprise predictor dataset
+# Launcher: scripts/standalone/build_surprise_pred_dataset.sh
+created_dataset: ./data/derived/surprise_pred_dataset
+vae_model_name: vae_x4_best
+vae_config: ./configs/models/fm/vae_config.json
+vae_weights: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt
+masked_model_ckpt: ./artifacts/runs/main/cluster_reconstruction/emb32_hidden256_proj_mask50_k5/best_model.pt
+dino_name: dinov2_vits14
+n_clusters: 5
+data_root: ./data/raw/v18
+split: train
+max_items: 0
+batch_size: 32
+num_workers: 4
+device: cuda:0
+seed: 0
+eval_typicality: true
+typicality_chunk: 32
+typicality_max_batches: 0
+gmm_n_components: 10
+gmm_covariance_type: full
+overwrite_clusters: true
+overwrite_latents: true

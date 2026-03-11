@@ -1,0 +1,9 @@
+# FM plain Euler generation (100 steps)
+# Launcher: scripts/generate/fm_plain.sh
+mode: fm
+fm_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm
+fm_vae_weights: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm/VAE/vae_best.pt
+max_samples: 200
+output_dir: ./artifacts/generated/main/fm_100_steps
+fm_steps: 100
+device: cuda:2

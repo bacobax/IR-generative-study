@@ -1,0 +1,15 @@
+# FM rerank: rejection reranking via surprise energy
+# Launcher: scripts/generate/fm_rerank.sh
+mode: fm
+fm_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm
+fm_vae_weights: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm/VAE/vae_best.pt
+max_samples: 200
+output_dir: ./artifacts/generated/main/fm_rerank_surprise
+fm_steps: 100
+fm_batch_size: 4
+fm_guidance_method: rerank
+fm_surprise_ckpt: ./artifacts/runs/main/surprise_predictor/best_model.pt
+fm_energy_mode: surprise
+fm_sign: minimize
+fm_n_candidates: 8
+device: cuda:2

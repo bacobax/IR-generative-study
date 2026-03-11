@@ -1,0 +1,16 @@
+# Stable Flow Matching: Latent-space training (v-prediction)
+# Launcher: scripts/train/fm_stable.sh
+# Only values that differ from FMTrainConfig defaults are listed.
+
+model:
+  vae_weights: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt
+
+augment:
+  ramp_frac: 0.4         # default 0.3
+
+training:
+  epochs: 1              # default 100
+  save_every_n_epochs: 50  # default 10
+
+output:
+  model_dir: ./artifacts/runs/test/test_fm_dataset

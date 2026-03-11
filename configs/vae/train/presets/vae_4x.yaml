@@ -1,0 +1,6 @@
+# VAE training: 4x compression
+# Launcher: scripts/train/vae_4x.sh
+# Only values that differ from train_vae.py defaults are listed.
+train_dir: ./data/raw/v18/train
+val_dir: ./data/raw/v18/val
+model_dir: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x4

@@ -1,0 +1,14 @@
+# SD 1.5 LoRA training: rank=4, specific IR prompt
+# Launcher: scripts/train/sd_lora_r4.sh
+# Only values that differ from TrainingConfig defaults are listed.
+pretrained_model_name_or_path: runwayml/stable-diffusion-v1-5
+train_data_dir: ./v18
+center_crop: true
+train_batch_size: 4
+gradient_accumulation_steps: 4
+lr_warmup_steps: 0
+checkpointing_steps: 1000
+validation_prompt: "overhead infrared surveillance image of a room with 2 people"
+output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/out_ir_lora_sd15r4_p_norm
+seed: 42
+use_ir_preprocessing: true

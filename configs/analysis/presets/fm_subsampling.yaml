@@ -1,0 +1,15 @@
+# FM subsampling coverage analysis
+# Launcher: scripts/analyze/fm_subsampling.sh
+# Only values that differ from analyze_fm_subsampling_coverage.py defaults are listed.
+out_dir: ./artifacts/analysis/main/subsampling_coverage
+fm_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm
+vae_weights: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt
+surprise_ckpt: ./artifacts/runs/main/surprise_predictor_longrun/vae_x4_best_minmax_h256_s0/best_model.pt
+real_data_root: ./data/raw/v18
+split: test
+N: 1000
+K: 500
+device: cuda:2
+reuse_cache: true
+cache_tokens: true
+max_n_real: 1000

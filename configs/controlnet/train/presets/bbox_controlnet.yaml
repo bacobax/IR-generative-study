@@ -1,0 +1,4 @@
+# ControlNet Flow Matching training (Stage 2)
+# Launcher: scripts/train/controlnet.sh
+# Only values that differ from train_controlnet.py defaults are listed.
+stage1_pipeline_dir: ./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/

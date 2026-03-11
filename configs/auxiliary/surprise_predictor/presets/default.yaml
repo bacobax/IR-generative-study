@@ -1,0 +1,11 @@
+# Surprise predictor training
+# Launcher: scripts/train/surprise_predictor.sh
+# Only values that differ from train_surprise_predictor.py defaults are listed.
+ds_root: ./data/derived/surprise_pred_dataset
+vae_model_name: vae_x4_best
+vae_config: ./configs/models/fm/vae_config.json
+vae_weights: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt
+epochs: 500
+device: cuda:2
+patience: 400
+out_dir: ./artifacts/runs/main/surprise_predictor_longer_run

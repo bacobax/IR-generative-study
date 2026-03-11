@@ -1,0 +1,9 @@
+# Distribution shift analysis
+# Launcher: scripts/analyze/distribution_shift.sh
+# Only values that differ from analyze_distribution_shift.py defaults are listed.
+real_dir: ./data/raw/v18/test
+max_samples: 500
+metrics_max_samples: 500
+metrics_pca_dim: 128
+tsne_perplexity: 20
+device: cuda:0
