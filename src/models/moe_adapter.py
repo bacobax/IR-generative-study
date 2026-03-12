@@ -69,7 +69,7 @@ class ExpertAdapter(nn.Module):
 
 
 class AdapterBank(nn.Module):
-    """Collection of experts with fixed uniform routing weights.
+    """Collection of experts with optional routing weights.
 
     Parameters
     ----------
@@ -112,8 +112,13 @@ class AdapterBank(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply all experts and return the uniform average.
+    def forward(
+        self,
+        x: torch.Tensor,
+        *,
+        weights: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Apply experts and return a weighted combination.
 
         Parameters
         ----------
@@ -126,5 +131,16 @@ class AdapterBank(nn.Module):
             Output features of shape ``(B, C, H, W)``.
         """
         outputs: List[torch.Tensor] = [expert(x) for expert in self.experts]
-        stacked = torch.stack(outputs, dim=0)
-        return stacked.mean(dim=0)
+        stacked = torch.stack(outputs, dim=1)  # (B, K, C, H, W)
+
+        if weights is None:
+            return stacked.mean(dim=1)
+
+        if weights.ndim != 2 or weights.shape[1] != self.num_experts:
+            raise ValueError(
+                f"weights must have shape (B, {self.num_experts}), got {tuple(weights.shape)}"
+            )
+
+        w = weights.to(stacked.dtype)
+        w = w[:, :, None, None, None]
+        return (stacked * w).sum(dim=1)

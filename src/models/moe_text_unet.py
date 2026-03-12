@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 from diffusers import UNet2DConditionModel
 
+from src.conditioning.condition_router import ConditionRouter
 from src.models.fm_text_unet import load_text_unet_config, build_text_fm_unet
 from src.models.moe_adapter import AdapterBank
 
@@ -30,6 +31,7 @@ class TextMOEConfig:
     num_experts: int = 4
     adapter_hidden_dim: Optional[int] = None
     adapter_dropout: float = 0.0
+    router_hidden_dims: Optional[Tuple[int, ...]] = None
 
 
 def load_text_moe_unet_config(
@@ -88,6 +90,7 @@ class TextMOEUNet(nn.Module):
         num_experts: int = 4,
         adapter_hidden_dim: Optional[int] = None,
         adapter_dropout: float = 0.0,
+        router_hidden_dims: Optional[Tuple[int, ...]] = None,
     ) -> None:
         super().__init__()
 
@@ -95,6 +98,15 @@ class TextMOEUNet(nn.Module):
         self.num_experts = num_experts
         self.adapter_hidden_dim = adapter_hidden_dim
         self.adapter_dropout = adapter_dropout
+        self.router_hidden_dims = router_hidden_dims
+
+        cross_dim = self._resolve_cross_attention_dim(unet)
+        router_dims = list(router_hidden_dims) if router_hidden_dims is not None else None
+        self.router = ConditionRouter(
+            input_dim=cross_dim,
+            num_experts=num_experts,
+            hidden_dims=router_dims,
+        )
 
         mid_channels = self._resolve_mid_block_channels(unet)
         self.mid_adapter = AdapterBank(
@@ -106,6 +118,7 @@ class TextMOEUNet(nn.Module):
 
         self._hooks = []
         self._register_mid_block_hook()
+        self._active_router_weights: Optional[torch.Tensor] = None
 
     @property
     def config(self):
@@ -116,6 +129,11 @@ class TextMOEUNet(nn.Module):
         if hasattr(unet, "config") and hasattr(unet.config, "block_out_channels"):
             return int(unet.config.block_out_channels[-1])
         raise ValueError("Unable to infer mid-block channels from UNet config")
+
+    def _resolve_cross_attention_dim(self, unet: UNet2DConditionModel) -> int:
+        if hasattr(unet, "config") and hasattr(unet.config, "cross_attention_dim"):
+            return int(unet.config.cross_attention_dim)
+        raise ValueError("Unable to infer cross_attention_dim from UNet config")
 
     def _register_mid_block_hook(self) -> None:
         if not hasattr(self.unet, "mid_block"):
@@ -128,17 +146,36 @@ class TextMOEUNet(nn.Module):
         self._hooks.append(handle)
 
     def _apply_adapter(self, output):
+        weights = self._active_router_weights
         if isinstance(output, tuple):
             if not output:
                 return output
             first = output[0]
-            adapted = self.mid_adapter(first)
+            adapted = self.mid_adapter(first, weights=weights)
             return (adapted,) + output[1:]
-        return self.mid_adapter(output)
+        return self.mid_adapter(output, weights=weights)
+
+    def compute_router_weights(self, pooled_text_embeds: torch.Tensor) -> torch.Tensor:
+        """Compute router weights from pooled text embeddings."""
+        return self.router(pooled_text_embeds)
 
     def forward(self, sample: torch.Tensor, timestep, **kwargs):
-        """Forward pass with the same signature as UNet2DConditionModel."""
-        return self.unet(sample, timestep, **kwargs)
+        """Forward pass with the same signature as UNet2DConditionModel.
+
+        Accepts optional ``pooled_text_embeds`` or ``router_weights`` for
+        routing. If neither is provided, uniform weights are used.
+        """
+        pooled = kwargs.pop("pooled_text_embeds", None)
+        router_weights = kwargs.pop("router_weights", None)
+
+        if router_weights is None and pooled is not None:
+            router_weights = self.compute_router_weights(pooled)
+
+        self._active_router_weights = router_weights
+        try:
+            return self.unet(sample, timestep, **kwargs)
+        finally:
+            self._active_router_weights = None
 
 
 def build_text_moe_unet(
@@ -162,6 +199,7 @@ def build_text_moe_unet(
         "num_experts": moe_cfg.get("num_experts", moe_defaults.num_experts),
         "adapter_hidden_dim": moe_cfg.get("adapter_hidden_dim", moe_defaults.adapter_hidden_dim),
         "adapter_dropout": moe_cfg.get("adapter_dropout", moe_defaults.adapter_dropout),
+        "router_hidden_dims": moe_cfg.get("router_hidden_dims", moe_defaults.router_hidden_dims),
     }
 
     model = TextMOEUNet(unet, **merged)
