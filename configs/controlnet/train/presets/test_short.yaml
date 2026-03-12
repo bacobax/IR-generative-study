@@ -1,0 +1,43 @@
+# ControlNet Flow Matching — short test training configuration.
+#
+# Runs a quick sanity-check training with minimal epochs and reduced batch.
+# Useful for verifying the pipeline works end-to-end before launching a
+# full training run.
+#
+# Usage:
+#   python train_controlnet.py --config configs/controlnet/train/presets/test_short.yaml
+
+data:
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  train_annotations: "./data/raw/v18/train/annotations.json"
+  val_annotations: "./data/raw/v18/val/annotations.json"
+  batch_size: 4
+  num_workers: 2
+
+stage1:
+  stage1_pipeline_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm_longrun"
+  vae_weights_override: null
+
+controlnet:
+  conditioning_channels: 1
+  conditioning_downscale_factor: 4
+
+training:
+  epochs: 3
+  lr: 1.0e-4
+  t_scale: 1000.0
+  conditioning_scale: 1.0
+  conditioning_dropout: 0.1
+  save_every_n_epochs: 1
+  patience: null
+  min_delta: 0.0
+
+sampling:
+  sample_every_epoch: true
+  sample_steps: 100
+
+output:
+  model_dir: "./artifacts/runs/test"
+  log_dir: null
+  resume: null

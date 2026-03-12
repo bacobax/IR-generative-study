@@ -1,0 +1,41 @@
+# ControlNet Flow Matching training (Stage 2) — full default configuration.
+#
+# Usage:
+#   python train_controlnet.py --config configs/controlnet/train/default.yaml
+#   python train_controlnet.py --config configs/controlnet/train/default.yaml --epochs 50
+
+data:
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  train_annotations: "./data/raw/v18/train/annotations.json"
+  val_annotations: "./data/raw/v18/val/annotations.json"
+  batch_size: 8
+  num_workers: 4
+
+stage1:
+  # Path to the frozen stage-1 pipeline folder (must contain UNET/ and VAE/).
+  stage1_pipeline_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/"
+  vae_weights_override: null
+
+controlnet:
+  conditioning_channels: 1
+  conditioning_downscale_factor: 4
+
+training:
+  epochs: 100
+  lr: 1.0e-4
+  t_scale: 1000.0
+  conditioning_scale: 1.0
+  conditioning_dropout: 0.1
+  save_every_n_epochs: 10
+  patience: null
+  min_delta: 0.0
+
+sampling:
+  sample_every_epoch: true
+  sample_steps: 50
+
+output:
+  model_dir: "./controlnet_runs/bbox_controlnet/"
+  log_dir: null
+  resume: null
