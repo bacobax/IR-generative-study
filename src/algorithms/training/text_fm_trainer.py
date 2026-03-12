@@ -92,7 +92,9 @@ class TextFMTrainer(FlowMatchingTrainer):
         """Build a TextFMTrainer from a :class:`TextFMTrainConfig`."""
         from src.models.vae import load_vae_config, build_vae_from_config
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = config.resolved_device() if hasattr(config, "resolved_device") else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
         unet_cfg = load_text_unet_config(config.model.unet_config)
         unet = build_text_fm_unet(unet_cfg, device=device)
@@ -132,6 +134,8 @@ class TextFMTrainer(FlowMatchingTrainer):
         # Store attention visualization config if present
         if hasattr(config, "attention_vis"):
             self._attn_vis_config = config.attention_vis
+        # Store count filter info for metadata persistence
+        self._count_filter_config = getattr(config, "count_filter", None)
         self.train(
             dataloader=dataloader,
             epochs=config.training.epochs,
@@ -140,7 +144,7 @@ class TextFMTrainer(FlowMatchingTrainer):
             pretrained_unet_path=config.model.pretrained_unet_path,
             strict_load=config.training.strict_load,
             log_dir=config.output.resolved_log_dir(),
-            sample_every_epoch=config.sampling.sample_every_epoch,
+            sample_every=config.sampling.sample_every,
             sample_steps=config.sampling.sample_steps,
             sample_batch_size=config.sampling.sample_batch_size,
             patience=config.training.patience,
@@ -180,6 +184,23 @@ class TextFMTrainer(FlowMatchingTrainer):
                 f,
                 indent=2,
             )
+        # Persist count filter metadata
+        cf = getattr(self, "_count_filter_config", None)
+        if cf is not None:
+            seen = getattr(cf, "seen_counts", None)
+            unseen = getattr(cf, "unseen_counts", None)
+            if seen is not None or unseen is not None:
+                cf_path = os.path.join(self.model_dir, "count_filter.json")
+                with open(cf_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "seen_counts": list(seen) if seen is not None else None,
+                            "unseen_counts": list(unseen) if unseen is not None else None,
+                            "max_crop_retries": getattr(cf, "max_crop_retries", 5),
+                        },
+                        f,
+                        indent=2,
+                    )
 
     # ------------------------------------------------------------------
     # Override: build a sampler that passes null text for TensorBoard vis
@@ -221,7 +242,7 @@ class TextFMTrainer(FlowMatchingTrainer):
         pretrained_unet_path: Optional[str] = None,
         strict_load: bool = True,
         log_dir: str = "./artifacts/runs/main/text_fm",
-        sample_every_epoch: bool = True,
+        sample_every: int = 1,
         sample_steps: int = 50,
         sample_batch_size: int = 4,
         patience: Optional[int] = None,
@@ -304,6 +325,16 @@ class TextFMTrainer(FlowMatchingTrainer):
                 "train_target": self.train_target,
                 "rng_state": torch.random.get_rng_state(),
             }
+            # Embed count filter metadata in checkpoint
+            cf = getattr(self, "_count_filter_config", None)
+            if cf is not None:
+                seen = getattr(cf, "seen_counts", None)
+                unseen = getattr(cf, "unseen_counts", None)
+                if seen is not None or unseen is not None:
+                    ckpt["count_filter"] = {
+                        "seen_counts": list(seen) if seen is not None else None,
+                        "unseen_counts": list(unseen) if unseen is not None else None,
+                    }
             if torch.cuda.is_available():
                 ckpt["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
             torch.save(ckpt, path)
@@ -317,7 +348,7 @@ class TextFMTrainer(FlowMatchingTrainer):
             if ds is not None and hasattr(ds, "transform") and hasattr(ds.transform, "set_epoch"):
                 ds.transform.set_epoch(epoch_idx)
 
-        sampler_obj = self._make_sampler() if sample_every_epoch else None
+        sampler_obj = self._make_sampler() if sample_every > 0 else None
 
         # ── Main loop ─────────────────────────────────────────────────────
         last_prompts: list = []  # collect prompts from training for vis
@@ -402,7 +433,7 @@ class TextFMTrainer(FlowMatchingTrainer):
                         break
 
             # Sample visualisation with CFG using real training prompts
-            if sample_every_epoch and sampler_obj is not None:
+            if sampler_obj is not None and (epoch + 1) % sample_every == 0:
                 vis_prompts = last_prompts[:sample_batch_size]
                 if not vis_prompts:
                     vis_prompts = [""] * sample_batch_size

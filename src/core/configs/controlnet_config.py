@@ -60,7 +60,7 @@ class CNTrainHyperConfig:
 class CNSampleConfig:
     """Parameters controlling per-epoch sampling."""
 
-    sample_every_epoch: bool = True
+    sample_every: int = 1
     sample_steps: int = 50
 
 

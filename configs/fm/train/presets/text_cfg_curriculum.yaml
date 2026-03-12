@@ -1,0 +1,89 @@
+# Text-conditioned FM with curriculum learning enabled
+#
+# Captions are derived dynamically from annotations.json.
+# Curriculum crops are person-centered with expanding boundaries.
+# Crop captions reflect the number of people in the FINAL crop.
+
+data:
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  annotations_path: "data/raw/v18/train/annotations.json"
+  text_caption_source: "annotations"
+  fallback_text: ""
+  batch_size: 8
+  num_workers: 4
+
+model:
+  unet_config: "configs/models/fm/text_unet_config.json"
+  vae_config: "configs/models/fm/vae_config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+  pretrained_unet_path: null
+
+conditioning:
+  text_encoder: "openai/clip-vit-large-patch14"
+  max_text_length: 77
+  cond_drop_prob: 0.1
+
+augment:
+  warmup_frac: 0.1
+  ramp_frac: 0.3
+  p_crop_warmup: 0.0
+  p_crop_max: 0.0
+  p_crop_final: 0.0
+  p_rot_warmup: 0.05
+  p_rot_max: 0.30
+  p_rot_final: 0.05
+
+training:
+  epochs: 1000
+  lr: 1.0e-4
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 100
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+
+sampling:
+  sample_every: 100
+  sample_steps: 100
+  sample_batch_size: 4
+
+attention_vis:
+  enabled: true
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/text_fm_curriculum/"
+  log_dir: "./artifacts/runs/main/flow_matching/text_fm_curriculum/"
+  resume: null
+
+# ── Curriculum learning ──────────────────────────────────────────────────
+# crop_prob ramps linearly from 0.0 to 0.4 over the entire training run.
+# When a crop is applied:
+#   1. A random person is chosen as the crop centre.
+#   2. The crop is expanded until no person is partially cropped.
+#   3. The caption reflects the final crop's person count.
+curriculum:
+  enabled: true
+  crop_prob_start: 0.7
+  crop_prob_end: 0.15
+  schedule: "linear"
+  margin_min: 1.6
+  margin_max: 2.8
+  center_jitter: 0.20
+  force_square: false
+
+# ── Count filtering ──────────────────────────────────────────────────────
+# Exclude specific person counts from training for generalization testing.
+# Set EITHER seen_counts OR unseen_counts (not both). null = no filtering.
+# After cropping, if the crop count is excluded, up to max_crop_retries
+# new crops are attempted before falling back to the full image.
+count_filter:
+  seen_counts: null       # e.g. [0, 1, 2, 3, 5, 6, 7]  — only these counts appear
+  unseen_counts: [5, 6]
+  max_crop_retries: 5 
+
+device: "cuda:0"                   # auto-detect, or "cuda:0", "cuda:1", etc.
+
+trainer_name: "text_fm_cfg"
+sampler_name: "cfg_fm"

@@ -24,6 +24,7 @@ from src.core.configs.fm_config import FMTrainConfig
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.normalization import norm_to_display as from_norm_to_display
 from src.core.data.datasets import NPYImageDataset
+from src.core.data.annotation_dataset import AnnotationFMDataset
 from src.core.data.transforms import ScheduledAugment256, save_transform_examples
 from src.core.registry import REGISTRIES
 
@@ -98,6 +99,14 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["v", "x0"],
                         help="Prediction target: 'v' (velocity) or 'x0' (clean sample)")
 
+    # Device
+    parser.add_argument("--device", type=str, default=None,
+                        help="Device: cpu, cuda, cuda:0, cuda:1, etc.")
+
+    # Annotations (for curriculum learning)
+    parser.add_argument("--annotations_path", type=str, default=None,
+                        help="Path to COCO-format annotations.json (enables curriculum)")
+
     return parser
 
 
@@ -108,6 +117,7 @@ _FLAT_TO_NESTED = {
     # Data
     "train_dir":           "data.train_dir",
     "val_dir":             "data.val_dir",
+    "annotations_path":    "data.annotations_path",
     "batch_size":          "data.batch_size",
     "num_workers":         "data.num_workers",
     # Model
@@ -133,6 +143,8 @@ _FLAT_TO_NESTED = {
     "p_rot_final":         "augment.p_rot_final",
     # Sampling
     "sample_batch_size":   "sampling.sample_batch_size",
+    # Device
+    "device":              "device",
 }
 
 
@@ -148,6 +160,10 @@ def run_training(cfg: FMTrainConfig) -> None:
     (via registry) → training loop.
     """
     total_epochs = cfg.training.epochs
+
+    # Propagate total_epochs into curriculum config
+    if cfg.curriculum.enabled:
+        cfg.curriculum.total_epochs = total_epochs
 
     # ── Augmentation transforms ──
     aug_kwargs = dict(
@@ -165,8 +181,29 @@ def run_training(cfg: FMTrainConfig) -> None:
     eval_transform = ScheduledAugment256(**aug_kwargs)
 
     # ── Datasets / loaders ──
-    train_dataset = NPYImageDataset(root_dir=cfg.data.train_dir, transform=train_transform)
-    eval_dataset = NPYImageDataset(root_dir=cfg.data.val_dir, transform=eval_transform)
+    use_annotation_ds = (
+        cfg.data.annotations_path is not None
+        and cfg.curriculum.enabled
+    )
+
+    if use_annotation_ds:
+        train_dataset = AnnotationFMDataset(
+            root_dir=cfg.data.train_dir,
+            annotations_path=cfg.data.annotations_path,
+            text_mode=False,
+            curriculum=cfg.curriculum,
+            transform=train_transform,
+        )
+        eval_dataset = AnnotationFMDataset(
+            root_dir=cfg.data.val_dir,
+            annotations_path=cfg.data.annotations_path,
+            text_mode=False,
+            curriculum=None,  # no curriculum augment for eval
+            transform=eval_transform,
+        )
+    else:
+        train_dataset = NPYImageDataset(root_dir=cfg.data.train_dir, transform=train_transform)
+        eval_dataset = NPYImageDataset(root_dir=cfg.data.val_dir, transform=eval_transform)
 
     train_loader = DataLoader(
         train_dataset,
@@ -188,7 +225,7 @@ def run_training(cfg: FMTrainConfig) -> None:
     trainer = TrainerCls.from_config(cfg, from_norm_to_display=from_norm_to_display)
 
     # ── Save transform examples for fresh runs ──
-    if cfg.output.resume is None:
+    if cfg.output.resume is None and not use_annotation_ds:
         save_transform_examples(
             train_dataset,
             os.path.join(cfg.output.model_dir, "transform_examples"),

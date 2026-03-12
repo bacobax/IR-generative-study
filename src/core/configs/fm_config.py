@@ -10,7 +10,7 @@ existing CLI defaults.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import torch
 
@@ -20,11 +20,50 @@ import torch
 # ═══════════════════════════════════════════════════════════════════════════
 
 @dataclass
+class CountFilterConfig:
+    """Filter training images by person count for generalization testing.
+
+    Specify either ``seen_counts`` (whitelist) or ``unseen_counts``
+    (blacklist).  If both are None, no filtering is applied.  Setting
+    both is an error.
+
+    After cropping, the resulting count is also checked.  If the crop
+    produces an excluded count, the pipeline retries up to
+    ``max_crop_retries`` times before falling back to the full image.
+    """
+
+    seen_counts: Optional[List[int]] = None
+    unseen_counts: Optional[List[int]] = None
+    max_crop_retries: int = 5
+
+
+@dataclass
+class CurriculumConfig:
+    """Curriculum learning settings for person-centered cropping.
+
+    When ``enabled`` is False (default), no curriculum crop is applied.
+    When enabled, crops are sampled around annotated people with
+    probability driven by a schedule over training epochs.
+    """
+
+    enabled: bool = False
+    crop_prob_start: float = 0.0
+    crop_prob_end: float = 0.5
+    schedule: str = "linear"          # "linear" | "fixed"
+    margin_min: float = 1.2
+    margin_max: float = 2.0
+    center_jitter: float = 0.15
+    force_square: bool = False
+    total_epochs: int = 100           # set automatically from training.epochs
+
+
+@dataclass
 class DataConfig:
     """Paths and loader settings for training / validation data."""
 
     train_dir: str = "./data/raw/v18/train/"
     val_dir: str = "./data/raw/v18/val/"
+    annotations_path: Optional[str] = None
     batch_size: int = 8
     num_workers: int = 4
 
@@ -72,7 +111,7 @@ class TrainHyperConfig:
 class SampleConfig:
     """Parameters controlling per-epoch and stand-alone sampling."""
 
-    sample_every_epoch: bool = True
+    sample_every: int = 1
     sample_steps: int = 50
     sample_batch_size: int = 4
     sample_shape: Optional[Tuple[int, int, int]] = None
@@ -110,9 +149,17 @@ class FMTrainConfig:
     training: TrainHyperConfig = field(default_factory=TrainHyperConfig)
     sampling: SampleConfig = field(default_factory=SampleConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
+    count_filter: CountFilterConfig = field(default_factory=CountFilterConfig)
     # Registry component names (None → use default)
     trainer_name: Optional[str] = None
     sampler_name: Optional[str] = None
+    device: Optional[str] = None
+
+    def resolved_device(self) -> str:
+        if self.device is not None:
+            return self.device
+        return "cuda" if torch.cuda.is_available() else "cpu"
 
     @classmethod
     def from_args(cls, args) -> "FMTrainConfig":

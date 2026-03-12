@@ -13,9 +13,12 @@ from typing import List, Optional, Tuple, Union
 import torch
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+from src.core.configs.fm_config import CurriculumConfig, CountFilterConfig
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Sub-configs
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 
 @dataclass
 class TextDataConfig:
@@ -23,8 +26,8 @@ class TextDataConfig:
 
     train_dir: str = "./data/raw/v18/train/"
     val_dir: str = "./data/raw/v18/val/"
-    text_annotations: Optional[str] = None
-    text_column: str = "text"
+    annotations_path: Optional[str] = None
+    text_caption_source: str = "annotations"  # only "annotations" supported
     fallback_text: Optional[str] = None
     batch_size: int = 8
     num_workers: int = 4
@@ -82,7 +85,7 @@ class TextTrainHyperConfig:
 class TextSampleConfig:
     """Per-epoch sampling during training."""
 
-    sample_every_epoch: bool = True
+    sample_every: int = 1
     sample_steps: int = 50
     sample_batch_size: int = 4
     sample_shape: Optional[Tuple[int, int, int]] = None
@@ -139,8 +142,16 @@ class TextFMTrainConfig:
     sampling: TextSampleConfig = field(default_factory=TextSampleConfig)
     attention_vis: AttentionVisConfig = field(default_factory=AttentionVisConfig)
     output: TextOutputConfig = field(default_factory=TextOutputConfig)
+    curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
+    count_filter: CountFilterConfig = field(default_factory=CountFilterConfig)
     trainer_name: Optional[str] = "text_fm_cfg"
     sampler_name: Optional[str] = "cfg_fm"
+    device: Optional[str] = None
+
+    def resolved_device(self) -> str:
+        if self.device is not None:
+            return self.device
+        return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 @dataclass

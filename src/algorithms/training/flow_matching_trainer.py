@@ -120,7 +120,9 @@ class FlowMatchingTrainer:
         """
         from src.models.vae import load_vae_config, build_vae_from_config
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = config.resolved_device() if hasattr(config, "resolved_device") else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
         unet_cfg = load_unet_config(config.model.unet_config)
         unet = build_fm_unet_from_config(unet_cfg, device=device)
@@ -159,7 +161,7 @@ class FlowMatchingTrainer:
             pretrained_unet_path=config.model.pretrained_unet_path,
             strict_load=config.training.strict_load,
             log_dir=config.output.resolved_log_dir(),
-            sample_every_epoch=config.sampling.sample_every_epoch,
+            sample_every=config.sampling.sample_every,
             sample_steps=config.sampling.sample_steps,
             sample_batch_size=config.sampling.sample_batch_size,
             patience=config.training.patience,
@@ -290,7 +292,7 @@ class FlowMatchingTrainer:
         pretrained_unet_path: Optional[str] = None,
         strict_load: bool = True,
         log_dir: str = "./artifacts/runs/main/flow_matching",
-        sample_every_epoch: bool = True,
+        sample_every: int = 1,
         sample_steps: int = 50,
         sample_batch_size: int = 4,
         patience: Optional[int] = None,
@@ -386,7 +388,7 @@ class FlowMatchingTrainer:
             if ds is not None and hasattr(ds, "transform") and hasattr(ds.transform, "set_epoch"):
                 ds.transform.set_epoch(epoch_idx)
 
-        sampler_obj = self._make_sampler() if sample_every_epoch else None
+        sampler_obj = self._make_sampler() if sample_every > 0 else None
 
         for epoch in range(start_epoch, epochs):
             _set_epoch_for_dataloader(dataloader, epoch)
@@ -455,7 +457,7 @@ class FlowMatchingTrainer:
                         break
 
             # Sampling
-            if sample_every_epoch and sampler_obj is not None:
+            if sampler_obj is not None and (epoch + 1) % sample_every == 0:
                 sampler_obj.log_samples_to_tensorboard(
                     writer=writer,
                     epoch=epoch,

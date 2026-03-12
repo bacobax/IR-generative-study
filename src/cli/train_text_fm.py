@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from src.core.configs.text_fm_config import TextFMTrainConfig
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.normalization import norm_to_display as from_norm_to_display
-from src.core.data.datasets import TextImageDataset
+from src.core.data.annotation_dataset import AnnotationFMDataset
 from src.core.data.transforms import ScheduledAugment256
 from src.core.registry import REGISTRIES
 
@@ -41,10 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     # Data
     parser.add_argument("--train_dir", type=str, default="./data/raw/v18/train/")
     parser.add_argument("--val_dir", type=str, default="./data/raw/v18/val/")
-    parser.add_argument("--text_annotations", type=str, default=None,
-                        help="JSON mapping {stem: caption}")
+    parser.add_argument("--annotations_path", type=str, default=None,
+                        help="Path to COCO-format annotations.json (required for caption generation)")
     parser.add_argument("--fallback_text", type=str, default=None,
-                        help="Fallback caption when no text found for an image")
+                        help="Fallback caption when no annotation is available")
 
     # Model
     parser.add_argument("--unet_config", type=str,
@@ -111,13 +111,17 @@ def build_parser() -> argparse.ArgumentParser:
                         default="./artifacts/checkpoints/flow_matching/text_fm/")
     parser.add_argument("--resume", type=str, default=None)
 
+    # Device
+    parser.add_argument("--device", type=str, default=None,
+                        help="Device: cpu, cuda, cuda:0, cuda:1, etc.")
+
     return parser
 
 
 _FLAT_TO_NESTED = {
     "train_dir":           "data.train_dir",
     "val_dir":             "data.val_dir",
-    "text_annotations":    "data.text_annotations",
+    "annotations_path":    "data.annotations_path",
     "fallback_text":       "data.fallback_text",
     "batch_size":          "data.batch_size",
     "num_workers":         "data.num_workers",
@@ -154,6 +158,7 @@ _FLAT_TO_NESTED = {
     "attn_vis_guidance_scale": "attention_vis.vis_guidance_scale",
     "model_dir":           "output.model_dir",
     "resume":              "output.resume",
+    "device":              "device",
 }
 
 
@@ -172,6 +177,10 @@ def run_training(cfg: TextFMTrainConfig) -> None:
     """Execute text-conditioned FM training from a structured config."""
     total_epochs = cfg.training.epochs
 
+    # Propagate total_epochs into curriculum config
+    if cfg.curriculum.enabled:
+        cfg.curriculum.total_epochs = total_epochs
+
     # Augmentation
     aug_kwargs = dict(
         total_epochs=total_epochs,
@@ -187,17 +196,33 @@ def run_training(cfg: TextFMTrainConfig) -> None:
     train_tf = ScheduledAugment256(**aug_kwargs)
     eval_tf = ScheduledAugment256(**aug_kwargs)
 
-    # Datasets
-    train_ds = TextImageDataset(
+    # Require annotations_path for text-conditioned FM
+    if cfg.data.annotations_path is None:
+        raise ValueError(
+            "Text-conditioned FM requires data.annotations_path "
+            "pointing to a COCO-format annotations.json. "
+            "captions.json is no longer supported."
+        )
+
+    # Datasets — annotation-driven captions (text_mode=True)
+    count_filter = cfg.count_filter if (
+        cfg.count_filter.seen_counts is not None or cfg.count_filter.unseen_counts is not None
+    ) else None
+
+    train_ds = AnnotationFMDataset(
         root_dir=cfg.data.train_dir,
-        text_annotations=cfg.data.text_annotations,
-        fallback_text=cfg.data.fallback_text,
+        annotations_path=cfg.data.annotations_path,
+        text_mode=True,
+        curriculum=cfg.curriculum if cfg.curriculum.enabled else None,
+        count_filter=count_filter,
         transform=train_tf,
     )
-    eval_ds = TextImageDataset(
+    eval_ds = AnnotationFMDataset(
         root_dir=cfg.data.val_dir,
-        text_annotations=cfg.data.text_annotations,
-        fallback_text=cfg.data.fallback_text,
+        annotations_path=cfg.data.annotations_path,
+        text_mode=True,
+        curriculum=None,  # no curriculum augment for eval
+        count_filter=count_filter,
         transform=eval_tf,
     )
 

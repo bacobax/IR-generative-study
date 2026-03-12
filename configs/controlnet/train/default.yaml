@@ -32,7 +32,7 @@ training:
   min_delta: 0.0
 
 sampling:
-  sample_every_epoch: true
+  sample_every: 1
   sample_steps: 100
 
 output:

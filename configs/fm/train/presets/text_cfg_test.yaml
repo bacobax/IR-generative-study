@@ -1,15 +1,13 @@
-# Text-conditioned flow matching with CFG — full training preset
+# Text-conditioned flow matching with CFG — test preset
 #
-# Train a text-conditioned FM model with conditioning dropout for
-# classifier-free guidance.  Uses UNet2DConditionModel with
-# cross-attention and a frozen CLIP text encoder.
+# Captions derived from annotations.json (COCO format).
 
 data:
   train_dir: "./data/raw/v18/train/"
   val_dir: "./data/raw/v18/val/"
-  text_annotations: "data/raw/v18/train/captions.json"      # JSON mapping {stem: caption}, or null for .txt files
-  text_column: "text"
-  fallback_text: ""            # empty string → unconditional when no caption found
+  annotations_path: "data/raw/v18/train/annotations.json"
+  text_caption_source: "annotations"
+  fallback_text: ""
   batch_size: 8
   num_workers: 4
 
@@ -45,7 +43,7 @@ training:
   strict_load: true
 
 sampling:
-  sample_every_epoch: true
+  sample_every: 1
   sample_steps: 100
   sample_batch_size: 4
 
@@ -66,6 +64,18 @@ output:
   model_dir: "./artifacts/checkpoints/flow_matching/test/text_fm/"
   log_dir: "./artifacts/runs/test/text_fm"
   resume: null
+
+curriculum:
+  enabled: false
+  crop_prob_start: 0.0
+  crop_prob_end: 0.3
+  schedule: "linear"
+  margin_min: 1.2
+  margin_max: 2.0
+  center_jitter: 0.15
+  force_square: false
+
+device: null
 
 trainer_name: "text_fm_cfg"
 sampler_name: "cfg_fm"

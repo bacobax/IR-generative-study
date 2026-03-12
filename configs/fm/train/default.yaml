@@ -40,7 +40,7 @@ training:
   strict_load: true
 
 sampling:
-  sample_every_epoch: true
+  sample_every: 1
   sample_steps: 100
   sample_batch_size: 4
   sample_shape: null
@@ -49,3 +49,10 @@ output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled_test"
   log_dir: null
   resume: null
+
+# Curriculum learning (disabled by default for unconditional FM)
+curriculum:
+  enabled: false
+
+# Device selection: null → auto-detect
+device: null

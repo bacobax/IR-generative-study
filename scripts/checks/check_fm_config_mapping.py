@@ -91,7 +91,7 @@ check("TrainHyperConfig.min_delta", t.min_delta == 0.0)
 check("TrainHyperConfig.strict_load", t.strict_load is True)
 
 s = SampleConfig()
-check("SampleConfig.sample_every_epoch", s.sample_every_epoch is True)
+check("SampleConfig.sample_every", s.sample_every == 1)
 check("SampleConfig.sample_steps", s.sample_steps == 50)
 check("SampleConfig.sample_batch_size", s.sample_batch_size == 4)
 check("SampleConfig.sample_shape", s.sample_shape is None)

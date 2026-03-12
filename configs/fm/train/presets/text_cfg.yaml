@@ -1,15 +1,14 @@
 # Text-conditioned flow matching with CFG — full training preset
 #
-# Train a text-conditioned FM model with conditioning dropout for
-# classifier-free guidance.  Uses UNet2DConditionModel with
-# cross-attention and a frozen CLIP text encoder.
+# Captions are derived dynamically from annotations.json (COCO format).
+# captions.json is no longer used.
 
 data:
   train_dir: "./data/raw/v18/train/"
   val_dir: "./data/raw/v18/val/"
-  text_annotations: "data/raw/v18/train/captions.json"      # JSON mapping {stem: caption}, or null for .txt files
-  text_column: "text"
-  fallback_text: ""            # empty string → unconditional when no caption found
+  annotations_path: "data/raw/v18/train/annotations.json"   # COCO-format annotations
+  text_caption_source: "annotations"
+  fallback_text: ""
   batch_size: 8
   num_workers: 4
 
@@ -45,7 +44,7 @@ training:
   strict_load: true
 
 sampling:
-  sample_every_epoch: true
+  sample_every: 1
   sample_steps: 50
   sample_batch_size: 4
 
@@ -66,6 +65,28 @@ output:
   model_dir: "./artifacts/checkpoints/flow_matching/text_fm/"
   log_dir: null
   resume: null
+
+# Curriculum learning (person-centered crops)
+# When enabled, crops are sampled around annotated people.
+# Captions reflect the number of people in the final crop.
+curriculum:
+  enabled: false
+  crop_prob_start: 0.0
+  crop_prob_end: 0.3
+  schedule: "linear"           # "linear" or "fixed"
+  margin_min: 1.2
+  margin_max: 2.0
+  center_jitter: 0.15
+  force_square: false
+
+# Count filtering (generalization testing)
+count_filter:
+  seen_counts: null
+  unseen_counts: null
+  max_crop_retries: 5
+
+# Device selection: null → auto-detect, or "cuda:0", "cuda:1", etc.
+device: null
 
 trainer_name: "text_fm_cfg"
 sampler_name: "cfg_fm"

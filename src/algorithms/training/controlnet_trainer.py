@@ -266,7 +266,7 @@ class ControlNetTrainer:
         lr: float = 1e-4,
         conditioning_scale: float = 1.0,
         log_dir: str = "./artifacts/runs/main/controlnet",
-        sample_every_epoch: bool = True,
+        sample_every: int = 1,
         sample_steps: int = 50,
         patience: Optional[int] = None,
         min_delta: float = 0.0,
@@ -339,7 +339,7 @@ class ControlNetTrainer:
 
         # Grab a small fixed batch of conditioning images for sampling.
         sample_cond = None
-        if sample_every_epoch:
+        if sample_every > 0:
             sample_dl = eval_dataloader or dataloader
             sample_batch = next(iter(sample_dl))
             sample_cond = sample_batch["conditioning_pixel_values"][:4].to(
@@ -446,7 +446,7 @@ class ControlNetTrainer:
                         break
 
             # --- sampling ---
-            if sample_every_epoch and sample_cond is not None:
+            if sample_cond is not None and (epoch + 1) % sample_every == 0:
                 self._log_controlnet_samples(
                     writer=writer,
                     epoch=epoch,
