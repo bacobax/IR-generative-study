@@ -47,8 +47,8 @@ class ExpertAdapter(nn.Module):
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         self.proj_out = nn.Conv2d(hidden_dim, channels, kernel_size=1)
 
-        # Initialize as near-identity by zeroing the final projection.
-        nn.init.zeros_(self.proj_out.weight)
+        # Initialize close to identity but not exactly zero, so routing matters.
+        nn.init.normal_(self.proj_out.weight, mean=0.0, std=1e-3)
         nn.init.zeros_(self.proj_out.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
