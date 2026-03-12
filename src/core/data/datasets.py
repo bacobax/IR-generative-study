@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -207,3 +207,87 @@ class BBoxConditioningDataset(Dataset):
             "pixel_values": x,
             "conditioning_pixel_values": mask,
         }
+
+
+class TextImageDataset(Dataset):
+    """Load ``.npy`` images paired with text captions.
+
+    Returns a dict with ``"pixel_values"`` (normalised image tensor) and
+    ``"text"`` (string caption).
+
+    Text captions can come from:
+
+    * A JSON file mapping image stems to captions
+      (``{"image_0001": "a thermal image of a cat", ...}``).
+    * ``.txt`` companion files alongside each ``.npy`` file.
+
+    If neither is available and *fallback_text* is set, that string is
+    used for every sample.
+
+    Parameters
+    ----------
+    root_dir : str
+        Directory containing ``.npy`` image files.
+    text_annotations : str, optional
+        Path to a JSON file mapping ``{stem: text}``.
+    fallback_text : str, optional
+        Default text when no caption is found.  If ``None`` and a file
+        has no caption, ``RuntimeError`` is raised.
+    transform : callable, optional
+        Applied to the raw float tensor after loading.
+    """
+
+    def __init__(
+        self,
+        root_dir: str,
+        text_annotations: Optional[str] = None,
+        *,
+        fallback_text: Optional[str] = None,
+        transform: Optional[Callable] = None,
+    ):
+        self.root_dir = root_dir
+        self.fallback_text = fallback_text
+        self.transform = transform
+        self.files = sorted(
+            f for f in os.listdir(root_dir) if f.endswith(".npy")
+        )
+        if not self.files:
+            raise RuntimeError(f"No .npy files found in {root_dir}")
+
+        # Build stem → text mapping
+        self._text_map: Dict[str, str] = {}
+        if text_annotations is not None:
+            with open(text_annotations, "r") as fh:
+                self._text_map = json.load(fh)
+
+    def __len__(self) -> int:
+        return len(self.files)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        fname = self.files[idx]
+        stem = Path(fname).stem
+
+        # Image
+        x = np.load(os.path.join(self.root_dir, fname))
+        if x.ndim == 2:
+            x = x[None, ...]
+        x = torch.from_numpy(x).float()
+        if self.transform is not None:
+            x = self.transform(x)
+
+        # Text — JSON map → companion .txt → fallback
+        text = self._text_map.get(stem)
+        if text is None:
+            txt_path = os.path.join(self.root_dir, f"{stem}.txt")
+            if os.path.isfile(txt_path):
+                with open(txt_path, "r") as f:
+                    text = f.read().strip()
+        if text is None:
+            if self.fallback_text is not None:
+                text = self.fallback_text
+            else:
+                raise RuntimeError(
+                    f"No text caption for '{stem}' and no fallback_text set."
+                )
+
+        return {"pixel_values": x, "text": text}

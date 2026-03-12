@@ -9,7 +9,7 @@ augment:
   ramp_frac: 0.4         # default 0.3
 
 training:
-  epochs: 1              # default 100
+  epochs: 300              # default 100
   save_every_n_epochs: 50  # default 10
 
 output:

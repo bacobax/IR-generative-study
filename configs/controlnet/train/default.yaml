@@ -14,7 +14,7 @@ data:
 
 stage1:
   # Path to the frozen stage-1 pipeline folder (must contain UNET/ and VAE/).
-  stage1_pipeline_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/"
+  stage1_pipeline_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_no_norm_longrun"
   vae_weights_override: null
 
 controlnet:
@@ -22,7 +22,7 @@ controlnet:
   conditioning_downscale_factor: 4
 
 training:
-  epochs: 100
+  epochs: 300
   lr: 1.0e-4
   t_scale: 1000.0
   conditioning_scale: 1.0
@@ -33,9 +33,9 @@ training:
 
 sampling:
   sample_every_epoch: true
-  sample_steps: 50
+  sample_steps: 100
 
 output:
-  model_dir: "./controlnet_runs/bbox_controlnet/"
-  log_dir: null
+  log_dir: "./artifacts/runs/main/controlnet"
+  model_dir: "./artifacts/checkpoints/controlnet/first_run"
   resume: null

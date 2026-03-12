@@ -1,0 +1,71 @@
+# Text-conditioned flow matching with CFG — full training preset
+#
+# Train a text-conditioned FM model with conditioning dropout for
+# classifier-free guidance.  Uses UNet2DConditionModel with
+# cross-attention and a frozen CLIP text encoder.
+
+data:
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  text_annotations: "data/raw/v18/train/captions.json"      # JSON mapping {stem: caption}, or null for .txt files
+  text_column: "text"
+  fallback_text: ""            # empty string → unconditional when no caption found
+  batch_size: 8
+  num_workers: 4
+
+model:
+  unet_config: "configs/models/fm/text_unet_config.json"
+  vae_config: "configs/models/fm/vae_config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+  pretrained_unet_path: null
+
+conditioning:
+  text_encoder: "openai/clip-vit-large-patch14"
+  max_text_length: 77
+  cond_drop_prob: 0.1          # 10% conditioning dropout for CFG
+
+augment:
+  warmup_frac: 0.1
+  ramp_frac: 0.3
+  p_crop_warmup: 0.05
+  p_crop_max: 0.20
+  p_crop_final: 0.05
+  p_rot_warmup: 0.05
+  p_rot_max: 0.30
+  p_rot_final: 0.05
+
+training:
+  epochs: 100
+  lr: 1.0e-4
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 10
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+
+sampling:
+  sample_every_epoch: true
+  sample_steps: 50
+  sample_batch_size: 4
+
+attention_vis:
+  enabled: false               # set to true to enable cross-attention heatmaps
+  target_tokens:
+    - "person"
+    - "people"
+  num_vis_steps: 8             # how many timesteps to capture
+  layer_filter: "all"          # "all", "up", "down", "mid"
+  head_reduction: "mean"       # "mean" or "none" (per-head)
+  overlay: true                # overlay heatmap on generated image
+  colormap: "jet"
+  per_layer: false             # also log per-layer heatmaps
+  vis_guidance_scale: 7.5
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/text_fm/"
+  log_dir: null
+  resume: null
+
+trainer_name: "text_fm_cfg"
+sampler_name: "cfg_fm"

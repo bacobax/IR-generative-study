@@ -1,0 +1,16 @@
+# Text-conditioned FM sampling with classifier-free guidance
+
+pipeline_dir: "./artifacts/checkpoints/flow_matching/text_fm/"
+vae_weights: null
+t_scale: 1000.0
+train_target: "v"
+steps: 50
+batch_size: 8
+guidance_scale: 7.5
+prompt: ""                     # set via CLI: --prompt "a thermal image of ..."
+max_samples: 64
+output_dir: "./artifacts/generated/main/text_fm_cfg"
+device: null
+text_encoder: "openai/clip-vit-large-patch14"
+max_text_length: 77
+sampler_name: "cfg_fm"
