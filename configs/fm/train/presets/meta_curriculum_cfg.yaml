@@ -80,6 +80,7 @@ evaluation:
 
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/meta_fm/"
+  log_dir: "./artifacts/runs/main/flow_matching/meta_fm/"
 
 trainer_name: "meta_fm"
 
