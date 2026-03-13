@@ -40,11 +40,13 @@ class TextConditioner(BaseConditioner):
         encoder_name: str = "openai/clip-vit-large-patch14",
         max_length: int = 77,
         cond_drop_prob: float = 0.1,
+        return_pooled: bool = False,
         device: str | torch.device = "cpu",
     ):
         self.encoder_name = encoder_name
         self.max_length = max_length
         self.cond_drop_prob = cond_drop_prob
+        self.return_pooled = return_pooled
         self.device = device
 
         self.tokenizer = CLIPTokenizer.from_pretrained(encoder_name)
@@ -55,6 +57,7 @@ class TextConditioner(BaseConditioner):
             p.requires_grad = False
 
         self._null_embedding: Optional[torch.Tensor] = None
+        self._null_pooled: Optional[torch.Tensor] = None
 
     # ------------------------------------------------------------------
     # Properties
@@ -71,6 +74,7 @@ class TextConditioner(BaseConditioner):
         self.device = device
         self.text_encoder.to(device)
         self._null_embedding = None
+        self._null_pooled = None
         return self
 
     # ------------------------------------------------------------------
@@ -104,6 +108,36 @@ class TextConditioner(BaseConditioner):
         )
         return outputs.last_hidden_state
 
+    @torch.no_grad()
+    def encode_text_with_pooler(
+        self,
+        texts: List[str],
+        device: str | torch.device | None = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Tokenise and encode text, returning both sequence and pooled output.
+
+        Returns
+        -------
+        (sequence_embeddings, pooled_embeddings)
+        sequence_embeddings: (B, seq_len, hidden_dim)
+        pooled_embeddings: (B, hidden_dim)
+        """
+        dev = device or self.device
+        tokens = self.tokenizer(
+            texts,
+            padding="max_length",
+            max_length=self.max_length,
+            truncation=True,
+            return_tensors="pt",
+        )
+        input_ids = tokens["input_ids"].to(dev)
+        attention_mask = tokens["attention_mask"].to(dev)
+        outputs = self.text_encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+        )
+        return outputs.last_hidden_state, outputs.pooler_output
+
     def null_embedding(
         self,
         batch_size: int,
@@ -117,6 +151,21 @@ class TextConditioner(BaseConditioner):
         ):
             self._null_embedding = self.encode_text([""], dev)
         return self._null_embedding.expand(batch_size, -1, -1)
+
+    def null_pooled_embedding(
+        self,
+        batch_size: int,
+        device: str | torch.device | None = None,
+    ) -> torch.Tensor:
+        """Cached pooled null (empty-string) embedding expanded to *batch_size*."""
+        dev = device or self.device
+        if (
+            self._null_pooled is None
+            or str(self._null_pooled.device) != str(dev)
+        ):
+            _, pooled = self.encode_text_with_pooler([""], dev)
+            self._null_pooled = pooled
+        return self._null_pooled.expand(batch_size, -1)
 
     # ------------------------------------------------------------------
     # BaseConditioner interface
@@ -134,7 +183,11 @@ class TextConditioner(BaseConditioner):
         conditional and unconditional behaviour.
         """
         texts: List[str] = batch["text"]
-        embeddings = self.encode_text(texts, device)
+        if self.return_pooled:
+            embeddings, pooled = self.encode_text_with_pooler(texts, device)
+        else:
+            embeddings = self.encode_text(texts, device)
+            pooled = None
 
         if self.cond_drop_prob > 0:
             drop_mask = torch.rand(len(texts)) < self.cond_drop_prob
@@ -142,8 +195,18 @@ class TextConditioner(BaseConditioner):
                 null_emb = self.null_embedding(1, device)
                 embeddings = embeddings.clone()
                 embeddings[drop_mask] = null_emb[0]
+                if pooled is not None:
+                    null_pooled = self.null_pooled_embedding(1, device)
+                    pooled = pooled.clone()
+                    pooled[drop_mask] = null_pooled[0]
 
-        return {"encoder_hidden_states": embeddings}
+        if pooled is None:
+            return {"encoder_hidden_states": embeddings}
+
+        return {
+            "encoder_hidden_states": embeddings,
+            "pooled_text_embeds": pooled,
+        }
 
     def prepare_for_sampling(
         self,
@@ -151,7 +214,15 @@ class TextConditioner(BaseConditioner):
         device: torch.device | str = "cpu",
     ) -> Dict[str, Any]:
         """Return null embeddings (unconditional generation)."""
-        return {"encoder_hidden_states": self.null_embedding(batch_size, device)}
+        encoder_hidden_states = self.null_embedding(batch_size, device)
+        if not self.return_pooled:
+            return {"encoder_hidden_states": encoder_hidden_states}
+
+        pooled = self.null_pooled_embedding(batch_size, device)
+        return {
+            "encoder_hidden_states": encoder_hidden_states,
+            "pooled_text_embeds": pooled,
+        }
 
     # ------------------------------------------------------------------
     # CFG-specific helpers
@@ -162,7 +233,14 @@ class TextConditioner(BaseConditioner):
         device: torch.device | str = "cpu",
     ) -> Dict[str, Any]:
         """Encode prompts for conditional-only sampling (no CFG)."""
-        return {"encoder_hidden_states": self.encode_text(prompts, device)}
+        if not self.return_pooled:
+            return {"encoder_hidden_states": self.encode_text(prompts, device)}
+
+        embeddings, pooled = self.encode_text_with_pooler(prompts, device)
+        return {
+            "encoder_hidden_states": embeddings,
+            "pooled_text_embeds": pooled,
+        }
 
     def prepare_cfg_pair(
         self,
@@ -175,8 +253,20 @@ class TextConditioner(BaseConditioner):
         the null embedding.
         """
         batch_size = len(prompts)
-        cond = {"encoder_hidden_states": self.encode_text(prompts, device)}
-        uncond = {"encoder_hidden_states": self.null_embedding(batch_size, device)}
+        if not self.return_pooled:
+            cond = {"encoder_hidden_states": self.encode_text(prompts, device)}
+            uncond = {"encoder_hidden_states": self.null_embedding(batch_size, device)}
+            return cond, uncond
+
+        embeddings, pooled = self.encode_text_with_pooler(prompts, device)
+        cond = {
+            "encoder_hidden_states": embeddings,
+            "pooled_text_embeds": pooled,
+        }
+        uncond = {
+            "encoder_hidden_states": self.null_embedding(batch_size, device),
+            "pooled_text_embeds": self.null_pooled_embedding(batch_size, device),
+        }
         return cond, uncond
 
 

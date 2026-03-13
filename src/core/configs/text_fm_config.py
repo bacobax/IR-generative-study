@@ -51,6 +51,7 @@ class ConditioningConfig:
     text_encoder: str = "openai/clip-vit-large-patch14"
     max_text_length: int = 77
     cond_drop_prob: float = 0.1
+    return_pooled: bool = False
 
 
 @dataclass

@@ -26,6 +26,7 @@ from tqdm import tqdm
 from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
 from src.conditioning.text_conditioner import TextConditioner
 from src.models.fm_text_unet import load_text_unet_config, build_text_fm_unet, save_text_unet_config
+from src.core.registry import REGISTRIES
 
 
 def _default_from_norm_to_display(x: torch.Tensor) -> torch.Tensor:
@@ -97,17 +98,26 @@ class TextFMTrainer(FlowMatchingTrainer):
         )
 
         unet_cfg = load_text_unet_config(config.model.unet_config)
-        unet = build_text_fm_unet(unet_cfg, device=device)
+        if config.model.model_builder_name:
+            builder = REGISTRIES.model_builder[config.model.model_builder_name]
+            unet = builder(unet_cfg, device=device)
+        else:
+            unet = build_text_fm_unet(unet_cfg, device=device)
 
         vae, vae_cfg = None, None
         if config.model.vae_config:
             vae_cfg = load_vae_config(config.model.vae_config)
             vae = build_vae_from_config(vae_cfg, device=device)
 
+        return_pooled = getattr(config.conditioning, "return_pooled", False)
+        if config.model.model_builder_name == "text_moe_unet":
+            return_pooled = True
+
         conditioner = TextConditioner(
             encoder_name=config.conditioning.text_encoder,
             max_length=config.conditioning.max_text_length,
             cond_drop_prob=config.conditioning.cond_drop_prob,
+            return_pooled=return_pooled,
             device=device,
         )
 
