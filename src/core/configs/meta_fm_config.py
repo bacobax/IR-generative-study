@@ -13,6 +13,7 @@ from src.core.configs.text_fm_config import (
     TextOutputConfig,
     TextTrainHyperConfig,
 )
+from src.core.configs.fm_config import CurriculumConfig, CountFilterConfig
 
 
 @dataclass
@@ -40,7 +41,6 @@ class ConditionSplitConfig:
     base: List[int] = field(default_factory=list)
     incremental: List[int] = field(default_factory=list)
     test: List[int] = field(default_factory=list)
-    prompt_template: str = "IR image with {count} persons"
 
 
 @dataclass
@@ -76,6 +76,8 @@ class MetaFMTrainConfig:
     augment: TextAugmentConfig = field(default_factory=TextAugmentConfig)
     training: TextTrainHyperConfig = field(default_factory=TextTrainHyperConfig)
     output: TextOutputConfig = field(default_factory=TextOutputConfig)
+    curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
+    count_filter: CountFilterConfig = field(default_factory=CountFilterConfig)
 
     phase_a: MetaPhaseConfig = field(default_factory=MetaPhaseConfig)
     phase_b: MetaPhaseConfig = field(default_factory=MetaPhaseConfig)

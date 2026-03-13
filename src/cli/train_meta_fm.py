@@ -12,18 +12,14 @@ import os
 from typing import Optional
 
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 
 from src.core.configs.meta_fm_config import MetaFMTrainConfig
 from src.core.configs.config_loader import merge_config_and_cli
-from src.core.data.datasets import TextImageDataset
+from src.core.configs.fm_config import CountFilterConfig
+from src.core.data.annotation_dataset import AnnotationFMDataset
 from src.core.data.transforms import ScheduledAugment256
-from src.core.conditions import (
-    ConditionSplit,
-    build_condition_index,
-    indices_for_conditions,
-    save_split,
-)
+from src.core.conditions import ConditionSplit, save_split
 from src.core.registry import REGISTRIES
 
 # Ensure components are registered
@@ -49,6 +45,12 @@ def _text_collate_fn(batch):
 
 
 def run_training(cfg: MetaFMTrainConfig) -> None:
+    if cfg.data.annotations_path is None:
+        raise ValueError(
+            "Meta FM curriculum training requires data.annotations_path "
+            "pointing to a COCO-format annotations.json."
+        )
+
     # Build transforms
     total_epochs = cfg.phase_a.epochs + len(cfg.condition_split.incremental) * (
         cfg.phase_b.epochs + cfg.phase_c.epochs
@@ -67,15 +69,10 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
     )
     train_tf = ScheduledAugment256(**aug_kwargs)
 
-    # Dataset
-    train_ds = TextImageDataset(
-        root_dir=cfg.data.train_dir,
-        text_annotations=cfg.data.text_annotations,
-        fallback_text=cfg.data.fallback_text,
-        transform=train_tf,
-    )
+    if cfg.curriculum.enabled:
+        cfg.curriculum.total_epochs = total_epochs
 
-    # Explicit condition split
+    # Explicit condition split (counts are person counts)
     split = ConditionSplit(
         base=list(cfg.condition_split.base),
         incremental=list(cfg.condition_split.incremental),
@@ -83,11 +80,28 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
     )
     split.validate()
 
-    cond_index = build_condition_index(train_ds)
+    def _make_count_filter(allowed_counts):
+        if not allowed_counts:
+            return None
+        return CountFilterConfig(
+            seen_counts=list(allowed_counts),
+            unseen_counts=None,
+            max_crop_retries=cfg.count_filter.max_crop_retries,
+        )
 
-    base_indices = indices_for_conditions(cond_index, split.base)
+    def _build_dataset(allowed_counts):
+        return AnnotationFMDataset(
+            root_dir=cfg.data.train_dir,
+            annotations_path=cfg.data.annotations_path,
+            text_mode=True,
+            curriculum=cfg.curriculum if cfg.curriculum.enabled else None,
+            count_filter=_make_count_filter(allowed_counts),
+            transform=train_tf,
+        )
+
+    base_ds = _build_dataset(split.base)
     base_loader = DataLoader(
-        Subset(train_ds, base_indices),
+        base_ds,
         batch_size=cfg.data.batch_size,
         shuffle=True,
         num_workers=cfg.data.num_workers,
@@ -97,9 +111,9 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
 
     incremental_loaders = []
     for cond in split.incremental:
-        cond_indices = indices_for_conditions(cond_index, [cond])
+        cond_ds = _build_dataset([cond])
         loader = DataLoader(
-            Subset(train_ds, cond_indices),
+            cond_ds,
             batch_size=cfg.data.batch_size,
             shuffle=True,
             num_workers=cfg.data.num_workers,
@@ -107,6 +121,9 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
             collate_fn=_text_collate_fn,
         )
         incremental_loaders.append((cond, loader))
+
+    # Build test dataset (for inspection only)
+    _ = _build_dataset(split.test)
 
     # Save split for inspection
     split_path = os.path.join(cfg.output.model_dir, "condition_split.json")
@@ -123,7 +140,6 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
         base_dataloader=base_loader,
         incremental_loaders=incremental_loaders,
         test_conditions=list(split.test),
-        prompt_template=cfg.condition_split.prompt_template,
         phase_a_epochs=cfg.phase_a.epochs,
         phase_b_epochs=cfg.phase_b.epochs,
         phase_c_epochs=cfg.phase_c.epochs,

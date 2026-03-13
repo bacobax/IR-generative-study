@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.algorithms.training.text_fm_trainer import TextFMTrainer
+from src.core.data.annotations import caption_from_count
 from src.core.normalization import fm_output_to_uint16, uint16_to_png_uint8
 from src.core.registry import REGISTRIES
 from src.models.moe_text_unet import TextMOEUNet
@@ -335,11 +336,10 @@ class MetaFMTrainer(TextFMTrainer):
         self,
         *,
         conditions: List[int],
-        prompt_template: str,
         output_path: str,
     ) -> None:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        prompts = [prompt_template.format(count=c) for c in conditions]
+        prompts = [caption_from_count(c) for c in conditions]
         _, pooled = self.conditioner.encode_text_with_pooler(prompts, self.device)
         weights = self._moe_unet().compute_router_weights(pooled).detach().cpu().tolist()
         payload = {
@@ -355,7 +355,6 @@ class MetaFMTrainer(TextFMTrainer):
         self,
         *,
         conditions: List[int],
-        prompt_template: str,
         output_dir: str,
         steps: int = 50,
         guidance_scale: float = 7.5,
@@ -369,7 +368,7 @@ class MetaFMTrainer(TextFMTrainer):
         sampler = self._make_sampler()
 
         for cond in conditions:
-            prompt = prompt_template.format(count=cond)
+            prompt = caption_from_count(cond)
             cond_dir = os.path.join(output_dir, f"cond_{cond}")
             os.makedirs(cond_dir, exist_ok=True)
 
@@ -396,7 +395,6 @@ class MetaFMTrainer(TextFMTrainer):
         base_dataloader: DataLoader,
         incremental_loaders: List[Tuple[int, DataLoader]],
         test_conditions: List[int],
-        prompt_template: str,
         phase_a_epochs: int,
         phase_b_epochs: int,
         phase_c_epochs: int,
@@ -434,7 +432,6 @@ class MetaFMTrainer(TextFMTrainer):
         if log_router_weights and router_weights_dir is not None:
             self._save_router_weights(
                 conditions=[c for c, _ in incremental_loaders] + test_conditions,
-                prompt_template=prompt_template,
                 output_path=os.path.join(router_weights_dir, "router_weights_after_base.json"),
             )
 
@@ -486,7 +483,6 @@ class MetaFMTrainer(TextFMTrainer):
             if log_router_weights and router_weights_dir is not None:
                 self._save_router_weights(
                     conditions=[c for c, _ in incremental_loaders] + test_conditions,
-                    prompt_template=prompt_template,
                     output_path=os.path.join(router_weights_dir, f"router_weights_after_cond_{cond}.json"),
                 )
 
@@ -499,7 +495,6 @@ class MetaFMTrainer(TextFMTrainer):
         if eval_output_dir is not None:
             self.evaluate_conditions(
                 conditions=test_conditions,
-                prompt_template=prompt_template,
                 output_dir=eval_output_dir,
                 steps=eval_steps,
                 guidance_scale=eval_guidance_scale,
