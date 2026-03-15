@@ -139,6 +139,7 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
     trainer.train_curriculum(
         base_dataloader=base_loader,
         incremental_loaders=incremental_loaders,
+        base_conditions=list(split.base),
         test_conditions=list(split.test),
         phase_a_epochs=cfg.phase_a.epochs,
         phase_b_epochs=cfg.phase_b.epochs,
@@ -156,6 +157,12 @@ def run_training(cfg: MetaFMTrainConfig) -> None:
         eval_steps=cfg.evaluation.steps,
         eval_guidance_scale=cfg.evaluation.guidance_scale,
         eval_samples_per_condition=cfg.evaluation.samples_per_condition,
+        sampling_enabled=cfg.sampling.enabled,
+        sampling_phase_a_every=cfg.sampling.phase_a_every,
+        sampling_output_dir=cfg.sampling.output_dir,
+        sampling_steps=cfg.sampling.steps,
+        sampling_guidance_scale=cfg.sampling.guidance_scale,
+        sampling_samples_per_condition=cfg.sampling.samples_per_condition,
     )
 
 

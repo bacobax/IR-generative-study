@@ -13,7 +13,7 @@ import json
 import os
 import math
 import numpy as np
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch.optim import Adam
@@ -286,6 +286,7 @@ class MetaFMTrainer(TextFMTrainer):
         replay_dataloader: Optional[DataLoader] = None,
         replay_every: int = 1,
         router_lr_scale: Optional[float] = None,
+        on_epoch_end: Optional[Callable[[int], None]] = None,
     ) -> None:
         optimizer = self._build_optimizer(lr, router_lr_scale=router_lr_scale)
         replay_iter = None
@@ -384,6 +385,9 @@ class MetaFMTrainer(TextFMTrainer):
             if replay_steps:
                 self._log_scalar(f"{phase_tag}/replay/total_epoch", avg_replay, epoch)
                 self._log_scalar(f"{phase_tag}/replay/ratio", replay_ratio, epoch)
+
+            if on_epoch_end is not None:
+                on_epoch_end(epoch)
 
     # ------------------------------------------------------------------
     # Public API: single-episode meta training
@@ -585,6 +589,7 @@ class MetaFMTrainer(TextFMTrainer):
         *,
         base_dataloader: DataLoader,
         incremental_loaders: List[Tuple[int, DataLoader]],
+        base_conditions: Optional[List[int]] = None,
         test_conditions: List[int],
         phase_a_epochs: int,
         phase_b_epochs: int,
@@ -602,8 +607,38 @@ class MetaFMTrainer(TextFMTrainer):
         eval_steps: int = 50,
         eval_guidance_scale: float = 7.5,
         eval_samples_per_condition: int = 4,
+        sampling_enabled: bool = False,
+        sampling_phase_a_every: int = 0,
+        sampling_output_dir: Optional[str] = None,
+        sampling_steps: int = 50,
+        sampling_guidance_scale: float = 7.5,
+        sampling_samples_per_condition: int = 4,
     ) -> None:
         self._ensure_writer()
+        base_conditions = list(base_conditions or [])
+
+        def _run_sanity_sampling(stage_tag: str, conditions: List[int]) -> None:
+            if not sampling_enabled or sampling_output_dir is None or not conditions:
+                return
+            out_dir = os.path.join(sampling_output_dir, stage_tag)
+            self.evaluate_conditions(
+                conditions=conditions,
+                output_dir=out_dir,
+                steps=sampling_steps,
+                guidance_scale=sampling_guidance_scale,
+                samples_per_condition=sampling_samples_per_condition,
+            )
+
+        def _phase_a_epoch_hook(epoch_idx: int) -> None:
+            if sampling_phase_a_every <= 0:
+                return
+            if (epoch_idx + 1) % sampling_phase_a_every != 0:
+                return
+            _run_sanity_sampling(
+                stage_tag=f"phase_a_epoch_{epoch_idx + 1:04d}",
+                conditions=base_conditions,
+            )
+
         # Stage 1: base training
         self._log_stage("Stage 1: base training")
         self._set_trainable(self.unet, True)
@@ -623,8 +658,10 @@ class MetaFMTrainer(TextFMTrainer):
             lr=phase_a_lr,
             phase_name="Stage 1 (base)",
             phase_tag="phase_a",
+            on_epoch_end=_phase_a_epoch_hook,
         )
         self._save_stage_checkpoint("stage_base")
+        _run_sanity_sampling("after_phase_a", base_conditions)
 
         if log_router_weights and router_weights_dir is not None:
             self._save_router_weights(
@@ -657,6 +694,7 @@ class MetaFMTrainer(TextFMTrainer):
                 phase_tag=f"phase_b/cond_{cond}",
             )
             self._save_stage_checkpoint(f"cond_{cond}_router")
+            _run_sanity_sampling(f"after_phase_b_cond_{cond}", [cond])
 
             # Phase C: refine with replay
             self._freeze_all()
@@ -686,6 +724,7 @@ class MetaFMTrainer(TextFMTrainer):
                 router_lr_scale=phase_c_router_lr_scale if phase_c_router_trainable else None,
             )
             self._save_stage_checkpoint(f"cond_{cond}_refine")
+            _run_sanity_sampling(f"after_phase_c_cond_{cond}", [cond])
 
             if log_router_weights and router_weights_dir is not None:
                 self._save_router_weights(

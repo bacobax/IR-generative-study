@@ -63,6 +63,18 @@ class EvaluationConfig:
 
 
 @dataclass
+class MetaSamplingConfig:
+    """Sanity-check sampling during curriculum training."""
+
+    enabled: bool = False
+    phase_a_every: int = 0
+    steps: int = 50
+    guidance_scale: float = 7.5
+    samples_per_condition: int = 4
+    output_dir: str = "./artifacts/generated/meta_fm/sanity_samples"
+
+
+@dataclass
 class MetaFMTrainConfig:
     """Configuration for a single incremental episode.
 
@@ -85,6 +97,7 @@ class MetaFMTrainConfig:
 
     condition_split: ConditionSplitConfig = field(default_factory=ConditionSplitConfig)
     router_reg: RouterRegConfig = field(default_factory=RouterRegConfig)
+    sampling: MetaSamplingConfig = field(default_factory=MetaSamplingConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
 
     trainer_name: Optional[str] = "meta_fm"
