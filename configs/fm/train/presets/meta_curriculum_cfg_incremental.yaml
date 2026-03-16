@@ -46,17 +46,33 @@ training:
 phase_a:
   epochs: 400
   lr: 8.0e-5
+  lambda_corr: 0.05
+  mlp_trainable: true
+  router_trainable: true
+  moe_trainable: true
+  unet_trainable: true
+  unfreeze_unet_policy: "all"
 
 phase_b:
-  epochs: 92
+  epochs: 114
   lr: 1.0e-4
+  lambda_corr: 1.0
+  mlp_trainable: true
+  router_trainable: true
+  moe_trainable: false
+  unet_trainable: false
+  unfreeze_unet_policy: "none"
 
 phase_c:
-  epochs: 154
+  epochs: 190
   lr: 1.0e-4
-  replay_every: 1
-  unfreeze_unet_policy: "none"
+  replay_every: 2
+  lambda_corr: 0.5
+  mlp_trainable: false
   router_trainable: true
+  moe_trainable: true
+  unet_trainable: true
+  unfreeze_unet_policy: "none"
   router_lr_scale: 0.25
 
 condition_split:
@@ -69,7 +85,8 @@ count_filter:
 
 router_reg:
   sparsity_weight: 0.0
-  smoothness_weight: 1.0e-4
+  smoothness_weight: 0.0
+  balance_weight: 5e-5
 
 sampling:
   enabled: true
@@ -89,6 +106,14 @@ evaluation:
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/meta_fm_incremental/"
   log_dir: "./artifacts/runs/main/flow_matching/meta_fm_incremental/"
+  resume: null
+
+checkpoint:
+  enabled: true
+  save_every_epochs: 1
+  save_latest: true
+  latest_filename: "meta_fm_latest.pt"
+  dir_name: "meta_checkpoints"
 
 trainer_name: "meta_fm"
 

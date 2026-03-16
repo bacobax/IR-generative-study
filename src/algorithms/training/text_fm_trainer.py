@@ -270,7 +270,7 @@ class TextFMTrainer(FlowMatchingTrainer):
 
         # Pre-load weights ------------------------------------------------
         if pretrained_vae_path is not None and self.vae is not None:
-            self.load_vae_weights(pretrained_vae_path, strict=strict_load)
+            self.load_vae_weights(pretrained_vae_path, strict=strict_load) 
             self.vae.eval()
             for p in self.vae.parameters():
                 p.requires_grad = False

@@ -17,6 +17,7 @@ from diffusers import UNet2DConditionModel
 
 from src.conditioning.condition_router import ConditionRouter
 from src.models.fm_text_unet import load_text_unet_config, build_text_fm_unet
+from src.models.gated_correction import GatedCorrection
 from src.models.moe_adapter import AdapterBank
 
 
@@ -32,6 +33,9 @@ class TextMOEConfig:
     adapter_hidden_dim: Optional[int] = None
     adapter_dropout: float = 0.0
     router_hidden_dims: Optional[Tuple[int, ...]] = None
+    correction_hidden_dim: Optional[int] = None
+    correction_gate_bias: float = -4.0
+    lambda_corr: float = 1.0
 
 
 def load_text_moe_unet_config(
@@ -91,6 +95,9 @@ class TextMOEUNet(nn.Module):
         adapter_hidden_dim: Optional[int] = None,
         adapter_dropout: float = 0.0,
         router_hidden_dims: Optional[Tuple[int, ...]] = None,
+        correction_hidden_dim: Optional[int] = None,
+        correction_gate_bias: float = -4.0,
+        lambda_corr: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -99,6 +106,13 @@ class TextMOEUNet(nn.Module):
         self.adapter_hidden_dim = adapter_hidden_dim
         self.adapter_dropout = adapter_dropout
         self.router_hidden_dims = router_hidden_dims
+        self.correction_hidden_dim = correction_hidden_dim
+        self.correction_gate_bias = correction_gate_bias
+        self.register_buffer(
+            "lambda_corr",
+            torch.tensor(float(lambda_corr), dtype=torch.float32),
+            persistent=False,
+        )
 
         cross_dim = self._resolve_cross_attention_dim(unet)
         router_dims = list(router_hidden_dims) if router_hidden_dims is not None else None
@@ -115,10 +129,17 @@ class TextMOEUNet(nn.Module):
             hidden_dim=adapter_hidden_dim,
             dropout=adapter_dropout,
         )
+        self.gated_correction = GatedCorrection(
+            mid_channels,
+            cross_dim,
+            hidden_dim=correction_hidden_dim,
+            gate_bias=correction_gate_bias,
+        )
 
         self._hooks = []
         self._register_mid_block_hook()
         self._active_router_weights: Optional[torch.Tensor] = None
+        self._active_pooled_text_embeds: Optional[torch.Tensor] = None
 
     @property
     def config(self):
@@ -145,19 +166,35 @@ class TextMOEUNet(nn.Module):
         handle = self.unet.mid_block.register_forward_hook(_hook)
         self._hooks.append(handle)
 
-    def _apply_adapter(self, output):
+    def _apply_adapter_and_correction(self, hidden_state: torch.Tensor) -> torch.Tensor:
         weights = self._active_router_weights
+        pooled = self._active_pooled_text_embeds
+        adapted = self.mid_adapter(hidden_state, weights=weights)
+        mixture_residual = adapted - hidden_state
+
+        if pooled is None:
+            return hidden_state + mixture_residual
+
+        correction = self.gated_correction(hidden_state, mixture_residual, pooled)
+        correction = correction * self.lambda_corr.to(device=correction.device, dtype=correction.dtype)
+        return hidden_state + mixture_residual + correction
+
+    def _apply_adapter(self, output):
         if isinstance(output, tuple):
             if not output:
                 return output
             first = output[0]
-            adapted = self.mid_adapter(first, weights=weights)
+            adapted = self._apply_adapter_and_correction(first)
             return (adapted,) + output[1:]
-        return self.mid_adapter(output, weights=weights)
+        return self._apply_adapter_and_correction(output)
 
     def compute_router_weights(self, pooled_text_embeds: torch.Tensor) -> torch.Tensor:
         """Compute router weights from pooled text embeddings."""
         return self.router(pooled_text_embeds)
+
+    def set_lambda_corr(self, value: float) -> None:
+        """Update the correction scaling factor used during forward passes."""
+        self.lambda_corr.fill_(float(value))
 
     def forward(self, sample: torch.Tensor, timestep, **kwargs):
         """Forward pass with the same signature as UNet2DConditionModel.
@@ -172,10 +209,12 @@ class TextMOEUNet(nn.Module):
             router_weights = self.compute_router_weights(pooled)
 
         self._active_router_weights = router_weights
+        self._active_pooled_text_embeds = pooled
         try:
             return self.unet(sample, timestep, **kwargs)
         finally:
             self._active_router_weights = None
+            self._active_pooled_text_embeds = None
 
 
 def build_text_moe_unet(
@@ -200,6 +239,13 @@ def build_text_moe_unet(
         "adapter_hidden_dim": moe_cfg.get("adapter_hidden_dim", moe_defaults.adapter_hidden_dim),
         "adapter_dropout": moe_cfg.get("adapter_dropout", moe_defaults.adapter_dropout),
         "router_hidden_dims": moe_cfg.get("router_hidden_dims", moe_defaults.router_hidden_dims),
+        "correction_hidden_dim": moe_cfg.get(
+            "correction_hidden_dim", moe_defaults.correction_hidden_dim
+        ),
+        "correction_gate_bias": moe_cfg.get(
+            "correction_gate_bias", moe_defaults.correction_gate_bias
+        ),
+        "lambda_corr": moe_cfg.get("lambda_corr", moe_defaults.lambda_corr),
     }
 
     model = TextMOEUNet(unet, **merged)

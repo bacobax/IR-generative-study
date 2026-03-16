@@ -1,9 +1,8 @@
-# Meta FM full curriculum training preset
+# Resume from one specific full-state curriculum checkpoint file.
 
 data:
   train_dir: "./data/raw/v18/train/"
   annotations_path: "data/raw/v18/train/annotations.json"
-  fallback_text: ""
   batch_size: 16
   num_workers: 4
 
@@ -19,26 +18,6 @@ conditioning:
   cond_drop_prob: 0.05
   return_pooled: true
 
-curriculum:
-  enabled: false
-  crop_prob_start: 0
-  crop_prob_end: 0
-  schedule: "linear"
-  margin_min: 1.2
-  margin_max: 2.0
-  center_jitter: 0.15
-  force_square: false
-
-augment:
-  warmup_frac: 0.1
-  ramp_frac: 0.3
-  p_crop_warmup: 0.0
-  p_crop_max: 0.0
-  p_crop_final: 0.0
-  p_rot_warmup: 0.05
-  p_rot_max: 0.30
-  p_rot_final: 0.05
-
 training:
   t_scale: 1000.0
   train_target: "v"
@@ -46,7 +25,6 @@ training:
 phase_a:
   epochs: 400
   lr: 8.0e-5
-  lambda_corr: 0.05
   mlp_trainable: true
   router_trainable: true
   moe_trainable: true
@@ -56,8 +34,7 @@ phase_a:
 phase_b:
   epochs: 92
   lr: 5.0e-5
-  lambda_corr: 1.0
-  mlp_trainable: true
+  mlp_trainable: false
   router_trainable: true
   moe_trainable: false
   unet_trainable: false
@@ -67,46 +44,22 @@ phase_c:
   epochs: 154
   lr: 1.0e-4
   replay_every: 1
-  lambda_corr: 0.05
   mlp_trainable: true
-  router_trainable: true
+  router_trainable: false
   moe_trainable: true
-  unet_trainable: false
-  unfreeze_unet_policy: "none"
-  router_lr_scale: 0.25
+  unet_trainable: true
+  unfreeze_unet_policy: "up"
+  router_lr_scale: 1.0
 
 condition_split:
   base: [1, 2, 3, 4, 8, 9]
   incremental: [7]
   test: [5, 6]
 
-count_filter:
-  max_crop_retries: 5
-
-router_reg:
-  sparsity_weight: 0.0
-  smoothness_weight: 1.0e-4
-  balance_weight: 1e-2
-
-sampling:
-  enabled: true
-  phase_a_every: 50
-  steps: 100
-  guidance_scale: 7.5
-  samples_per_condition: 3
-  output_dir: "./artifacts/generated/meta_fm_balanced/sanity_samples"
-
-evaluation:
-  enabled: true
-  samples_per_condition: 50
-  steps: 100
-  guidance_scale: 7.5
-  output_dir: "./artifacts/generated/meta_fm_balanced/test_conditions"
-
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/meta_fm_balanced/"
   log_dir: "./artifacts/runs/main/flow_matching/meta_fm_balanced/"
-  resume: null
+  resume: "./artifacts/checkpoints/flow_matching/meta_fm_balanced/meta_checkpoints/meta_fm_phase_c_cond_7_epoch_0042.pt"
 
 checkpoint:
   enabled: true
@@ -116,5 +69,3 @@ checkpoint:
   dir_name: "meta_checkpoints"
 
 trainer_name: "meta_fm"
-
-device: "cuda:2"                   # auto-detect, or "cuda:0", "cuda:1", etc.
