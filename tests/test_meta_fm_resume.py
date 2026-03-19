@@ -72,7 +72,7 @@ def _small_moe_unet():
     )
 
 
-def _make_trainer(model_dir: str):
+def _make_trainer(model_dir: str, subset_policy=None):
     from src.algorithms.training.meta_fm_trainer import MetaFMTrainer
 
     return MetaFMTrainer(
@@ -82,6 +82,7 @@ def _make_trainer(model_dir: str):
         t_scale=1.0,
         train_target="v",
         model_dir=model_dir,
+        subset_policy=subset_policy,
     )
 
 
@@ -103,6 +104,9 @@ def test_meta_config_resume_and_phase_controls_load():
     assert cfg.phase_b.moe_trainable is False
     assert cfg.phase_c.unet_trainable is True
     assert cfg.phase_c.unfreeze_unet_policy == "mid"
+    assert cfg.subset_policy.enabled is False
+    assert cfg.subset_policy.unseen_policy == "router_topk"
+    assert cfg.subset_policy.empty_fallback == "top1"
 
 
 def test_meta_phase_trainability_is_yaml_driven():
@@ -129,8 +133,19 @@ def test_meta_phase_trainability_is_yaml_driven():
 
 
 def test_meta_checkpoint_roundtrip_and_resume_cursor():
+    from src.conditioning.expert_subset_policy import ExpertSubsetPolicy
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        trainer = _make_trainer(tmpdir)
+        trainer = _make_trainer(
+            tmpdir,
+            subset_policy=ExpertSubsetPolicy(
+                num_experts=4,
+                enabled=True,
+                configured_subsets={1: [0, 1], 7: [1, 2]},
+                unseen_policy="router_threshold",
+                threshold=0.25,
+            ),
+        )
         trainer._global_step = 17
         trainer._apply_phase_trainability(
             type(
@@ -176,6 +191,11 @@ def test_meta_checkpoint_roundtrip_and_resume_cursor():
         assert payload["condition"] == 7
         assert resumed._global_step == 17
         assert ckpt_path.endswith("meta_fm_phase_b_cond_7_epoch_0002.pt")
+        assert resumed.subset_policy.enabled is True
+        assert resumed.subset_policy.configured_subsets[1] == (0, 1)
+        assert resumed.subset_policy.configured_subsets[7] == (1, 2)
+        assert resumed.subset_policy.unseen_policy == "router_threshold"
+        assert resumed.subset_policy.threshold == 0.25
 
         cursor = resumed._advance_resume_cursor(
             phase="phase_b",

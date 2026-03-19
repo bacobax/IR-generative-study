@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import torch
 
@@ -70,6 +70,20 @@ class RouterRegConfig:
     sparsity_weight: float = 0.0
     smoothness_weight: float = 0.0
     balance_weight: float = 0.0
+
+
+@dataclass
+class SubsetPolicyConfig:
+    """Subset-constrained routing configuration for Meta FM."""
+
+    enabled: bool = False
+    configured_subsets: Dict[int, List[int]] = field(default_factory=dict)
+    incremental_must_use_base_experts: bool = True
+    unseen_policy: str = "router_topk"  # router_topk|router_threshold|full
+    top_k: int = 2
+    threshold: Optional[float] = None
+    min_experts: int = 1
+    empty_fallback: str = "top1"  # top1|full
 
 
 @dataclass
@@ -142,6 +156,7 @@ class MetaFMTrainConfig:
 
     condition_split: ConditionSplitConfig = field(default_factory=ConditionSplitConfig)
     router_reg: RouterRegConfig = field(default_factory=RouterRegConfig)
+    subset_policy: SubsetPolicyConfig = field(default_factory=SubsetPolicyConfig)
     sampling: MetaSamplingConfig = field(default_factory=MetaSamplingConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     checkpoint: MetaCheckpointConfig = field(default_factory=MetaCheckpointConfig)

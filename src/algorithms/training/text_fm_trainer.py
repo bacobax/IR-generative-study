@@ -13,6 +13,7 @@ checkpoint logic, VAE encoding) is inherited from the parent.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
@@ -212,6 +213,38 @@ class TextFMTrainer(FlowMatchingTrainer):
                         indent=2,
                     )
 
+    def _resolve_resume_path(
+        self,
+        resume_from_checkpoint: Optional[Union[str, bool]],
+    ) -> Optional[str]:
+        if resume_from_checkpoint in (None, False, ""):
+            return None
+
+        if resume_from_checkpoint is True or resume_from_checkpoint == "latest":
+            latest_epoch = -1
+            latest_path = None
+            pattern = re.compile(r"^unet_fm_epoch_(\d+)_ckpt\.pt$")
+            unet_dir = self._unet_dir()
+            if os.path.isdir(unet_dir):
+                for filename in os.listdir(unet_dir):
+                    match = pattern.match(filename)
+                    if match is None:
+                        continue
+                    epoch = int(match.group(1))
+                    if epoch > latest_epoch:
+                        latest_epoch = epoch
+                        latest_path = os.path.join(unet_dir, filename)
+            if latest_path is None:
+                raise FileNotFoundError(
+                    f"No text FM checkpoint found in {unet_dir} to resume from."
+                )
+            return latest_path
+
+        path = str(resume_from_checkpoint)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Checkpoint not found: {path}")
+        return path
+
     # ------------------------------------------------------------------
     # Override: build a sampler that passes null text for TensorBoard vis
     # ------------------------------------------------------------------
@@ -287,9 +320,10 @@ class TextFMTrainer(FlowMatchingTrainer):
         bad_epochs = 0
         start_epoch = 0
 
-        if resume_from_checkpoint is not None:
-            print(f"[Resume] Loading checkpoint from {resume_from_checkpoint}")
-            ckpt = torch.load(resume_from_checkpoint, map_location=self.device)
+        resume_path = self._resolve_resume_path(resume_from_checkpoint)
+        if resume_path is not None:
+            print(f"[Resume] Loading checkpoint from {resume_path}")
+            ckpt = torch.load(resume_path, map_location=self.device)
             self.unet.load_state_dict(ckpt["unet_state"])
             optimizer.load_state_dict(ckpt["optimizer_state"])
             for state in optimizer.state.values():

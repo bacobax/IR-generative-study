@@ -1,8 +1,4 @@
-"""Text-conditioned UNet wrapper with fixed-weight MOE adapters.
-
-Wraps a diffusers.UNet2DConditionModel and injects a small adapter bank
-at selected internal locations. Routing is fixed and uniform (1/K).
-"""
+"""Text-conditioned UNet wrapper with routed MoE adapters."""
 
 from __future__ import annotations
 
@@ -36,6 +32,16 @@ class TextMOEConfig:
     correction_hidden_dim: Optional[int] = None
     correction_gate_bias: float = -4.0
     lambda_corr: float = 1.0
+
+
+@dataclass
+class RoutingOutput:
+    """Raw and masked router outputs for one batch."""
+
+    raw_logits: torch.Tensor
+    raw_weights: torch.Tensor
+    expert_mask: torch.Tensor
+    masked_weights: torch.Tensor
 
 
 def load_text_moe_unet_config(
@@ -82,10 +88,7 @@ def save_text_moe_unet_config(
 
 
 class TextMOEUNet(nn.Module):
-    """Wrapper for UNet2DConditionModel with fixed uniform MOE adapters.
-
-    The first version injects a single AdapterBank at the UNet mid-block.
-    """
+    """Wrapper for UNet2DConditionModel with routed MOE adapters."""
 
     def __init__(
         self,
@@ -188,9 +191,70 @@ class TextMOEUNet(nn.Module):
             return (adapted,) + output[1:]
         return self._apply_adapter_and_correction(output)
 
+    def compute_router_logits(self, pooled_text_embeds: torch.Tensor) -> torch.Tensor:
+        """Compute raw router logits from pooled text embeddings."""
+        return self.router.get_logits(pooled_text_embeds)
+
+    def compute_raw_router_weights(self, pooled_text_embeds: torch.Tensor) -> torch.Tensor:
+        """Compute full softmax weights over all experts."""
+        logits = self.compute_router_logits(pooled_text_embeds)
+        return self.router.weights_from_logits(logits)
+
+    def normalize_masked_weights(
+        self,
+        raw_weights: torch.Tensor,
+        expert_mask: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """Apply an expert mask and renormalize across the active subset."""
+        if expert_mask is None:
+            return raw_weights
+        if raw_weights.ndim != 2 or raw_weights.shape[-1] != self.num_experts:
+            raise ValueError(
+                f"raw_weights must have shape (B, {self.num_experts}), got {tuple(raw_weights.shape)}"
+            )
+        if expert_mask.shape != raw_weights.shape:
+            raise ValueError(
+                f"expert_mask must have shape {tuple(raw_weights.shape)}, got {tuple(expert_mask.shape)}"
+            )
+
+        mask = expert_mask.to(device=raw_weights.device, dtype=raw_weights.dtype)
+        masked = raw_weights * mask
+        denom = masked.sum(dim=-1, keepdim=True)
+        if torch.any(denom <= 0):
+            raise ValueError("expert_mask removed all experts for at least one sample")
+        return masked / denom
+
+    def compute_masked_router_weights(
+        self,
+        pooled_text_embeds: torch.Tensor,
+        expert_mask: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """Compute masked and renormalized router weights."""
+        raw_weights = self.compute_raw_router_weights(pooled_text_embeds)
+        return self.normalize_masked_weights(raw_weights, expert_mask)
+
+    def compute_routing(
+        self,
+        pooled_text_embeds: torch.Tensor,
+        *,
+        expert_mask: Optional[torch.Tensor] = None,
+    ) -> RoutingOutput:
+        """Compute raw and masked routing information for one batch."""
+        raw_logits = self.compute_router_logits(pooled_text_embeds)
+        raw_weights = self.router.weights_from_logits(raw_logits)
+        if expert_mask is None:
+            expert_mask = torch.ones_like(raw_weights, dtype=torch.bool)
+        masked_weights = self.normalize_masked_weights(raw_weights, expert_mask)
+        return RoutingOutput(
+            raw_logits=raw_logits,
+            raw_weights=raw_weights,
+            expert_mask=expert_mask.to(dtype=torch.bool, device=raw_weights.device),
+            masked_weights=masked_weights,
+        )
+
     def compute_router_weights(self, pooled_text_embeds: torch.Tensor) -> torch.Tensor:
-        """Compute router weights from pooled text embeddings."""
-        return self.router(pooled_text_embeds)
+        """Backward-compatible alias for the full router softmax."""
+        return self.compute_raw_router_weights(pooled_text_embeds)
 
     def set_lambda_corr(self, value: float) -> None:
         """Update the correction scaling factor used during forward passes."""
@@ -204,9 +268,13 @@ class TextMOEUNet(nn.Module):
         """
         pooled = kwargs.pop("pooled_text_embeds", None)
         router_weights = kwargs.pop("router_weights", None)
+        expert_mask = kwargs.pop("expert_mask", None)
 
         if router_weights is None and pooled is not None:
-            router_weights = self.compute_router_weights(pooled)
+            if expert_mask is None:
+                router_weights = self.compute_raw_router_weights(pooled)
+            else:
+                router_weights = self.compute_masked_router_weights(pooled, expert_mask)
 
         self._active_router_weights = router_weights
         self._active_pooled_text_embeds = pooled

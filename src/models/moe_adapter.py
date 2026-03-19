@@ -1,7 +1,7 @@
 """Mixture-of-experts adapter modules for UNet feature routing.
 
 Defines a small residual ExpertAdapter and an AdapterBank that combines
-multiple experts with fixed uniform weights.
+multiple experts using optional per-sample routing weights.
 """
 
 from __future__ import annotations

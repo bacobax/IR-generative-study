@@ -195,17 +195,20 @@ def test_annotation_dataset_text_mode():
         )
         item = ds[0]
         assert isinstance(item, dict)
-        assert "pixel_values" in item and "text" in item
+        assert "pixel_values" in item and "text" in item and "condition_id" in item
         assert isinstance(item["text"], str)
         assert "overhead infrared" in item["text"]
+        assert item["condition_id"] == 0
 
         # img_0001 has 1 person
         item1 = ds[1]
         assert "1 person" in item1["text"]
+        assert item1["condition_id"] == 1
 
         # img_0002 has 2 people
         item2 = ds[2]
         assert "2 people" in item2["text"]
+        assert item2["condition_id"] == 2
 
 
 def test_annotation_dataset_curriculum():
@@ -239,6 +242,7 @@ def test_annotation_dataset_curriculum():
         item = ds[3]
         assert isinstance(item, dict)
         assert "text" in item
+        assert "condition_id" in item
         # Caption may differ from full-image count due to crop
 
 
@@ -263,6 +267,7 @@ def test_curriculum_disabled_no_crop():
         # With curriculum disabled, img_0002 should have full-image caption
         item = ds[2]  # 2 people
         assert "2 people" in item["text"]
+        assert item["condition_id"] == 2
 
 
 def test_unconditional_with_curriculum():
@@ -371,6 +376,7 @@ def test_count_filter_seen_counts():
             # Should never contain "2 people" or "3 people"
             assert "2 people" not in text
             assert "3 people" not in text
+            assert item["condition_id"] in {0, 1}
 
 
 def test_count_filter_unseen_counts():
@@ -468,6 +474,7 @@ def test_count_filter_crop_retry():
         assert "text" in item
         # Caption must reflect allowed count (3 people) or fallback full image (3)
         assert "3 people" in item["text"]
+        assert item["condition_id"] == 3
 
 
 def test_count_filter_none_no_filtering():

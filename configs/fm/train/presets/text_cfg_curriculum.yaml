@@ -39,13 +39,13 @@ training:
   lr: 1.0e-4
   t_scale: 1000.0
   train_target: "v"
-  save_every_n_epochs: 100
+  save_every_n_epochs: 50
   patience: null
   min_delta: 0.0
   strict_load: true
 
 sampling:
-  sample_every: 100
+  sample_every: 50
   sample_steps: 100
   sample_batch_size: 4
 
@@ -55,7 +55,7 @@ attention_vis:
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/text_fm_curriculum/"
   log_dir: "./artifacts/runs/main/flow_matching/text_fm_curriculum/"
-  resume: null
+  resume: "latest"
 
 # ── Curriculum learning ──────────────────────────────────────────────────
 # crop_prob ramps linearly from 0.0 to 0.4 over the entire training run.

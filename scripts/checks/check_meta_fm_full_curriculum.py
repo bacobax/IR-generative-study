@@ -21,10 +21,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.algorithms.training.meta_fm_trainer import MetaFMTrainer
+from src.conditioning.expert_subset_policy import ExpertSubsetPolicy
 from src.conditioning.text_conditioner import TextConditioner
 from src.core.configs.fm_config import CountFilterConfig
 from src.core.data.annotation_dataset import AnnotationFMDataset
-from src.models.fm_text_unet import load_text_unet_config
 from src.models.moe_text_unet import build_text_moe_unet
 
 passed = 0
@@ -44,15 +44,74 @@ def check(label, cond):
 def _collate(batch):
     images = torch.stack([b["pixel_values"] for b in batch])
     texts = [b["text"] for b in batch]
-    return {"pixel_values": images, "text": texts}
+    condition_ids = [b["condition_id"] for b in batch]
+    return {"pixel_values": images, "text": texts, "condition_id": condition_ids}
+
+
+class _MockEncoder:
+    class config:
+        hidden_size = 32
+
+    def __call__(self, input_ids, attention_mask):
+        batch, seq_len = input_ids.shape
+
+        class _Out:
+            last_hidden_state = torch.randn(batch, seq_len, 32)
+            pooler_output = torch.randn(batch, 32)
+
+        return _Out()
+
+    def to(self, device):
+        return self
+
+    def eval(self):
+        return self
+
+    def parameters(self):
+        return iter([])
+
+
+class _MockTokenizer:
+    def __call__(self, texts, **kw):
+        batch = len(texts)
+        length = kw.get("max_length", 10)
+        return {
+            "input_ids": torch.ones(batch, length, dtype=torch.long),
+            "attention_mask": torch.ones(batch, length, dtype=torch.long),
+        }
+
+
+def _mock_conditioner():
+    cond = TextConditioner.__new__(TextConditioner)
+    cond.cond_drop_prob = 0.0
+    cond.max_length = 10
+    cond.return_pooled = True
+    cond.device = "cpu"
+    cond._null_embedding = None
+    cond._null_pooled = None
+    cond.encoder_name = "mock"
+    cond.text_encoder = _MockEncoder()
+    cond.tokenizer = _MockTokenizer()
+    return cond
 
 
 print("=== Setup ===")
-config_path = os.path.join(REPO, "configs/models/fm/text_unet_config.json")
-unet_cfg = load_text_unet_config(config_path)
+unet_cfg = {
+    "sample_size": 16,
+    "in_channels": 1,
+    "out_channels": 1,
+    "block_out_channels": [32, 64],
+    "down_block_types": ["CrossAttnDownBlock2D", "DownBlock2D"],
+    "up_block_types": ["UpBlock2D", "CrossAttnUpBlock2D"],
+    "mid_block_type": "UNetMidBlock2DCrossAttn",
+    "layers_per_block": 1,
+    "cross_attention_dim": 32,
+    "attention_head_dim": 8,
+    "norm_num_groups": 16,
+}
 
 model = build_text_moe_unet(unet_cfg, device="cpu")
-conditioner = TextConditioner(device="cpu", return_pooled=True, cond_drop_prob=0.0)
+conditioner = _mock_conditioner()
 
 trainer = MetaFMTrainer(
     model,
@@ -62,6 +121,16 @@ trainer = MetaFMTrainer(
     train_target="v",
     model_dir="./artifacts/checkpoints/flow_matching/meta_fm_demo/",
     unet_config=unet_cfg,
+    subset_policy=ExpertSubsetPolicy(
+        num_experts=model.num_experts,
+        enabled=True,
+        configured_subsets={
+            1: [0, 1],
+            2: [0, 1],
+            3: [1, 2],
+            4: [1, 2],
+        },
+    ),
 )
 
 image_shape = (unet_cfg.get("in_channels", 4), unet_cfg.get("sample_size", 64), unet_cfg.get("sample_size", 64))

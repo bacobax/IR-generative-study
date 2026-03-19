@@ -1,11 +1,9 @@
-"""Condition router module for mapping text embeddings to expert mixture weights.
+"""Condition router module for mapping text embeddings to expert weights.
 
 Maps pooled CLIP text embeddings to a set of K routing weights using a
 configurable MLP. The output weights are normalized via softmax so they
-sum to 1 across experts.
-
-This module is designed as a standalone analysis component and is not yet
-connected to the UNet or training pipeline.
+sum to 1 across experts. Subset masking is intentionally handled outside
+this module so the router stays responsible only for learned scoring.
 
 Example usage::
 
@@ -113,6 +111,10 @@ class ConditionRouter(nn.Module):
 
         self.mlp = nn.Sequential(*layers)
 
+    def weights_from_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """Normalize raw logits into a full softmax expert distribution."""
+        return torch.softmax(logits / self.temperature, dim=-1)
+
     def forward(self, pooled_embedding: torch.Tensor) -> torch.Tensor:
         """Compute routing weights from pooled text embeddings.
 
@@ -127,8 +129,7 @@ class ConditionRouter(nn.Module):
             Routing weights of shape ``(B, K)`` that sum to 1 along dim=-1.
         """
         logits = self.mlp(pooled_embedding)
-        weights = torch.softmax(logits / self.temperature, dim=-1)
-        return weights
+        return self.weights_from_logits(logits)
 
     def get_logits(self, pooled_embedding: torch.Tensor) -> torch.Tensor:
         """Return raw logits before softmax (useful for analysis).

@@ -69,8 +69,10 @@ def _mock_conditioner(cond_drop_prob: float = 0.0):
     cond = TextConditioner.__new__(TextConditioner)
     cond.cond_drop_prob = cond_drop_prob
     cond.max_length = 10
+    cond.return_pooled = False
     cond.device = "cpu"
     cond._null_embedding = None
+    cond._null_pooled = None
     cond.encoder_name = "mock"
     cond.text_encoder = _MockEncoder()
     cond.tokenizer = _MockTokenizer()
@@ -153,6 +155,29 @@ def test_trainer_step():
     loss.backward()
     grad_norms = [p.grad.norm().item() for p in unet.parameters() if p.grad is not None]
     assert sum(grad_norms) > 0
+
+
+def test_text_trainer_resolves_latest_resume_checkpoint():
+    from src.algorithms.training.text_fm_trainer import TextFMTrainer
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = TextFMTrainer(
+            _small_unet(),
+            conditioner=_mock_conditioner(cond_drop_prob=0.1),
+            device="cpu",
+            t_scale=1.0,
+            model_dir=tmpdir,
+        )
+        os.makedirs(trainer._unet_dir(), exist_ok=True)
+        Path(trainer._unet_dir(), "unet_fm_epoch_0002_ckpt.pt").touch()
+        Path(trainer._unet_dir(), "unet_fm_epoch_0005_ckpt.pt").touch()
+
+        resolved_from_bool = trainer._resolve_resume_path(True)
+        resolved_from_latest = trainer._resolve_resume_path("latest")
+
+        assert resolved_from_bool is not None
+        assert resolved_from_bool.endswith("unet_fm_epoch_0005_ckpt.pt")
+        assert resolved_from_latest == resolved_from_bool
 
 
 def test_cfg_sampler():

@@ -41,7 +41,12 @@ _FLAT_TO_NESTED: dict = {}
 def _text_collate_fn(batch):
     images = torch.stack([b["pixel_values"] for b in batch])
     texts = [b["text"] for b in batch]
-    return {"pixel_values": images, "text": texts}
+    condition_ids = [b["condition_id"] for b in batch]
+    return {
+        "pixel_values": images,
+        "text": texts,
+        "condition_id": condition_ids,
+    }
 
 
 def run_training(cfg: MetaFMTrainConfig) -> None:

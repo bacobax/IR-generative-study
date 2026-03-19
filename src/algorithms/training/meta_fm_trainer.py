@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
+from src.conditioning.expert_subset_policy import ExpertSubsetPolicy
 from src.algorithms.training.text_fm_trainer import TextFMTrainer
 from src.core.data.annotations import caption_from_count
 from src.core.normalization import fm_output_to_uint16, uint16_to_png_uint8
@@ -63,6 +64,7 @@ class MetaFMTrainer(TextFMTrainer):
         router_sparsity_weight: float = 0.0,
         router_smoothness_weight: float = 0.0,
         router_balance_weight: float = 0.0,
+        subset_policy: Optional[ExpertSubsetPolicy] = None,
         log_dir: Optional[str] = None,
         log_every_steps: int = 10,
     ) -> None:
@@ -86,6 +88,12 @@ class MetaFMTrainer(TextFMTrainer):
         self._tb_writer: Optional[SummaryWriter] = None
         self._global_step = 0
         self._log_every_steps = max(1, int(log_every_steps))
+        if subset_policy is None:
+            subset_policy = ExpertSubsetPolicy(
+                num_experts=self._moe_unet().num_experts,
+                enabled=False,
+            )
+        self.subset_policy = subset_policy
 
     @classmethod
     def from_config(
@@ -126,6 +134,26 @@ class MetaFMTrainer(TextFMTrainer):
             device=device,
         )
 
+        if not isinstance(unet, TextMOEUNet):
+            raise TypeError("MetaFMTrainer requires a TextMOEUNet model")
+
+        subset_policy = cls._resume_subset_policy(
+            resume=getattr(config.output, "resume", None),
+            model_dir=config.output.model_dir,
+            checkpoint_dir=config.checkpoint.resolved_dir(config.output.model_dir),
+            latest_filename=config.checkpoint.latest_filename,
+            num_experts=unet.num_experts,
+        )
+        if subset_policy is None:
+            subset_policy = ExpertSubsetPolicy.from_config(
+                config.subset_policy,
+                num_experts=unet.num_experts,
+            )
+            subset_policy.validate_training_conditions(
+                base_conditions=getattr(config.condition_split, "base", None),
+                incremental_conditions=getattr(config.condition_split, "incremental", None),
+            )
+
         return cls(
             unet,
             conditioner=conditioner,
@@ -140,6 +168,7 @@ class MetaFMTrainer(TextFMTrainer):
             router_sparsity_weight=config.router_reg.sparsity_weight,
             router_smoothness_weight=config.router_reg.smoothness_weight,
             router_balance_weight=config.router_reg.balance_weight,
+            subset_policy=subset_policy,
             log_dir=config.output.resolved_log_dir(),
         )
 
@@ -187,6 +216,138 @@ class MetaFMTrainer(TextFMTrainer):
             "sparsity": sparsity,
             "batch_var": weights.var(dim=0, unbiased=False),
         }
+
+    def _condition_ids_from_batch(self, batch: Dict[str, Any]) -> List[Any]:
+        condition_ids = batch.get("condition_id")
+        if condition_ids is None:
+            raise ValueError("MetaFMTrainer batches must include 'condition_id'")
+        if torch.is_tensor(condition_ids):
+            if condition_ids.ndim == 0:
+                return [condition_ids.item()]
+            return condition_ids.detach().cpu().tolist()
+        return list(condition_ids)
+
+    @staticmethod
+    def _coerce_condition_key(value: Any) -> Any:
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return value
+        return value
+
+    @classmethod
+    def _subset_policy_payload_from_policy(
+        cls,
+        policy: ExpertSubsetPolicy,
+    ) -> Dict[str, Any]:
+        return {
+            "enabled": bool(policy.enabled),
+            "configured_subsets": {
+                key: list(value) for key, value in policy.configured_subsets.items()
+            },
+            "incremental_must_use_base_experts": bool(
+                policy.incremental_must_use_base_experts
+            ),
+            "unseen_policy": policy.unseen_policy,
+            "top_k": int(policy.top_k),
+            "threshold": policy.threshold,
+            "min_experts": int(policy.min_experts),
+            "empty_fallback": policy.empty_fallback,
+        }
+
+    @classmethod
+    def _subset_policy_from_payload(
+        cls,
+        payload: Dict[str, Any],
+        *,
+        num_experts: int,
+    ) -> ExpertSubsetPolicy:
+        configured = payload.get("configured_subsets", {}) or {}
+        normalized_configured = {
+            cls._coerce_condition_key(key): list(value)
+            for key, value in configured.items()
+        }
+        return ExpertSubsetPolicy(
+            num_experts=int(payload.get("num_experts", num_experts)),
+            enabled=bool(payload.get("enabled", False)),
+            configured_subsets=normalized_configured,
+            incremental_must_use_base_experts=bool(
+                payload.get("incremental_must_use_base_experts", True)
+            ),
+            unseen_policy=str(payload.get("unseen_policy", "router_topk")),
+            top_k=int(payload.get("top_k", 2)),
+            threshold=payload.get("threshold"),
+            min_experts=int(payload.get("min_experts", 1)),
+            empty_fallback=str(payload.get("empty_fallback", "top1")),
+        )
+
+    def _resolve_routing(
+        self,
+        pooled_text_embeds: Optional[torch.Tensor],
+        *,
+        condition_ids: Optional[List[Any]],
+        require_configured: bool,
+    ) -> Optional[Dict[str, torch.Tensor]]:
+        if pooled_text_embeds is None:
+            return None
+
+        moe = self._moe_unet()
+        raw_logits = moe.compute_router_logits(pooled_text_embeds)
+        raw_weights = moe.router.weights_from_logits(raw_logits)
+        expert_mask = self.subset_policy.build_masks(
+            condition_ids or [None] * raw_weights.shape[0],
+            raw_weights=raw_weights,
+            device=raw_weights.device,
+            require_configured=require_configured,
+        )
+        masked_weights = moe.normalize_masked_weights(raw_weights, expert_mask)
+        return {
+            "raw_logits": raw_logits,
+            "raw_weights": raw_weights,
+            "expert_mask": expert_mask,
+            "masked_weights": masked_weights,
+        }
+
+    def _log_router_distribution(
+        self,
+        *,
+        phase_tag: str,
+        prefix: str,
+        weights: Optional[torch.Tensor],
+        usage: Optional[torch.Tensor],
+    ) -> None:
+        if weights is None:
+            return
+        stats = self._router_stats(weights.detach())
+        self._log_scalar(f"{phase_tag}/router/{prefix}_entropy", stats["entropy"].item(), self._global_step)
+        self._log_scalar(f"{phase_tag}/router/{prefix}_max_weight", stats["max"].item(), self._global_step)
+        self._log_scalar(f"{phase_tag}/router/{prefix}_top1_mean", stats["top1"].item(), self._global_step)
+        self._log_scalar(f"{phase_tag}/router/{prefix}_sparsity", stats["sparsity"].item(), self._global_step)
+        self._log_hist(f"{phase_tag}/router/{prefix}_weights", weights.detach().cpu(), self._global_step)
+        for k in range(stats["mean"].numel()):
+            self._log_scalar(
+                f"{phase_tag}/router/{prefix}_mean_expert_{k}",
+                stats["mean"][k].item(),
+                self._global_step,
+            )
+            self._log_scalar(
+                f"{phase_tag}/router/{prefix}_std_expert_{k}",
+                stats["std"][k].item(),
+                self._global_step,
+            )
+            self._log_scalar(
+                f"{phase_tag}/router/{prefix}_batch_var_expert_{k}",
+                stats["batch_var"][k].item(),
+                self._global_step,
+            )
+        if usage is not None:
+            for k in range(usage.numel()):
+                self._log_scalar(
+                    f"{phase_tag}/router/{prefix}_usage_expert_{k}",
+                    usage[k].item(),
+                    self._global_step,
+                )
 
     # ------------------------------------------------------------------
     # Freezing utilities
@@ -241,6 +402,63 @@ class MetaFMTrainer(TextFMTrainer):
 
     def _checkpoint_dir(self, checkpoint_dir: Optional[str] = None) -> str:
         return checkpoint_dir or os.path.join(self.model_dir, "meta_checkpoints")
+
+    @staticmethod
+    def _resolve_resume_path_static(
+        resume: Optional[str],
+        *,
+        checkpoint_dir: str,
+        latest_filename: str,
+    ) -> Optional[str]:
+        if resume is None:
+            return None
+        if resume == "latest":
+            path = os.path.join(checkpoint_dir, latest_filename)
+            if not os.path.isfile(path):
+                raise FileNotFoundError(f"No latest checkpoint found at {path}")
+            return path
+        if not os.path.isfile(resume):
+            raise FileNotFoundError(f"Checkpoint not found: {resume}")
+        return resume
+
+    @classmethod
+    def _resume_subset_policy(
+        cls,
+        *,
+        resume: Optional[str],
+        model_dir: str,
+        checkpoint_dir: str,
+        latest_filename: str,
+        num_experts: int,
+    ) -> Optional[ExpertSubsetPolicy]:
+        resolved_resume = cls._resolve_resume_path_static(
+            resume,
+            checkpoint_dir=checkpoint_dir,
+            latest_filename=latest_filename,
+        )
+        if resolved_resume is None:
+            return None
+        candidate_paths: List[str] = []
+        ckpt_dir = os.path.dirname(resolved_resume)
+        candidate_paths.append(os.path.join(ckpt_dir, "subset_policy.json"))
+        candidate_paths.append(
+            os.path.join(os.path.dirname(ckpt_dir), "subset_policy.json")
+        )
+        candidate_paths.append(os.path.join(model_dir, "subset_policy.json"))
+
+        seen_paths = set()
+        for path in candidate_paths:
+            if path in seen_paths or not os.path.isfile(path):
+                continue
+            seen_paths.add(path)
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            return cls._subset_policy_from_payload(payload, num_experts=num_experts)
+        checkpoint = torch.load(resolved_resume, map_location="cpu")
+        payload = checkpoint.get("subset_policy")
+        if payload is not None:
+            return cls._subset_policy_from_payload(payload, num_experts=num_experts)
+        return None
 
     def _latest_checkpoint_path(
         self,
@@ -308,6 +526,10 @@ class MetaFMTrainer(TextFMTrainer):
             "router_lr_scale": router_lr_scale,
             "replay_every": replay_every,
             "trainable": self._trainable_summary(),
+            "subset_policy": {
+                **self._subset_policy_payload_from_policy(self.subset_policy),
+                "num_experts": int(self.subset_policy.num_experts),
+            },
         }
         if torch.cuda.is_available():
             payload["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
@@ -323,19 +545,11 @@ class MetaFMTrainer(TextFMTrainer):
         checkpoint_dir: Optional[str] = None,
         latest_filename: str = "meta_fm_latest.pt",
     ) -> Optional[str]:
-        if resume is None:
-            return None
-        if resume == "latest":
-            path = self._latest_checkpoint_path(
-                checkpoint_dir=checkpoint_dir,
-                latest_filename=latest_filename,
-            )
-            if not os.path.isfile(path):
-                raise FileNotFoundError(f"No latest checkpoint found at {path}")
-            return path
-        if not os.path.isfile(resume):
-            raise FileNotFoundError(f"Checkpoint not found: {resume}")
-        return resume
+        return self._resolve_resume_path_static(
+            resume,
+            checkpoint_dir=self._checkpoint_dir(checkpoint_dir),
+            latest_filename=latest_filename,
+        )
 
     def _load_training_checkpoint(
         self,
@@ -356,6 +570,22 @@ class MetaFMTrainer(TextFMTrainer):
         self.unet.load_state_dict(checkpoint["unet_state"])
         self._global_step = int(checkpoint.get("global_step", 0))
         self._restore_rng_state(checkpoint)
+        subset_policy_payload = checkpoint.get("subset_policy")
+        if subset_policy_payload is not None:
+            self.subset_policy = self._subset_policy_from_payload(
+                subset_policy_payload,
+                num_experts=self._moe_unet().num_experts,
+            )
+        else:
+            restored_subset_policy = self._resume_subset_policy(
+                resume=path,
+                model_dir=self.model_dir,
+                checkpoint_dir=self._checkpoint_dir(checkpoint_dir),
+                latest_filename=latest_filename,
+                num_experts=self._moe_unet().num_experts,
+            )
+            if restored_subset_policy is not None:
+                self.subset_policy = restored_subset_policy
         checkpoint["_resolved_path"] = path
         return checkpoint
 
@@ -417,25 +647,40 @@ class MetaFMTrainer(TextFMTrainer):
         images = batch["pixel_values"].to(self.device)
         x_fm = self.encode_fm_input(images)
         cond_kw = self.conditioner.prepare_for_training(batch, self.device)
+        pooled = cond_kw.get("pooled_text_embeds")
+        condition_ids = self._condition_ids_from_batch(batch)
+        routing = self._resolve_routing(
+            pooled,
+            condition_ids=condition_ids,
+            require_configured=True,
+        )
+        if routing is not None:
+            cond_kw = dict(cond_kw)
+            cond_kw["router_weights"] = routing["masked_weights"]
+
         fm_loss = self.flow_matching_step(x_fm, cond_kw)
 
-        pooled = cond_kw.get("pooled_text_embeds")
-        weights = None
-        usage = None
+        raw_weights = None
+        masked_weights = None
+        expert_mask = None
+        raw_usage = None
+        masked_usage = None
         sparsity = torch.tensor(0.0, device=fm_loss.device)
         smooth = torch.tensor(0.0, device=fm_loss.device)
         balance = torch.tensor(0.0, device=fm_loss.device)
 
-        if pooled is not None:
-            weights = self._moe_unet().compute_router_weights(pooled)
-            usage = weights.mean(dim=0)
-            print()
+        if routing is not None:
+            raw_weights = routing["raw_weights"]
+            masked_weights = routing["masked_weights"]
+            expert_mask = routing["expert_mask"]
+            raw_usage = raw_weights.mean(dim=0)
+            masked_usage = masked_weights.mean(dim=0)
             if self.router_sparsity_weight > 0:
-                sparsity = 1.0 - weights.pow(2).sum(dim=1).mean()
-            if self.router_smoothness_weight > 0 and weights.shape[0] > 1:
-                smooth = (weights[1:] - weights[:-1]).pow(2).mean()
+                sparsity = 1.0 - raw_weights.pow(2).sum(dim=1).mean()
+            if self.router_smoothness_weight > 0 and raw_weights.shape[0] > 1:
+                smooth = (raw_weights[1:] - raw_weights[:-1]).pow(2).mean()
             if self.router_balance_weight > 0:
-                balance = weights.shape[1] * usage.pow(2).sum()
+                balance = raw_weights.shape[1] * raw_usage.pow(2).sum()
 
         total = fm_loss
         if self.router_sparsity_weight > 0:
@@ -451,8 +696,12 @@ class MetaFMTrainer(TextFMTrainer):
             "sparsity": sparsity,
             "smooth": smooth,
             "balance": balance,
-            "usage": usage,
-            "weights": weights,
+            "usage": raw_usage,
+            "masked_usage": masked_usage,
+            "weights": raw_weights,
+            "raw_weights": raw_weights,
+            "masked_weights": masked_weights,
+            "expert_mask": expert_mask,
         }
 
     def _loss_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
@@ -490,6 +739,13 @@ class MetaFMTrainer(TextFMTrainer):
                 {"params": router_params, "lr": lr * router_lr_scale},
             ]
         )
+
+    def _save_subset_policy_metadata(self) -> None:
+        path = os.path.join(self.model_dir, "subset_policy.json")
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        payload = self._subset_policy_payload_from_policy(self.subset_policy)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
 
     def _train_phase(
         self,
@@ -554,38 +810,18 @@ class MetaFMTrainer(TextFMTrainer):
                     for gi, group in enumerate(optimizer.param_groups):
                         self._log_scalar(f"{phase_tag}/lr/group_{gi}", group.get("lr", 0.0), self._global_step)
 
-                    weights = losses.get("weights")
-                    if weights is not None:
-                        stats = self._router_stats(weights.detach())
-                        self._log_scalar(f"{phase_tag}/router/entropy", stats["entropy"].item(), self._global_step)
-                        self._log_scalar(f"{phase_tag}/router/max_weight", stats["max"].item(), self._global_step)
-                        self._log_scalar(f"{phase_tag}/router/top1_mean", stats["top1"].item(), self._global_step)
-                        self._log_scalar(f"{phase_tag}/router/sparsity", stats["sparsity"].item(), self._global_step)
-                        self._log_hist(f"{phase_tag}/router/weights", weights.detach().cpu(), self._global_step)
-                        for k in range(stats["mean"].numel()):
-                            self._log_scalar(
-                                f"{phase_tag}/router/mean_expert_{k}",
-                                stats["mean"][k].item(),
-                                self._global_step,
-                            )
-                            self._log_scalar(
-                                f"{phase_tag}/router/std_expert_{k}",
-                                stats["std"][k].item(),
-                                self._global_step,
-                            )
-                            self._log_scalar(
-                                f"{phase_tag}/router/batch_var_expert_{k}",
-                                stats["batch_var"][k].item(),
-                                self._global_step,
-                            )
-                    usage = losses.get("usage")
-                    if usage is not None:
-                        for k in range(usage.numel()):
-                            self._log_scalar(
-                                f"{phase_tag}/router/usage_expert_{k}",
-                                usage[k].item(),
-                                self._global_step,
-                            )
+                    self._log_router_distribution(
+                        phase_tag=phase_tag,
+                        prefix="raw",
+                        weights=losses.get("raw_weights"),
+                        usage=losses.get("usage"),
+                    )
+                    self._log_router_distribution(
+                        phase_tag=phase_tag,
+                        prefix="masked",
+                        weights=losses.get("masked_weights"),
+                        usage=losses.get("masked_usage"),
+                    )
 
                 self._global_step += 1
 
@@ -640,12 +876,39 @@ class MetaFMTrainer(TextFMTrainer):
         """Load frozen pretrained components needed before meta training begins."""
         self._ensure_dirs()
         self._save_configs()
+        self._save_subset_policy_metadata()
 
         if pretrained_vae_path is not None and self.vae is not None:
             self.load_vae_weights(pretrained_vae_path, strict=strict_load)
             self.vae.eval()
             for p in self.vae.parameters():
                 p.requires_grad = False
+
+    def _make_sampler(self):
+        from src.algorithms.inference.cfg_flow_matching_sampler import (
+            CFGFlowMatchingSampler,
+        )
+
+        if self.vae is not None:
+            return CFGFlowMatchingSampler.from_stable(
+                self.unet,
+                self.vae,
+                conditioner=self.conditioner,
+                subset_policy=self.subset_policy,
+                device=self.device,
+                t_scale=self.t_scale,
+                train_target=self.train_target,
+                from_norm_to_display=self.from_norm_to_display,
+            )
+        return CFGFlowMatchingSampler(
+            self.unet,
+            conditioner=self.conditioner,
+            subset_policy=self.subset_policy,
+            device=self.device,
+            t_scale=self.t_scale,
+            train_target=self.train_target,
+            from_norm_to_display=self.from_norm_to_display,
+        )
 
     # ------------------------------------------------------------------
     # Public API: single-episode meta training
@@ -827,21 +1090,32 @@ class MetaFMTrainer(TextFMTrainer):
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         prompts = [caption_from_count(c) for c in conditions]
         _, pooled = self.conditioner.encode_text_with_pooler(prompts, self.device)
-        weights = self._moe_unet().compute_router_weights(pooled).detach().cpu().tolist()
+        routing = self._resolve_routing(
+            pooled,
+            condition_ids=conditions,
+            require_configured=False,
+        )
+        if routing is None:
+            raise RuntimeError("Expected pooled text embeddings for router snapshot logging")
         payload = {
-            "conditions": conditions,
+            "condition_ids": conditions,
             "prompts": prompts,
-            "weights": weights,
+            "raw_weights": routing["raw_weights"].detach().cpu().tolist(),
+            "expert_mask": routing["expert_mask"].detach().cpu().tolist(),
+            "masked_weights": routing["masked_weights"].detach().cpu().tolist(),
         }
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
 
         writer = self._ensure_writer()
         if writer is not None:
-            w = torch.tensor(weights)
-            writer.add_histogram("router/snapshot_weights", w, self._global_step)
+            raw_w = routing["raw_weights"].detach().cpu()
+            masked_w = routing["masked_weights"].detach().cpu()
+            writer.add_histogram("router/snapshot_raw_weights", raw_w, self._global_step)
+            writer.add_histogram("router/snapshot_masked_weights", masked_w, self._global_step)
             for i, cond in enumerate(conditions):
-                writer.add_histogram(f"router/cond_{cond}/weights", w[i], self._global_step)
+                writer.add_histogram(f"router/cond_{cond}/raw_weights", raw_w[i], self._global_step)
+                writer.add_histogram(f"router/cond_{cond}/masked_weights", masked_w[i], self._global_step)
 
     @torch.no_grad()
     def evaluate_conditions(
@@ -871,6 +1145,7 @@ class MetaFMTrainer(TextFMTrainer):
                 prompts,
                 steps=steps,
                 guidance_scale=guidance_scale,
+                condition_ids=[cond] * samples_per_condition,
             )
             x_gen = sampler.decode(z)
 
@@ -882,10 +1157,24 @@ class MetaFMTrainer(TextFMTrainer):
                     self._global_step,
                 )
                 _, pooled = self.conditioner.encode_text_with_pooler(prompts, self.device)
-                weights = self._moe_unet().compute_router_weights(pooled)
-                stats = self._router_stats(weights)
-                self._log_scalar(f"eval/cond_{cond}/router/entropy", stats["entropy"].item(), self._global_step)
-                self._log_scalar(f"eval/cond_{cond}/router/max_weight", stats["max"].item(), self._global_step)
+                routing = self._resolve_routing(
+                    pooled,
+                    condition_ids=[cond] * samples_per_condition,
+                    require_configured=False,
+                )
+                if routing is not None:
+                    self._log_router_distribution(
+                        phase_tag=f"eval/cond_{cond}",
+                        prefix="raw",
+                        weights=routing["raw_weights"],
+                        usage=routing["raw_weights"].mean(dim=0),
+                    )
+                    self._log_router_distribution(
+                        phase_tag=f"eval/cond_{cond}",
+                        prefix="masked",
+                        weights=routing["masked_weights"],
+                        usage=routing["masked_weights"].mean(dim=0),
+                    )
 
             for i in range(samples_per_condition):
                 raw_uint16 = fm_output_to_uint16(x_gen[i])

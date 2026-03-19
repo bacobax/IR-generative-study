@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Smoke-check: TextMOEUNet wrapper with fixed uniform adapters.
+"""Smoke-check: TextMOEUNet wrapper with routed adapters.
 
 Checks:
   A. Build base text UNet and MOE-wrapped UNet
   B. Forward pass with dummy inputs (conditioning + timestep)
   C. Output shapes match
-  D. No NaNs in outputs
+  D. Masked routing renormalizes correctly
+  E. No NaNs in outputs
 """
 
 import os
@@ -78,7 +79,27 @@ check(
 )
 
 
-print("\n=== D. Output sanity ===")
+print("\n=== D. Masked routing ===")
+raw_weights = torch.tensor(
+    [
+        [0.2, 0.5, 0.2, 0.1],
+        [0.1, 0.2, 0.3, 0.4],
+    ],
+    dtype=torch.float32,
+)
+expert_mask = torch.tensor(
+    [
+        [True, False, True, False],
+        [False, True, True, False],
+    ],
+    dtype=torch.bool,
+)
+masked = moe_unet.normalize_masked_weights(raw_weights, expert_mask)
+check("Masked weights sum to 1", torch.allclose(masked.sum(dim=-1), torch.ones(2)))
+check("Masked weights zero excluded experts", torch.allclose(masked * (~expert_mask), torch.zeros_like(masked)))
+
+
+print("\n=== E. Output sanity ===")
 check("Base output no NaNs", not torch.isnan(base_sample).any().item())
 check("MOE output no NaNs", not torch.isnan(moe_sample).any().item())
 

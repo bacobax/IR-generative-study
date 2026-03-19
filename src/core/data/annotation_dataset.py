@@ -270,4 +270,8 @@ class AnnotationFMDataset(Dataset):
             n_people = len(bboxes_xyxy)
 
         caption = caption_from_count(n_people)
-        return {"pixel_values": x, "text": caption}
+        return {
+            "pixel_values": x,
+            "text": caption,
+            "condition_id": int(n_people),
+        }
