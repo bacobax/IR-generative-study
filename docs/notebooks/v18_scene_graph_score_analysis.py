@@ -1362,6 +1362,3 @@ print("\nRepo-specific caveats:")
 print("- `val/annotations.json` currently references many images not present locally; this notebook only scores matched local `.npy` files.")
 print("- The raw COCO schema currently exposes a single `person` class, so class-entropy and class-pair analyses have limited semantic range.")
 print("- Relation analysis is derived from box geometry because no raw relation annotations were found.")
-
-
-# %%

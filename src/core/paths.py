@@ -72,6 +72,10 @@ def v18_root() -> Path:
     """``data/raw/v18/`` — the main IR image dataset."""
     return raw_data_root() / "v18"
 
+def flir_root() -> Path:
+    """``data/raw/v18/`` — the main IR image dataset."""
+    return raw_data_root() / "flir_private_proxy_alignment_v18"
+
 
 def default_data_dir(split: str = "train") -> Path:
     """Return ``data/raw/v18/<split>/`` for a train/val split."""
