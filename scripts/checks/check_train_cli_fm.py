@@ -38,10 +38,11 @@ def check(label, cond):
 # 1. Imports
 # ======================================================================
 print("\n=== 1. Module imports ===")
-from src.cli.train import build_parser, main, run_training
+from src.cli.train import build_parser, main, run_training, _resolve_training_data
 check("build_parser importable", callable(build_parser))
 check("main importable", callable(main))
 check("run_training importable", callable(run_training))
+check("_resolve_training_data importable", callable(_resolve_training_data))
 
 from src.core.configs.fm_config import FMTrainConfig
 check("FMTrainConfig importable", FMTrainConfig is not None)
@@ -106,6 +107,37 @@ check("cfg.data.train_dir matches default", cfg.data.train_dir == "./data/raw/v1
 check("cfg.data.image_size matches default", cfg.data.image_size == 256)
 check("cfg.trainer_name is None (default)", cfg.trainer_name is None)
 check("cfg.sampler_name is None (default)", cfg.sampler_name is None)
+
+from src.core.configs.fm_config import DataConfig
+
+resolved_named = _resolve_training_data(
+    FMTrainConfig(
+        data=DataConfig(
+            dataset_id="v18",
+            annotations_path="/tmp/custom_annotations.json",
+        )
+    )
+)
+check(
+    "named dataset keeps explicit train annotations_path",
+    resolved_named.train_annotations_path == "/tmp/custom_annotations.json",
+)
+check(
+    "named dataset keeps explicit val annotations_path",
+    resolved_named.val_annotations_path == "/tmp/custom_annotations.json",
+)
+
+resolved_named_default = _resolve_training_data(
+    FMTrainConfig(data=DataConfig(dataset_id="v18"))
+)
+check(
+    "named dataset derives train annotations_path by split",
+    resolved_named_default.train_annotations_path.endswith("/train/annotations.json"),
+)
+check(
+    "named dataset derives val annotations_path by split",
+    resolved_named_default.val_annotations_path.endswith("/val/annotations.json"),
+)
 
 # ======================================================================
 # 4. Trainer resolution through registry

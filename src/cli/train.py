@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -158,16 +159,42 @@ _FLAT_TO_NESTED = {
 }
 
 
-def _apply_named_dataset_target(cfg: FMTrainConfig) -> str:
-    """Resolve a named dataset target and return its normalization mode."""
-    if cfg.data.dataset_id is None:
-        return RAW_UINT16_PERCENTILE
+@dataclass(frozen=True)
+class ResolvedTrainingData:
+    """Resolved dataset paths used by the FM training pipeline."""
 
-    target = resolve_dataset_target(cfg.data.dataset_id)
-    cfg.data.train_dir = str(target.split_dir("train"))
-    cfg.data.val_dir = str(target.split_dir("val"))
-    cfg.data.annotations_path = str(target.annotations_path("train"))
-    return target.normalization_mode
+    train_dir: str
+    val_dir: str
+    train_annotations_path: Optional[str]
+    val_annotations_path: Optional[str]
+    normalization_mode: str
+
+
+def _resolve_training_data(cfg: FMTrainConfig) -> ResolvedTrainingData:
+    """Resolve dataset directories, split annotations, and normalization mode."""
+    train_dir = cfg.data.train_dir
+    val_dir = cfg.data.val_dir
+    train_annotations_path = cfg.data.annotations_path
+    val_annotations_path = cfg.data.annotations_path
+    normalization_mode = RAW_UINT16_PERCENTILE
+
+    if cfg.data.dataset_id is not None:
+        target = resolve_dataset_target(cfg.data.dataset_id)
+        train_dir = str(target.split_dir("train"))
+        val_dir = str(target.split_dir("val"))
+        normalization_mode = target.normalization_mode
+
+        if train_annotations_path is None:
+            train_annotations_path = str(target.annotations_path("train"))
+            val_annotations_path = str(target.annotations_path("val"))
+
+    return ResolvedTrainingData(
+        train_dir=train_dir,
+        val_dir=val_dir,
+        train_annotations_path=train_annotations_path,
+        val_annotations_path=val_annotations_path,
+        normalization_mode=normalization_mode,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -182,7 +209,7 @@ def run_training(cfg: FMTrainConfig) -> None:
     (via registry) → training loop.
     """
     total_epochs = cfg.training.epochs
-    normalization_mode = _apply_named_dataset_target(cfg)
+    resolved_data = _resolve_training_data(cfg)
 
     # Propagate total_epochs into curriculum config
     if cfg.curriculum.enabled:
@@ -200,35 +227,35 @@ def run_training(cfg: FMTrainConfig) -> None:
         p_rot_max=cfg.augment.p_rot_max,
         p_rot_final=cfg.augment.p_rot_final,
         image_size=cfg.data.image_size,
-        normalization_mode=normalization_mode,
+        normalization_mode=resolved_data.normalization_mode,
     )
     train_transform = ScheduledAugment256(**aug_kwargs)
     eval_transform = ScheduledAugment256(**aug_kwargs)
 
     # ── Datasets / loaders ──
     use_annotation_ds = (
-        cfg.data.annotations_path is not None
+        resolved_data.train_annotations_path is not None
         and cfg.curriculum.enabled
     )
 
     if use_annotation_ds:
         train_dataset = AnnotationFMDataset(
-            root_dir=cfg.data.train_dir,
-            annotations_path=cfg.data.annotations_path,
+            root_dir=resolved_data.train_dir,
+            annotations_path=resolved_data.train_annotations_path,
             text_mode=False,
             curriculum=cfg.curriculum,
             transform=train_transform,
         )
         eval_dataset = AnnotationFMDataset(
-            root_dir=cfg.data.val_dir,
-            annotations_path=cfg.data.annotations_path,
+            root_dir=resolved_data.val_dir,
+            annotations_path=resolved_data.val_annotations_path,
             text_mode=False,
             curriculum=None,  # no curriculum augment for eval
             transform=eval_transform,
         )
     else:
-        train_dataset = NPYImageDataset(root_dir=cfg.data.train_dir, transform=train_transform)
-        eval_dataset = NPYImageDataset(root_dir=cfg.data.val_dir, transform=eval_transform)
+        train_dataset = NPYImageDataset(root_dir=resolved_data.train_dir, transform=train_transform)
+        eval_dataset = NPYImageDataset(root_dir=resolved_data.val_dir, transform=eval_transform)
 
     train_loader = DataLoader(
         train_dataset,

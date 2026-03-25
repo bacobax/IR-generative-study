@@ -34,6 +34,33 @@ def _default_from_norm_to_display(x: torch.Tensor) -> torch.Tensor:
     return (x + 1) / 2
 
 
+def _infer_vae_downsample_factor(vae_config: Dict[str, Any]) -> int:
+    """Infer the VAE spatial downsample factor from its channel schedule."""
+    num_channels = vae_config.get("num_channels")
+    if not isinstance(num_channels, (list, tuple)) or not num_channels:
+        raise ValueError(
+            "VAE config must define a non-empty num_channels sequence to infer sample_size."
+        )
+    return 2 ** max(0, len(num_channels) - 1)
+
+
+def _resolve_unet_sample_size(config, vae_config: Dict[str, Any]) -> int | None:
+    """Map the configured training image size to the latent UNet sample size."""
+    data_cfg = getattr(config, "data", None)
+    image_size = getattr(data_cfg, "image_size", None)
+    if image_size is None:
+        return None
+
+    downsample_factor = _infer_vae_downsample_factor(vae_config)
+    image_size = int(image_size)
+    if image_size % downsample_factor != 0:
+        raise ValueError(
+            f"image_size={image_size} is not divisible by VAE downsample factor "
+            f"{downsample_factor}"
+        )
+    return image_size // downsample_factor
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FlowMatchingTrainer
 # ═══════════════════════════════════════════════════════════════════════════
@@ -124,10 +151,14 @@ class FlowMatchingTrainer:
             "cuda" if torch.cuda.is_available() else "cpu"
         )
 
-        unet_cfg = load_unet_config(config.model.unet_config)
-        unet = build_fm_unet_from_config(unet_cfg, device=device)
-
         vae_cfg = load_vae_config(config.model.vae_config)
+        unet_cfg = load_unet_config(config.model.unet_config)
+        resolved_sample_size = _resolve_unet_sample_size(config, vae_cfg)
+        if resolved_sample_size is not None:
+            unet_cfg = dict(unet_cfg)
+            unet_cfg["sample_size"] = resolved_sample_size
+
+        unet = build_fm_unet_from_config(unet_cfg, device=device)
         vae = build_vae_from_config(vae_cfg, device=device)
 
         return cls(

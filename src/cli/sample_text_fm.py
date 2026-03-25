@@ -14,8 +14,9 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import os
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -55,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="CFG scale. 1.0=conditional only, 0.0=unconditional")
     parser.add_argument("--prompt", type=str, default="",
                         help="Text prompt (applied to all samples)")
+    parser.add_argument(
+        "--metadata",
+        type=str,
+        default=None,
+        help="Optional path to metadata.jsonl. Uses each row's 'text' field as a prompt.",
+    )
     parser.add_argument("--t_scale", type=float, default=1000.0)
     parser.add_argument("--train_target", type=str, default="v",
                         choices=["v", "x0"])
@@ -75,6 +82,29 @@ def build_parser() -> argparse.ArgumentParser:
 _FLAT_TO_NESTED: dict = {}
 
 
+def load_metadata_prompts(jsonl_path: str, max_samples: int) -> List[str]:
+    """Load up to ``max_samples`` prompts from a metadata JSONL file."""
+    prompts: List[str] = []
+    with open(jsonl_path, "r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            prompt = entry.get("text")
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise ValueError(
+                    f"Missing non-empty 'text' field in {jsonl_path} at line {line_no}"
+                )
+            prompts.append(prompt)
+            if len(prompts) >= max_samples:
+                break
+
+    if not prompts:
+        raise ValueError(f"No prompts found in metadata file: {jsonl_path}")
+    return prompts
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Sampling pipeline
 # ═══════════════════════════════════════════════════════════════════════════
@@ -84,6 +114,7 @@ def run_sampling(
     *,
     max_samples: int,
     output_dir: str,
+    prompts_from_metadata: Optional[List[str]] = None,
 ) -> None:
     """Execute CFG sampling from a structured config."""
     SamplerCls = REGISTRIES.sampler.get(cfg.sampler_name)
@@ -95,20 +126,26 @@ def run_sampling(
     guidance_scale = cfg.guidance_scale
     batch_size = cfg.batch_size
     generated = 0
+    using_metadata_prompts = prompts_from_metadata is not None
 
     print(
         f"[TextFM-sample] Generating {max_samples} samples "
         f"(batch={batch_size}, steps={cfg.steps}, guidance={guidance_scale})"
     )
-    if prompt:
+    if using_metadata_prompts:
+        print(f"  prompts: metadata.jsonl ({len(prompts_from_metadata)} loaded)")
+    elif prompt:
         print(f"  prompt: {prompt!r}")
 
     with tqdm(total=max_samples, desc="[TextFM-sample]", unit="img") as pbar:
         while generated < max_samples:
             bs = min(batch_size, max_samples - generated)
-            prompts = [prompt] * bs
+            if using_metadata_prompts:
+                prompts = prompts_from_metadata[generated:generated + bs]
+            else:
+                prompts = [prompt] * bs
 
-            if guidance_scale != 1.0 and prompt:
+            if guidance_scale != 1.0 and any(prompts):
                 z = sampler.sample_euler_cfg(
                     prompts,
                     steps=cfg.steps,
@@ -116,7 +153,7 @@ def run_sampling(
                 )
             else:
                 # No CFG: use conditional if prompt given, else unconditional
-                if prompt:
+                if any(prompts):
                     cond_kw = sampler.conditioner.prepare_conditional(
                         prompts, sampler.device,
                     )
@@ -162,12 +199,25 @@ def main(argv: Optional[list] = None) -> None:
     cli_defaults = vars(parser.parse_args([]))
     max_samples = args.max_samples
     output_dir = args.output_dir
+    metadata_path = args.metadata
     if args.max_samples == cli_defaults["max_samples"] and "max_samples" in yaml_data:
         max_samples = yaml_data["max_samples"]
     if args.output_dir == cli_defaults["output_dir"] and "output_dir" in yaml_data:
         output_dir = yaml_data["output_dir"]
+    if args.metadata == cli_defaults["metadata"] and "metadata" in yaml_data:
+        metadata_path = yaml_data["metadata"]
 
-    run_sampling(cfg, max_samples=max_samples, output_dir=output_dir)
+    prompts_from_metadata = None
+    if metadata_path:
+        prompts_from_metadata = load_metadata_prompts(metadata_path, max_samples)
+        max_samples = len(prompts_from_metadata)
+
+    run_sampling(
+        cfg,
+        max_samples=max_samples,
+        output_dir=output_dir,
+        prompts_from_metadata=prompts_from_metadata,
+    )
 
 
 if __name__ == "__main__":

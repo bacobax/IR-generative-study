@@ -165,6 +165,9 @@ from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
 
 with tempfile.TemporaryDirectory() as tmpdir:
     real_cfg = FMTrainConfig(
+        data=DataConfig(
+            image_size=320,
+        ),
         model=ModelConfig(
             unet_config=os.path.join(REPO, "configs/models/fm/stable_unet_config.json"),
             vae_config=os.path.join(REPO, "configs/models/fm/vae_config.json"),
@@ -185,9 +188,10 @@ with tempfile.TemporaryDirectory() as tmpdir:
     check("model_dir propagated", trainer.model_dir == tmpdir)
     check("VAE present", trainer.vae is not None)
     check("VAE frozen", all(not p.requires_grad for p in trainer.vae.parameters()))
+    check("UNET sample_size derived from image_size", trainer.unet.config.sample_size == 80)
 
     # flow_matching_step still works
-    z = torch.randn(2, 4, 64, 64, device=trainer.device)
+    z = torch.randn(2, 4, trainer.unet.config.sample_size, trainer.unet.config.sample_size, device=trainer.device)
     loss = trainer.flow_matching_step(z)
     check("flow_matching_step via from_config", loss.ndim == 0 and torch.isfinite(loss))
 

@@ -1,14 +1,15 @@
 # Text-conditioned FM sampling with classifier-free guidance
 
-pipeline_dir: "./artifacts/checkpoints/flow_matching/text_fm/"
+pipeline_dir: "./artifacts/checkpoints/flow_matching/text_fm_curriculum"
 vae_weights: null
 t_scale: 1000.0
 train_target: "v"
-steps: 50
+steps: 100
 batch_size: 8
 guidance_scale: 7.5
 prompt: ""                     # set via CLI: --prompt "a thermal image of ..."
-max_samples: 64
+metadata: "/projets/Fbassignana/diffusers_try/flow_matching_trial/data/raw/v18/metadata.jsonl"                 # optional metadata.jsonl path; uses each row's "text" prompt
+max_samples: 200
 output_dir: "./artifacts/generated/main/text_fm_cfg"
 device: null
 text_encoder: "openai/clip-vit-large-patch14"
