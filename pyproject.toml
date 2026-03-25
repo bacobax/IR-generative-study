@@ -7,5 +7,13 @@ name = "flow-matching-trial"
 version = "0.1.0"
 requires-python = ">=3.10"
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115,<1",
+    "httpx>=0.27,<1",
+    "pillow>=10,<12",
+    "uvicorn[standard]>=0.32,<1",
+]
+
 [tool.setuptools.packages.find]
 include = ["src*"]

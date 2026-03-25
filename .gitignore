@@ -23,6 +23,8 @@ Thumbs.db
 *.swp
 *.swo
 .vscode/
+node_modules/
+frontend/**/dist/
 
 # Logs and experiment tracking
 *.log

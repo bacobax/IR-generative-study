@@ -39,6 +39,8 @@ flow_matching_trial/
 │   ├── notebooks/       # Jupyter analysis notebooks
 │   ├── launcher_workflow.md  # Config-driven launcher architecture
 │   └── repo_layout_target.md
+├── frontend/            # Web frontends
+│   └── flir-subgroup-analysis/  # React dashboard for subgroup analysis
 ├── tests/               # Test suite
 ├── README.md
 ├── pyproject.toml
@@ -46,8 +48,8 @@ flow_matching_trial/
 ```
 
 Root-level Python scripts (`train_sfm.py`, `train_sd.py`, `train_vae.py`,
-`train_controlnet.py`, `generate_datasets.py`) are **thin wrappers** that
-delegate to the corresponding module inside `src/cli/`.
+`train_controlnet.py`, `generate_datasets.py`, `serve_flir_analysis.py`) are
+**thin wrappers** that delegate to the corresponding module inside `src/cli/`.
 
 | Root wrapper           | Source of truth              | Purpose                                  |
 | ---------------------- | ---------------------------- | ---------------------------------------- |
@@ -56,6 +58,7 @@ delegate to the corresponding module inside `src/cli/`.
 | `train_vae.py`         | `src/cli/train_vae.py`       | VAE (KL) training                        |
 | `train_controlnet.py`  | `src/cli/train_controlnet.py`| ControlNet training                      |
 | `generate_datasets.py` | `src/cli/generate.py`        | Synthetic dataset generation (SD / FM)   |
+| `serve_flir_analysis.py` | `src/cli/serve_flir_analysis.py` | FastAPI subgroup analysis service |
 
 ### Other CLI entry-points under `src/cli/`
 
@@ -98,6 +101,55 @@ python generate_datasets.py --mode sd15 \
   --lora_dir ./artifacts/checkpoints/stable_diffusion/lora_runs/.../checkpoint-32000
 ```
 
+## FLIR subgroup analysis web app
+
+The notebook logic from `docs/notebooks/v18_scene_graph_score_analysis_flir.py`
+now lives in reusable modules under `src/analysis/flir_subgroup/`.
+
+### Backend
+
+Install the web dependencies in your Python environment:
+
+```bash
+python -m pip install -e .[web]
+```
+
+Run the FastAPI API:
+
+```bash
+python serve_flir_analysis.py --host 127.0.0.1 --port 8000
+```
+
+Main routes:
+
+- `GET /api/flir-analysis/options`
+- `POST /api/flir-analysis/holdout-curves`
+- `POST /api/flir-analysis/collateral`
+- `POST /api/flir-analysis/partition-comparisons`
+- `POST /api/flir-analysis/examples`
+- `GET /api/flir-analysis/images/{image_key}`
+
+### Frontend
+
+```bash
+cd frontend/flir-subgroup-analysis
+npm install
+npm run dev
+```
+
+The frontend defaults to `http://127.0.0.1:8000`. Override the backend if
+needed:
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Build the production bundle with:
+
+```bash
+npm run build
+```
+
 ## Shell scripts
 
 Shell wrappers live in `scripts/` organized by category.  Each is a thin
@@ -134,4 +186,12 @@ for f in scripts/checks/check_*.py; do
   echo "=== $f ==="
   conda run -n diffusers-dev python "$f"
 done
+```
+
+Targeted validation for the subgroup analysis app:
+
+```bash
+conda run -n diffusers-dev python -m pytest tests/test_flir_subgroup_analysis.py -v
+conda run -n diffusers-dev python -m pytest tests/test_flir_subgroup_notebook_parity.py -v
+cd frontend/flir-subgroup-analysis && npm run build
 ```
