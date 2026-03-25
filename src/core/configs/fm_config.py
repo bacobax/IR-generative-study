@@ -19,6 +19,16 @@ import torch
 # Sub-configs
 # ═══════════════════════════════════════════════════════════════════════════
 
+
+def _validate_image_size(image_size: int) -> int:
+    """Require a positive square image size divisible by 32."""
+    image_size = int(image_size)
+    if image_size <= 0 or image_size % 32 != 0:
+        raise ValueError(
+            f"image_size must be a positive multiple of 32, got {image_size}"
+        )
+    return image_size
+
 @dataclass
 class CountFilterConfig:
     """Filter training images by person count for generalization testing.
@@ -61,11 +71,16 @@ class CurriculumConfig:
 class DataConfig:
     """Paths and loader settings for training / validation data."""
 
+    dataset_id: Optional[str] = None
     train_dir: str = "./data/raw/v18/train/"
     val_dir: str = "./data/raw/v18/val/"
     annotations_path: Optional[str] = None
+    image_size: int = 256
     batch_size: int = 8
     num_workers: int = 4
+
+    def __post_init__(self) -> None:
+        self.image_size = _validate_image_size(self.image_size)
 
 
 @dataclass
@@ -166,8 +181,11 @@ class FMTrainConfig:
         """Build an ``FMTrainConfig`` from an ``argparse.Namespace``."""
         return cls(
             data=DataConfig(
+                dataset_id=getattr(args, "dataset_id", None),
                 train_dir=args.train_dir,
                 val_dir=args.val_dir,
+                annotations_path=getattr(args, "annotations_path", None),
+                image_size=getattr(args, "image_size", 256),
                 batch_size=args.batch_size,
                 num_workers=args.num_workers,
             ),

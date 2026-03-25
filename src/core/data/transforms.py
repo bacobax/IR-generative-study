@@ -1,5 +1,7 @@
 """Reusable image transforms and augmentation schedules."""
 
+from __future__ import annotations
+
 import os
 from typing import Optional
 
@@ -8,7 +10,12 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-from src.core.normalization import resize_and_normalize_256
+from src.core.constants import DEFAULT_IMAGE_SIZE
+from src.core.normalization import (
+    RAW_UINT16_PERCENTILE,
+    resize_and_normalize,
+    resize_and_normalize_256,
+)
 
 
 # ── Geometric primitives ─────────────────────────────────────────────────────
@@ -44,8 +51,9 @@ def save_tensor_image(x: torch.Tensor, out_base: str) -> None:
 
     if x.min() < 0:  # already in [-1, 1]
         x_01 = ((x + 1) / 2).clamp(0, 1)
-    else:  # raw uint16 values
-        x_01 = (x / 65535.0).clamp(0, 1)
+    else:  # raw integer-like values
+        raw_scale = 255.0 if float(x.max()) <= 255.0 else 65535.0
+        x_01 = (x / raw_scale).clamp(0, 1)
 
     # .npy in uint16 domain
     x_uint16 = (x_01 * 65535.0).numpy().astype(np.uint16)
@@ -69,8 +77,7 @@ def save_tensor_image(x: torch.Tensor, out_base: str) -> None:
 # ── Scheduled augmentation ────────────────────────────────────────────────────
 
 class ScheduledAugment256:
-    """Epoch-aware augmentation: optional centre-crop + random 90° rotation,
-    followed by resize-and-normalise to 256×256.
+    """Epoch-aware augmentation followed by resize-and-normalise.
 
     Probabilities follow a warmup → ramp → decay schedule.
     """
@@ -87,10 +94,14 @@ class ScheduledAugment256:
         p_rot_warmup: float = 0.05,
         p_rot_max: float = 0.30,
         p_rot_final: float = 0.05,
+        image_size: int = DEFAULT_IMAGE_SIZE,
+        normalization_mode: str = RAW_UINT16_PERCENTILE,
     ):
         self.total_epochs = int(total_epochs)
         self.warmup_frac = float(warmup_frac)
         self.ramp_frac = float(ramp_frac)
+        self.image_size = int(image_size)
+        self.normalization_mode = normalization_mode
 
         self.p_crop_warmup = float(p_crop_warmup)
         self.p_crop_max = float(p_crop_max)
@@ -152,7 +163,11 @@ class ScheduledAugment256:
             x = center_crop_square(x)
         if torch.rand(()) < p_rot:
             x = random_rotate_90(x)
-        return resize_and_normalize_256(x)
+        return resize_and_normalize(
+            x,
+            image_size=self.image_size,
+            normalization_mode=self.normalization_mode,
+        )
 
 
 # ── Debug / visualisation helper ──────────────────────────────────────────────

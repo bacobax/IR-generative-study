@@ -22,7 +22,11 @@ from torch.utils.data import DataLoader
 
 from src.core.configs.fm_config import FMTrainConfig
 from src.core.configs.config_loader import merge_config_and_cli
-from src.core.normalization import norm_to_display as from_norm_to_display
+from src.core.data.dataset_targets import resolve_dataset_target
+from src.core.normalization import (
+    RAW_UINT16_PERCENTILE,
+    norm_to_display as from_norm_to_display,
+)
 from src.core.data.datasets import NPYImageDataset
 from src.core.data.annotation_dataset import AnnotationFMDataset
 from src.core.data.transforms import ScheduledAugment256, save_transform_examples
@@ -51,10 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Path to YAML config file. CLI flags override config values.")
 
     # Data paths
+    parser.add_argument("--dataset_id", type=str, default=None,
+                        help="Named dataset target (overrides train_dir/val_dir when set)")
     parser.add_argument("--train_dir", type=str, default="./data/raw/v18/train/",
                         help="Path to training data")
     parser.add_argument("--val_dir", type=str, default="./data/raw/v18/val/",
                         help="Path to validation data")
+    parser.add_argument("--image_size", type=int, default=256,
+                        help="Square resize target. Must be a positive multiple of 32.")
 
     # Model configs
     parser.add_argument("--unet_config", type=str, default="configs/models/fm/stable_unet_config.json",
@@ -115,9 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
 # nested sub-config.
 _FLAT_TO_NESTED = {
     # Data
+    "dataset_id":          "data.dataset_id",
     "train_dir":           "data.train_dir",
     "val_dir":             "data.val_dir",
     "annotations_path":    "data.annotations_path",
+    "image_size":          "data.image_size",
     "batch_size":          "data.batch_size",
     "num_workers":         "data.num_workers",
     # Model
@@ -148,6 +158,18 @@ _FLAT_TO_NESTED = {
 }
 
 
+def _apply_named_dataset_target(cfg: FMTrainConfig) -> str:
+    """Resolve a named dataset target and return its normalization mode."""
+    if cfg.data.dataset_id is None:
+        return RAW_UINT16_PERCENTILE
+
+    target = resolve_dataset_target(cfg.data.dataset_id)
+    cfg.data.train_dir = str(target.split_dir("train"))
+    cfg.data.val_dir = str(target.split_dir("val"))
+    cfg.data.annotations_path = str(target.annotations_path("train"))
+    return target.normalization_mode
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Training pipeline
 # ═══════════════════════════════════════════════════════════════════════════
@@ -160,6 +182,7 @@ def run_training(cfg: FMTrainConfig) -> None:
     (via registry) → training loop.
     """
     total_epochs = cfg.training.epochs
+    normalization_mode = _apply_named_dataset_target(cfg)
 
     # Propagate total_epochs into curriculum config
     if cfg.curriculum.enabled:
@@ -176,6 +199,8 @@ def run_training(cfg: FMTrainConfig) -> None:
         p_rot_warmup=cfg.augment.p_rot_warmup,
         p_rot_max=cfg.augment.p_rot_max,
         p_rot_final=cfg.augment.p_rot_final,
+        image_size=cfg.data.image_size,
+        normalization_mode=normalization_mode,
     )
     train_transform = ScheduledAugment256(**aug_kwargs)
     eval_transform = ScheduledAugment256(**aug_kwargs)

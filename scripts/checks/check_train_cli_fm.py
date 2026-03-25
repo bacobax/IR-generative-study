@@ -57,8 +57,10 @@ parser = build_parser()
 defaults = vars(parser.parse_args([]))
 
 expected_defaults = {
+    "dataset_id": None,
     "train_dir": "./data/raw/v18/train/",
     "val_dir": "./data/raw/v18/val/",
+    "image_size": 256,
     "unet_config": "configs/models/fm/stable_unet_config.json",
     "vae_config": "configs/models/fm/vae_config.json",
     "vae_weights": "./vae_best.pt",
@@ -99,7 +101,9 @@ args = parser.parse_args(["--epochs", "50", "--model_dir", "/tmp/test_run"])
 cfg = FMTrainConfig.from_args(args)
 check("cfg.training.epochs == 50", cfg.training.epochs == 50)
 check("cfg.output.model_dir == '/tmp/test_run'", cfg.output.model_dir == "/tmp/test_run")
+check("cfg.data.dataset_id default is None", cfg.data.dataset_id is None)
 check("cfg.data.train_dir matches default", cfg.data.train_dir == "./data/raw/v18/train/")
+check("cfg.data.image_size matches default", cfg.data.image_size == 256)
 check("cfg.trainer_name is None (default)", cfg.trainer_name is None)
 check("cfg.sampler_name is None (default)", cfg.sampler_name is None)
 

@@ -26,6 +26,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from src.core.data.annotations import (
+    build_category_id_to_name,
     caption_from_count,
     count_fully_contained,
     count_people_for_image,
@@ -104,6 +105,7 @@ class AnnotationFMDataset(Dataset):
 
         # Load and index annotations
         coco = load_coco_annotations(annotations_path)
+        self.category_id_to_name = build_category_id_to_name(coco)
         self.images_by_id, self.anns_by_image_id, self.fname_to_imgid = (
             index_annotations(coco)
         )
@@ -119,7 +121,15 @@ class AnnotationFMDataset(Dataset):
         all_observed_counts: set = set()
         for fname in all_files:
             image_id = self.fname_to_imgid.get(fname)
-            n = len(get_bboxes_xyxy_for_image(self.anns_by_image_id, image_id)) if image_id is not None else 0
+            n = (
+                count_people_for_image(
+                    self.anns_by_image_id,
+                    image_id,
+                    category_id_to_name=self.category_id_to_name,
+                )
+                if image_id is not None
+                else 0
+            )
             self._file_full_counts[fname] = n
             all_observed_counts.add(n)
 
@@ -213,7 +223,11 @@ class AnnotationFMDataset(Dataset):
 
         image_id = self.fname_to_imgid.get(fname)
         bboxes_xyxy = (
-            get_bboxes_xyxy_for_image(self.anns_by_image_id, image_id)
+            get_bboxes_xyxy_for_image(
+                self.anns_by_image_id,
+                image_id,
+                category_id_to_name=self.category_id_to_name,
+            )
             if image_id is not None
             else []
         )

@@ -70,6 +70,57 @@ def _make_test_data(tmpdir: str, n_images: int = 6):
     return img_dir, annot_path
 
 
+def _make_multiclass_test_data(tmpdir: str):
+    """Create one annotated image with mixed person/non-person categories."""
+    img_dir = os.path.join(tmpdir, "images")
+    os.makedirs(img_dir, exist_ok=True)
+
+    fname = "mixed_0000.npy"
+    arr = np.random.randint(0, 65535, (1, 128, 128), dtype=np.uint16)
+    np.save(os.path.join(img_dir, fname), arr)
+
+    payload = {
+        "images": [
+            {
+                "id": "mixed-image-0",
+                "file_name": fname,
+                "width": 128,
+                "height": 128,
+            }
+        ],
+        "annotations": [
+            {
+                "id": 1,
+                "image_id": "mixed-image-0",
+                "category_id": 0,
+                "bbox": [10, 10, 15, 20],
+            },
+            {
+                "id": 2,
+                "image_id": "mixed-image-0",
+                "category_id": 2,
+                "bbox": [40, 40, 50, 30],
+            },
+            {
+                "id": 3,
+                "image_id": "mixed-image-0",
+                "category_id": 2,
+                "bbox": [80, 30, 20, 20],
+            },
+        ],
+        "categories": [
+            {"id": 0, "name": "person"},
+            {"id": 2, "name": "car"},
+        ],
+    }
+
+    annot_path = os.path.join(tmpdir, "annotations.json")
+    with open(annot_path, "w") as f:
+        json.dump(payload, f)
+
+    return img_dir, annot_path
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Tests: annotation utilities
 # ═══════════════════════════════════════════════════════════════════════════
@@ -122,6 +173,31 @@ def test_caption_from_count():
 
     c5 = caption_from_count(5)
     assert "5 people" in c5
+
+
+def test_get_bboxes_filters_to_person_category():
+    from src.core.data.annotations import (
+        build_category_id_to_name,
+        get_bboxes_xyxy_for_image,
+        index_annotations,
+        load_coco_annotations,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _, annot_path = _make_multiclass_test_data(tmpdir)
+        coco = load_coco_annotations(annot_path)
+        category_id_to_name = build_category_id_to_name(coco)
+        _, anns_by_id, _ = index_annotations(coco)
+
+        filtered = get_bboxes_xyxy_for_image(
+            anns_by_id,
+            "mixed-image-0",
+            category_id_to_name=category_id_to_name,
+        )
+        unfiltered = get_bboxes_xyxy_for_image(anns_by_id, "mixed-image-0")
+
+        assert filtered == [(10, 10, 25, 30)]
+        assert len(unfiltered) == 3
 
 
 def test_crop_expansion():
@@ -209,6 +285,21 @@ def test_annotation_dataset_text_mode():
         item2 = ds[2]
         assert "2 people" in item2["text"]
         assert item2["condition_id"] == 2
+
+
+def test_annotation_dataset_text_mode_multiclass_counts_only_people():
+    from src.core.data.annotation_dataset import AnnotationFMDataset
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        img_dir, annot_path = _make_multiclass_test_data(tmpdir)
+        ds = AnnotationFMDataset(
+            root_dir=img_dir,
+            annotations_path=annot_path,
+            text_mode=True,
+        )
+        item = ds[0]
+        assert "1 person" in item["text"]
+        assert item["condition_id"] == 1
 
 
 def test_annotation_dataset_curriculum():

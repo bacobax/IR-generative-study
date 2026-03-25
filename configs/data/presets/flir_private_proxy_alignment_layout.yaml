@@ -1,0 +1,4 @@
+dataset_id: flir_private_proxy_alignment_v18
+split: train
+image_size: 256
+num_samples: 3

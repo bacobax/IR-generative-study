@@ -13,7 +13,7 @@ import json
 import random
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -27,27 +27,116 @@ def load_coco_annotations(path: str | Path) -> dict:
 
 
 def index_annotations(coco: dict) -> Tuple[
-    Dict[int, dict],
-    Dict[int, List[dict]],
-    Dict[str, int],
+    Dict[object, dict],
+    Dict[object, List[dict]],
+    Dict[str, object],
 ]:
     """Build efficient lookup structures from COCO annotations.
 
     Returns
     -------
-    images_by_id : dict[int, dict]
+    images_by_id : dict[object, dict]
         Mapping from image id to image info dict.
-    anns_by_image_id : dict[int, list[dict]]
+    anns_by_image_id : dict[object, list[dict]]
         Mapping from image id to list of annotation dicts.
-    filename_to_image_id : dict[str, int]
+    filename_to_image_id : dict[str, object]
         Mapping from ``file_name`` to image id.
     """
     images_by_id = {img["id"]: img for img in coco["images"]}
-    anns_by_image_id: Dict[int, List[dict]] = defaultdict(list)
+    anns_by_image_id: Dict[object, List[dict]] = defaultdict(list)
     for ann in coco.get("annotations", []):
         anns_by_image_id[ann["image_id"]].append(ann)
     filename_to_image_id = {img["file_name"]: img["id"] for img in coco["images"]}
     return images_by_id, dict(anns_by_image_id), filename_to_image_id
+
+
+def build_category_id_to_name(coco: dict) -> Dict[int, str]:
+    """Build ``category_id -> name`` mapping from COCO metadata."""
+    return {
+        int(category["id"]): str(category.get("name", category["id"]))
+        for category in coco.get("categories", [])
+    }
+
+
+def _filter_annotations_by_category(
+    anns: Iterable[dict],
+    *,
+    category_id_to_name: Optional[Dict[int, str]] = None,
+    include_category_names: Optional[set[str]] = None,
+) -> List[dict]:
+    """Filter annotations by category name when category metadata is available."""
+    anns = list(anns)
+    if not category_id_to_name or include_category_names is None:
+        return anns
+
+    return [
+        ann
+        for ann in anns
+        if category_id_to_name.get(int(ann.get("category_id", -1))) in include_category_names
+    ]
+
+
+def get_annotations_for_image(
+    anns_by_image_id: Dict[object, List[dict]],
+    image_id: object,
+    *,
+    category_id_to_name: Optional[Dict[int, str]] = None,
+    include_category_names: Optional[set[str]] = None,
+) -> List[dict]:
+    """Return raw annotation dicts for one image.
+
+    Parameters
+    ----------
+    anns_by_image_id:
+        Indexed COCO annotations keyed by image id.
+    image_id:
+        COCO image id as stored in the source annotations.
+    category_id_to_name:
+        Optional ``category_id -> name`` mapping.
+    include_category_names:
+        Optional set of category names to keep.
+    """
+    anns = anns_by_image_id.get(image_id, [])
+    return _filter_annotations_by_category(
+        anns,
+        category_id_to_name=category_id_to_name,
+        include_category_names=include_category_names,
+    )
+
+
+def get_boxes_and_labels_for_image(
+    anns_by_image_id: Dict[object, List[dict]],
+    image_id: object,
+    *,
+    category_id_to_name: Optional[Dict[int, str]] = None,
+    include_category_names: Optional[set[str]] = None,
+    include_label_names: bool = False,
+) -> Tuple[List[Tuple[float, float, float, float]], List[int], Optional[List[str]]]:
+    """Return aligned bbox / category outputs for one image.
+
+    Boxes are returned in ``xyxy`` format to match the existing internal
+    representation used by curriculum and counting logic.
+    """
+    anns = get_annotations_for_image(
+        anns_by_image_id,
+        image_id,
+        category_id_to_name=category_id_to_name,
+        include_category_names=include_category_names,
+    )
+    boxes_xyxy = [coco_bbox_to_xyxy(ann["bbox"]) for ann in anns]
+    labels = [int(ann["category_id"]) for ann in anns]
+
+    if not include_label_names:
+        return boxes_xyxy, labels, None
+
+    if category_id_to_name:
+        label_names = [
+            str(category_id_to_name.get(label, label))
+            for label in labels
+        ]
+    else:
+        label_names = [str(label) for label in labels]
+    return boxes_xyxy, labels, label_names
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -210,19 +299,38 @@ def count_fully_contained(
 
 
 def count_people_for_image(
-    anns_by_image_id: Dict[int, List[dict]],
-    image_id: int,
+    anns_by_image_id: Dict[object, List[dict]],
+    image_id: object,
+    *,
+    category_id_to_name: Optional[Dict[int, str]] = None,
 ) -> int:
     """Count person annotations for a given image id."""
-    return len(anns_by_image_id.get(image_id, []))
+    anns = get_annotations_for_image(
+        anns_by_image_id,
+        image_id,
+        category_id_to_name=category_id_to_name,
+        include_category_names={"person"},
+    )
+    return len(anns)
 
 
 def get_bboxes_xyxy_for_image(
-    anns_by_image_id: Dict[int, List[dict]],
-    image_id: int,
+    anns_by_image_id: Dict[object, List[dict]],
+    image_id: object,
+    *,
+    category_id_to_name: Optional[Dict[int, str]] = None,
 ) -> List[Tuple[float, float, float, float]]:
-    """Return all person bboxes in xyxy format for an image."""
-    anns = anns_by_image_id.get(image_id, [])
+    """Return person bboxes in xyxy format for one image.
+
+    When ``category_id_to_name`` is omitted, this falls back to the raw
+    image-level annotations for backward compatibility.
+    """
+    anns = get_annotations_for_image(
+        anns_by_image_id,
+        image_id,
+        category_id_to_name=category_id_to_name,
+        include_category_names={"person"},
+    )
     return [coco_bbox_to_xyxy(ann["bbox"]) for ann in anns]
 
 

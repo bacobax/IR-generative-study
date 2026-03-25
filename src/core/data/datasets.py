@@ -10,6 +10,14 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
+from src.core.data.annotations import (
+    build_category_id_to_name,
+    get_boxes_and_labels_for_image,
+    index_annotations,
+    load_coco_annotations,
+)
+from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
+
 
 class NPYImageDataset(Dataset):
     """Load single-channel ``.npy`` images and return tensors.
@@ -207,6 +215,118 @@ class BBoxConditioningDataset(Dataset):
             "pixel_values": x,
             "conditioning_pixel_values": mask,
         }
+
+
+class AnnotationLayoutDataset(Dataset):
+    """Load images together with aligned COCO bbox annotations.
+
+    This dataset is intended for bbox-driven inspection or future layout-aware
+    training paths. In v1 it only supports deterministic resize + normalize
+    performed inside the dataset so that bbox coordinates remain aligned with
+    the returned ``pixel_values`` tensor. Geometry-changing augmentations are
+    intentionally not supported here.
+    """
+
+    def __init__(
+        self,
+        root_dir: str,
+        annotations_path: str,
+        *,
+        image_size: int = 256,
+        normalization_mode: str = RAW_UINT16_PERCENTILE,
+        include_label_names: bool = True,
+    ):
+        self.root_dir = root_dir
+        self.image_size = int(image_size)
+        self.normalization_mode = normalization_mode
+        self.include_label_names = include_label_names
+
+        self.files = sorted(
+            f for f in os.listdir(root_dir) if f.endswith(".npy")
+        )
+        if not self.files:
+            raise RuntimeError(f"No .npy files found in {root_dir}")
+
+        coco = load_coco_annotations(annotations_path)
+        self.category_id_to_name = build_category_id_to_name(coco)
+        self.images_by_id, self.anns_by_image_id, self.fname_to_imgid = (
+            index_annotations(coco)
+        )
+
+    def __len__(self) -> int:
+        return len(self.files)
+
+    @staticmethod
+    def _scale_boxes_xyxy(
+        boxes_xyxy: torch.Tensor,
+        *,
+        src_width: float,
+        src_height: float,
+        dst_size: int,
+    ) -> torch.Tensor:
+        if boxes_xyxy.numel() == 0:
+            return boxes_xyxy
+        scaled = boxes_xyxy.clone()
+        scaled[:, [0, 2]] *= float(dst_size) / max(float(src_width), 1.0)
+        scaled[:, [1, 3]] *= float(dst_size) / max(float(src_height), 1.0)
+        return scaled
+
+    def __getitem__(self, idx: int) -> dict:
+        fname = self.files[idx]
+        path = os.path.join(self.root_dir, fname)
+
+        arr = np.load(path)
+        if arr.ndim == 2:
+            arr = arr[None, ...]
+        raw_tensor = torch.from_numpy(arr.copy()).float()
+
+        pixel_values = resize_and_normalize(
+            raw_tensor,
+            image_size=self.image_size,
+            normalization_mode=self.normalization_mode,
+        )
+
+        image_id = self.fname_to_imgid.get(fname)
+        image_info = self.images_by_id.get(image_id, {})
+        width = float(image_info.get("width", arr.shape[-1]))
+        height = float(image_info.get("height", arr.shape[-2]))
+
+        boxes_xyxy_raw, labels, label_names = get_boxes_and_labels_for_image(
+            self.anns_by_image_id,
+            image_id,
+            category_id_to_name=self.category_id_to_name,
+            include_label_names=self.include_label_names,
+        )
+
+        boxes_xyxy_original = torch.tensor(
+            boxes_xyxy_raw,
+            dtype=torch.float32,
+        )
+        if boxes_xyxy_original.numel() == 0:
+            boxes_xyxy_original = boxes_xyxy_original.reshape(0, 4)
+
+        boxes_xyxy = self._scale_boxes_xyxy(
+            boxes_xyxy_original,
+            src_width=width,
+            src_height=height,
+            dst_size=self.image_size,
+        )
+        labels_tensor = torch.tensor(labels, dtype=torch.long)
+        if labels_tensor.numel() == 0:
+            labels_tensor = labels_tensor.reshape(0)
+
+        sample = {
+            "pixel_values": pixel_values,
+            "boxes_xyxy": boxes_xyxy,
+            "labels": labels_tensor,
+            "image_id": image_id,
+            "file_name": fname,
+            "n_objects": int(labels_tensor.numel()),
+            "boxes_xyxy_original": boxes_xyxy_original,
+        }
+        if self.include_label_names:
+            sample["label_names"] = label_names or []
+        return sample
 
 
 class TextImageDataset(Dataset):

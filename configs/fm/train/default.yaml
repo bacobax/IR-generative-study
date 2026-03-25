@@ -9,8 +9,11 @@
 #   python -m src.cli.train --config configs/fm/train/default.yaml --epochs 200
 
 data:
+  dataset_id: null
   train_dir: "./data/raw/v18/train/"
   val_dir: "./data/raw/v18/val/"
+  annotations_path: null
+  image_size: 256
   batch_size: 8
   num_workers: 4
 

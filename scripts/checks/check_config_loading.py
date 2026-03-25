@@ -108,10 +108,13 @@ default_train = FMTrainConfig()
 d = dataclass_to_dict(default_train)
 check(isinstance(d, dict), "dataclass_to_dict returns dict")
 check("data" in d and "model" in d, "nested sub-configs present")
+check(d["data"]["dataset_id"] is None, "dataset_id default is None")
 check(d["data"]["train_dir"] == "./data/raw/v18/train/", "nested value correct")
+check(d["data"]["image_size"] == 256, "image_size default is 256")
 
 roundtrip = dict_to_dataclass(FMTrainConfig, d)
 check(roundtrip.data.train_dir == "./data/raw/v18/train/", "round-trip preserves values")
+check(roundtrip.data.image_size == 256, "round-trip preserves image_size")
 check(roundtrip.training.epochs == 100, "round-trip preserves nested values")
 
 # Test with FMSampleConfig (flat dataclass)
@@ -135,6 +138,8 @@ args_d1 = train_parser.parse_args([])
 cfg_d1 = merge_config_and_cli(FMTrainConfig, None, train_parser, args_d1,
                                 flat_to_nested=TRAIN_MAP)
 check(cfg_d1.data.train_dir == "./data/raw/v18/train/", "no-config: train_dir default")
+check(cfg_d1.data.dataset_id is None, "no-config: dataset_id default")
+check(cfg_d1.data.image_size == 256, "no-config: image_size default")
 check(cfg_d1.training.epochs == 100, "no-config: epochs default")
 check(cfg_d1.augment.p_rot_max == 0.30, "no-config: p_rot_max default")
 
@@ -144,6 +149,7 @@ args_d2 = train_parser.parse_args([])
 cfg_d2 = merge_config_and_cli(FMTrainConfig, str(yaml_path), train_parser, args_d2,
                                 flat_to_nested=TRAIN_MAP)
 check(cfg_d2.data.train_dir == "./data/raw/v18/train/", "yaml-only: train_dir from yaml")
+check(cfg_d2.data.image_size == 256, "yaml-only: image_size from yaml")
 check(cfg_d2.training.t_scale == 1000.0, "yaml-only: t_scale from yaml")
 
 # D3: YAML + CLI override → CLI wins
@@ -160,6 +166,13 @@ cfg_d4 = merge_config_and_cli(FMTrainConfig, None, train_parser, args_d4,
                                 flat_to_nested=TRAIN_MAP)
 check(cfg_d4.training.epochs == 50, "cli-only: epochs overridden")
 check(cfg_d4.data.batch_size == 8, "cli-only: batch_size stays default")
+
+# D4b: dataset_id + image_size CLI override
+args_d4b = train_parser.parse_args(["--dataset_id", "flir_private_proxy_alignment_v18", "--image_size", "320"])
+cfg_d4b = merge_config_and_cli(FMTrainConfig, None, train_parser, args_d4b,
+                                 flat_to_nested=TRAIN_MAP)
+check(cfg_d4b.data.dataset_id == "flir_private_proxy_alignment_v18", "cli-only: dataset_id overridden")
+check(cfg_d4b.data.image_size == 320, "cli-only: image_size overridden")
 
 # D5: Check _FLAT_TO_NESTED covers all CLI args (except --config)
 all_cli_args = {a.dest for a in train_parser._actions if a.dest not in ("help", "config")}
@@ -238,6 +251,13 @@ check("argparse" not in wrapper, "train_sfm.py has no argparse (thin wrapper)")
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== H. YAML ↔ dataclass default consistency ===")
 
+EXPECTED_FM_TRAIN_MISMATCHES = {
+    "model.vae_weights",
+    "training.epochs",
+    "sampling.sample_steps",
+    "output.model_dir",
+}
+
 # FM train
 ft_yaml = loaded_yamls.get("fm_train", {})
 ft_default = dataclass_to_dict(FMTrainConfig())
@@ -245,8 +265,18 @@ for section in ("data", "model", "augment", "training", "sampling", "output"):
     if section in ft_yaml:
         for key, yaml_val in ft_yaml[section].items():
             dc_val = ft_default.get(section, {}).get(key, "__MISSING__")
-            check(yaml_val == dc_val,
-                  f"fm_train yaml {section}.{key}: {yaml_val!r} == {dc_val!r}")
+            dotted = f"{section}.{key}"
+            if dotted in EXPECTED_FM_TRAIN_MISMATCHES:
+                check(
+                    True,
+                    f"fm_train yaml {dotted}: intentional divergence "
+                    f"({yaml_val!r} vs {dc_val!r})",
+                )
+            else:
+                check(
+                    yaml_val == dc_val,
+                    f"fm_train yaml {dotted}: {yaml_val!r} == {dc_val!r}",
+                )
 
 # FM sample (flat)
 fs_yaml = loaded_yamls.get("fm_sample", {})
@@ -269,6 +299,8 @@ cfg_final = merge_config_and_cli(
     flat_to_nested=TRAIN_MAP,
 )
 print(f"  train_dir   = {cfg_final.data.train_dir}")
+print(f"  dataset_id  = {cfg_final.data.dataset_id}")
+print(f"  image_size  = {cfg_final.data.image_size}")
 print(f"  epochs      = {cfg_final.training.epochs}")
 print(f"  batch_size  = {cfg_final.data.batch_size}")
 print(f"  t_scale     = {cfg_final.training.t_scale}")

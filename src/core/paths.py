@@ -73,7 +73,7 @@ def v18_root() -> Path:
     return raw_data_root() / "v18"
 
 def flir_root() -> Path:
-    """``data/raw/v18/`` — the main IR image dataset."""
+    """``data/raw/flir_private_proxy_alignment_v18/`` — FLIR proxy dataset."""
     return raw_data_root() / "flir_private_proxy_alignment_v18"
 
 

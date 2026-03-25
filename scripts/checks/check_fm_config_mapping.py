@@ -60,8 +60,10 @@ except Exception as e:
 # ── 2. Default values match existing CLI ─────────────────────────────────────
 print("\n=== 2. Default values ===")
 d = DataConfig()
+check("DataConfig.dataset_id", d.dataset_id is None)
 check("DataConfig.train_dir", d.train_dir == "./data/raw/v18/train/")
 check("DataConfig.val_dir", d.val_dir == "./data/raw/v18/val/")
+check("DataConfig.image_size", d.image_size == 256)
 check("DataConfig.batch_size", d.batch_size == 8)
 check("DataConfig.num_workers", d.num_workers == 4)
 
@@ -111,8 +113,11 @@ check("FMSampleConfig.batch_size", sc.batch_size == 8)
 # ── 3. FMTrainConfig.from_args ───────────────────────────────────────────────
 print("\n=== 3. FMTrainConfig.from_args ===")
 fake_args = SimpleNamespace(
+    dataset_id="flir_private_proxy_alignment_v18",
     train_dir="./data/train/",
     val_dir="./data/val/",
+    annotations_path=None,
+    image_size=320,
     batch_size=16,
     num_workers=2,
     unet_config="my_unet.json",
@@ -136,7 +141,9 @@ fake_args = SimpleNamespace(
 )
 
 cfg = FMTrainConfig.from_args(fake_args)
+check("data.dataset_id mapped", cfg.data.dataset_id == "flir_private_proxy_alignment_v18")
 check("data.train_dir mapped", cfg.data.train_dir == "./data/train/")
+check("data.image_size mapped", cfg.data.image_size == 320)
 check("data.batch_size mapped", cfg.data.batch_size == 16)
 check("model.unet_config mapped", cfg.model.unet_config == "my_unet.json")
 check("model.vae_weights mapped", cfg.model.vae_weights == "my_vae.pt")

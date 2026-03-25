@@ -44,6 +44,7 @@ try:
         legacy_code_root,
         configs_root,
         v18_root,
+        flir_root,
         default_data_dir,
         surprise_pred_dataset_root,
         dino_cache_dir,
@@ -93,6 +94,10 @@ check("fm_model_configs_dir() is dir", fm_model_configs_dir().is_dir())
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n=== 4. Data directory helpers ===")
 check("v18_root() == data/raw/v18", v18_root() == REPO / "data" / "raw" / "v18")
+check(
+    "flir_root() == data/raw/flir_private_proxy_alignment_v18",
+    flir_root() == REPO / "data" / "raw" / "flir_private_proxy_alignment_v18",
+)
 check("default_data_dir('train') == data/raw/v18/train", default_data_dir("train") == REPO / "data" / "raw" / "v18" / "train")
 check("default_data_dir('val') == data/raw/v18/val", default_data_dir("val") == REPO / "data" / "raw" / "v18" / "val")
 check("surprise_pred_dataset_root() == data/derived/surprise_pred_dataset",

@@ -14,6 +14,8 @@ Both families are used in different parts of the pipeline and must NOT be
 confused or merged.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -26,6 +28,9 @@ from src.core.constants import (
     IMAGENET_STD,
     DEFAULT_IMAGE_SIZE,
 )
+
+RAW_UINT16_PERCENTILE = "raw_uint16_percentile"
+UINT8_LINEAR = "uint8_linear"
 
 
 # ── Percentile-based normalization ────────────────────────────────────────────
@@ -79,6 +84,11 @@ def raw_to_norm_numpy(arr: np.ndarray) -> np.ndarray:
     return (arr.astype(np.float32) - _A) / _S * 2.0 - 1.0
 
 
+def uint8_to_norm(x: torch.Tensor) -> torch.Tensor:
+    """Linearly map uint8-like values from [0, 255] to [-1, 1]."""
+    return (x.to(torch.float32) / 255.0).clamp(0.0, 1.0) * 2.0 - 1.0
+
+
 # ── Per-image min/max normalization ───────────────────────────────────────────
 
 
@@ -108,27 +118,60 @@ def per_image_minmax(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
 # ── Resize-and-normalize composites ──────────────────────────────────────────
 
 
-def resize_and_normalize_256(x: torch.Tensor) -> torch.Tensor:
-    """Resize a single image to 256x256 then apply percentile normalization.
+def normalize_image_tensor(
+    x: torch.Tensor,
+    *,
+    normalization_mode: str = RAW_UINT16_PERCENTILE,
+) -> torch.Tensor:
+    """Normalize one image tensor into [-1, 1] with the requested mode."""
+    if normalization_mode == RAW_UINT16_PERCENTILE:
+        return raw_to_norm(x)
+    if normalization_mode == UINT8_LINEAR:
+        return uint8_to_norm(x)
+    raise ValueError(
+        f"Unknown normalization_mode={normalization_mode!r}. "
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, {UINT8_LINEAR!r}"
+    )
+
+
+def resize_and_normalize(
+    x: torch.Tensor,
+    *,
+    image_size: int = DEFAULT_IMAGE_SIZE,
+    normalization_mode: str = RAW_UINT16_PERCENTILE,
+) -> torch.Tensor:
+    """Resize a single image to a square size then normalize it.
 
     Parameters
     ----------
     x : torch.Tensor
-        Single image tensor ``(C, H, W)`` with raw uint16 values.
+        Single image tensor ``(C, H, W)`` with raw image values.
+    image_size : int
+        Target square resolution.
+    normalization_mode : str
+        Which normalization family to apply after resizing.
 
     Returns
     -------
     torch.Tensor
-        ``(C, 256, 256)`` in [-1, 1].
+        ``(C, image_size, image_size)`` in [-1, 1].
     """
     x = F.interpolate(
         x.unsqueeze(0),
-        size=(DEFAULT_IMAGE_SIZE, DEFAULT_IMAGE_SIZE),
+        size=(image_size, image_size),
         mode="bilinear",
         align_corners=False,
     ).squeeze(0)
-    x = raw_to_norm(x)
-    return x
+    return normalize_image_tensor(x, normalization_mode=normalization_mode)
+
+
+def resize_and_normalize_256(x: torch.Tensor) -> torch.Tensor:
+    """Backward-compatible 256x256 percentile-based normalization wrapper."""
+    return resize_and_normalize(
+        x,
+        image_size=DEFAULT_IMAGE_SIZE,
+        normalization_mode=RAW_UINT16_PERCENTILE,
+    )
 
 
 # ── Output conversion helpers ────────────────────────────────────────────────
