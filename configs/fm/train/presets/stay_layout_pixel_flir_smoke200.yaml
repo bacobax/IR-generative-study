@@ -1,0 +1,58 @@
+# STAY-style layout-conditioned pixel FM v1 — 200-image / 50-epoch debug run
+# Launcher: scripts/train/stay_layout_pixel_flir_smoke200.sh
+
+data:
+  dataset_id: "flir_private_proxy_alignment_v18"
+  image_size: 256
+  batch_size: 4
+  num_workers: 4
+  max_train_samples: 200
+  max_val_samples: 32
+  subset_strategy: "first_n"
+
+model:
+  unet_config: "configs/models/fm/non_stable_unet_config.json"
+  vae_config: null
+  vae_weights: null
+  pretrained_unet_path: null
+
+training:
+  epochs: 50
+  lr: 0.0001
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 10
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+
+layout_conditioning:
+  enabled: true
+  class_embed_dim: 32
+  bbox_embed_dim: 32
+  spatial_channels: 8
+  raster_mode: "box_fill_mean"
+  log_internal_maps: true
+
+logging:
+  scalar_every_steps: 1
+  image_every_steps: 25
+  max_logged_images: 8
+
+sampling:
+  sample_every: 0
+  sample_steps: 24
+  sample_batch_size: 8
+  sample_shape: null
+  fixed_validation_examples: 8
+  sample_every_steps: 50
+  save_debug_images: true
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_pixel_flir_smoke200"
+  log_dir: "./artifacts/runs/test/flow_matching/stay_layout_pixel_flir_smoke200"
+  debug_dir: "./artifacts/debug/stay_layout_pixel_flir_smoke200"
+  resume: null
+
+trainer_name: "layout_fm"
+device: null

@@ -200,6 +200,7 @@ class FlowMatchingTrainer:
             sample_shape=config.sampling.sample_shape,
             save_every_n_epochs=config.training.save_every_n_epochs,
             resume_from_checkpoint=config.output.resume,
+            lr=getattr(config.training, "lr", 1e-4),
         )
 
     # ------------------------------------------------------------------
@@ -331,6 +332,7 @@ class FlowMatchingTrainer:
         sample_shape: Optional[Tuple[int, int, int]] = None,
         save_every_n_epochs: int = 1,
         resume_from_checkpoint: Optional[str] = None,
+        lr: float = 1e-4,
     ) -> None:
         if patience is not None and eval_dataloader is None:
             raise ValueError("eval_dataloader must be provided when using patience early stopping.")
@@ -349,7 +351,7 @@ class FlowMatchingTrainer:
         if pretrained_unet_path is not None:
             self.load_unet_weights(pretrained_unet_path, strict=strict_load)
 
-        optimizer = Adam(self.unet.parameters(), lr=1e-4)
+        optimizer = Adam(self.unet.parameters(), lr=lr)
 
         # Resume state
         global_step = 0

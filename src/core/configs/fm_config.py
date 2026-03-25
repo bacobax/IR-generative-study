@@ -10,7 +10,7 @@ existing CLI defaults.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -78,6 +78,9 @@ class DataConfig:
     image_size: int = 256
     batch_size: int = 8
     num_workers: int = 4
+    max_train_samples: Optional[int] = None
+    max_val_samples: Optional[int] = None
+    subset_strategy: str = "first_n"
 
     def __post_init__(self) -> None:
         self.image_size = _validate_image_size(self.image_size)
@@ -114,12 +117,36 @@ class TrainHyperConfig:
     """Core training hyper-parameters."""
 
     epochs: int = 100
+    lr: float = 1e-4
     t_scale: float = 1000.0
     train_target: str = "v"          # "v" | "x0"
     save_every_n_epochs: int = 10
     patience: Optional[int] = None
     min_delta: float = 0.0
     strict_load: bool = True
+
+
+@dataclass
+class LayoutConditioningConfig:
+    """Settings for the bbox-conditioned pixel-space FM path."""
+
+    enabled: bool = False
+    num_classes: Optional[int] = None
+    category_id_to_name: Dict[int, str] = field(default_factory=dict)
+    class_embed_dim: int = 32
+    bbox_embed_dim: int = 32
+    spatial_channels: int = 8
+    raster_mode: str = "box_fill_mean"
+    log_internal_maps: bool = True
+
+
+@dataclass
+class LoggingConfig:
+    """Step-based TensorBoard logging cadence for layout-conditioned FM."""
+
+    scalar_every_steps: int = 10
+    image_every_steps: int = 200
+    max_logged_images: int = 4
 
 
 @dataclass
@@ -130,6 +157,9 @@ class SampleConfig:
     sample_steps: int = 50
     sample_batch_size: int = 4
     sample_shape: Optional[Tuple[int, int, int]] = None
+    fixed_validation_examples: int = 4
+    sample_every_steps: int = 0
+    save_debug_images: bool = False
 
 
 @dataclass
@@ -138,12 +168,18 @@ class OutputConfig:
 
     model_dir: str = "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/"
     log_dir: Optional[str] = None    # derived from model_dir if None
+    debug_dir: Optional[str] = None  # derived from model_dir if None
     resume: Optional[str] = None
 
     def resolved_log_dir(self) -> str:
         if self.log_dir is not None:
             return self.log_dir
         return f"{self.model_dir}/runs/stable_flow_matching_logs/"
+
+    def resolved_debug_dir(self) -> str:
+        if self.debug_dir is not None:
+            return self.debug_dir
+        return f"{self.model_dir}/debug_samples/"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -162,6 +198,8 @@ class FMTrainConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     augment: AugmentConfig = field(default_factory=AugmentConfig)
     training: TrainHyperConfig = field(default_factory=TrainHyperConfig)
+    layout_conditioning: LayoutConditioningConfig = field(default_factory=LayoutConditioningConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
     sampling: SampleConfig = field(default_factory=SampleConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
@@ -188,6 +226,9 @@ class FMTrainConfig:
                 image_size=getattr(args, "image_size", 256),
                 batch_size=args.batch_size,
                 num_workers=args.num_workers,
+                max_train_samples=getattr(args, "max_train_samples", None),
+                max_val_samples=getattr(args, "max_val_samples", None),
+                subset_strategy=getattr(args, "subset_strategy", "first_n"),
             ),
             model=ModelConfig(
                 unet_config=args.unet_config,
@@ -206,6 +247,7 @@ class FMTrainConfig:
             ),
             training=TrainHyperConfig(
                 epochs=args.epochs,
+                lr=getattr(args, "lr", 1e-4),
                 t_scale=args.t_scale,
                 train_target=args.train_target,
                 save_every_n_epochs=args.save_every_n_epochs,

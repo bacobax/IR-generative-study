@@ -249,6 +249,10 @@ class AnnotationLayoutDataset(Dataset):
 
         coco = load_coco_annotations(annotations_path)
         self.category_id_to_name = build_category_id_to_name(coco)
+        self.category_ids = sorted(self.category_id_to_name)
+        self.num_categories = (
+            max(self.category_ids) + 1 if self.category_ids else 0
+        )
         self.images_by_id, self.anns_by_image_id, self.fname_to_imgid = (
             index_annotations(coco)
         )

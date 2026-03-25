@@ -8,6 +8,7 @@ from src.core.data.datasets import (
     NPYStemDataset,
     TextImageDataset,
 )
+from src.core.data.layout_batching import collate_layout_batch
 
 __all__ = [
     "AnnotationFMDataset",
@@ -16,4 +17,5 @@ __all__ = [
     "NPYImageDataset",
     "NPYStemDataset",
     "TextImageDataset",
+    "collate_layout_batch",
 ]
