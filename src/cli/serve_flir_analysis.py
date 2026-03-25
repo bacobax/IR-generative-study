@@ -1,4 +1,4 @@
-"""CLI entrypoint for the FLIR subgroup FastAPI service."""
+"""CLI entrypoint for the subgroup FastAPI service."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import uvicorn
 def build_parser() -> argparse.ArgumentParser:
     """Build the server CLI parser."""
 
-    parser = argparse.ArgumentParser(description="Serve the FLIR subgroup analysis FastAPI app")
+    parser = argparse.ArgumentParser(description="Serve the subgroup analysis FastAPI app")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind")
     parser.add_argument("--reload", action="store_true", help="Enable uvicorn reload mode")

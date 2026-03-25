@@ -21,14 +21,36 @@ import {
 import {
   getApiBaseUrl,
   getCollateral,
+  getDatasets,
   getExamples,
   getHoldoutCurves,
   getOptions,
   getPartitionComparisons,
 } from "./api";
+import { InfoHelp } from "./InfoHelp";
+import {
+  helpTextForAnnotationClassDistribution,
+  helpTextForCollateral,
+  helpTextForDistinctImagePresence,
+  helpTextForDominanceHistogram,
+  helpTextForHeldOutExamples,
+  helpTextForHoldoutSweep,
+  helpTextForPerClassCount,
+  helpTextForPositionBinPanel,
+  helpTextForRetainedExamples,
+  helpTextForSizeBinPanel,
+  helpTextForSubgroupDistribution,
+  type HelpContext,
+} from "./helpText";
 import type {
+  BinExplanationBox,
+  BinExplanationExample,
+  BinExplanationPanelPayload,
   CollateralGroupPayload,
   CollateralResponse,
+  DatasetId,
+  DatasetOption,
+  DatasetsResponse,
   ExampleImage,
   ExamplesResponse,
   GroupSpec,
@@ -60,6 +82,19 @@ function toGroupSpec(group: SelectableGroup): GroupSpec {
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatNormalizedRange(value: unknown): string {
+  if (typeof value !== "number") {
+    return "—";
+  }
+  if (value === 0) {
+    return "0";
+  }
+  if (value < 0.01) {
+    return value.toExponential(2);
+  }
+  return value.toFixed(3);
 }
 
 function buildHoldoutChartRows(holdoutData: HoldoutCurvesResponse | null): Array<Record<string, number | string>> {
@@ -146,6 +181,10 @@ function buildCountDistributionByClass(rows: PartitionComparisonsResponse["per_c
     .sort((left, right) => left.classLabel.localeCompare(right.classLabel));
 }
 
+function binClassName(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, "-");
+}
+
 function SectionState({ loading, error }: { loading: boolean; error: string | null }) {
   if (loading) {
     return <div className="status-panel">Loading…</div>;
@@ -154,6 +193,33 @@ function SectionState({ loading, error }: { loading: boolean; error: string | nu
     return <div className="status-panel error">{error}</div>;
   }
   return null;
+}
+
+function PanelHeader({
+  eyebrow,
+  title,
+  supportingCopy,
+  helpText,
+  compact = false,
+}: {
+  eyebrow?: string;
+  title: string;
+  supportingCopy?: string;
+  helpText?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`panel-header ${compact ? "panel-header--compact" : ""}`}>
+      <div>
+        {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
+        <h3>{title}</h3>
+      </div>
+      <div className="panel-header__meta">
+        {supportingCopy ? <p className="supporting-copy">{supportingCopy}</p> : null}
+        {helpText ? <InfoHelp label={`Explain ${title}`} text={helpText} /> : null}
+      </div>
+    </div>
+  );
 }
 
 function ExamplePreview({ title, example }: { title: string; example: ExampleImage }) {
@@ -205,14 +271,138 @@ function ExamplePreview({ title, example }: { title: string; example: ExampleIma
   );
 }
 
+function BinLegend({
+  labels,
+  mode,
+}: {
+  labels: string[];
+  mode: "size" | "position";
+}) {
+  return (
+    <div className="bin-legend">
+      {labels.map((label) => (
+        <span key={`${mode}-${label}`} className={`bin-pill ${mode}-${binClassName(label)}`}>
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function BinExplanationOverlay({
+  example,
+  mode,
+  positionEdges,
+}: {
+  example: BinExplanationExample;
+  mode: "size" | "position";
+  positionEdges?: number[];
+}) {
+  return (
+    <div
+      className="preview-frame preview-frame--bin"
+      style={{ aspectRatio: `${example.image_width} / ${example.image_height}` }}
+    >
+      <img
+        src={`${getApiBaseUrl()}${example.preview_url}`}
+        alt={example.image_key}
+        loading="lazy"
+      />
+      {mode === "position" && positionEdges ? (
+        <div className="position-guides">
+          {positionEdges.slice(1, -1).map((edge) => (
+            <div
+              key={edge}
+              className="position-guide"
+              style={{ left: `${edge * 100}%` }}
+            />
+          ))}
+        </div>
+      ) : null}
+      {example.boxes.map((box: BinExplanationBox) => {
+        const label = mode === "size" ? box.size_bin : box.position_bin;
+        return (
+          <div
+            key={`${example.image_key}-${box.ann_id}`}
+            className={`box box--bin ${mode}-${binClassName(label)}`}
+            title={`${box.class_label} • ${label}`}
+            style={{
+              left: `${(box.bbox_x / example.image_width) * 100}%`,
+              top: `${(box.bbox_y / example.image_height) * 100}%`,
+              width: `${(box.bbox_w / example.image_width) * 100}%`,
+              height: `${(box.bbox_h / example.image_height) * 100}%`,
+            }}
+          >
+            <span className="box__label">{label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BinExplanationPanel({
+  title,
+  payload,
+  helpText,
+  datasetLabel,
+  positionEdges,
+}: {
+  title: string;
+  payload: BinExplanationPanelPayload;
+  helpText: string;
+  datasetLabel: string;
+  positionEdges?: number[];
+}) {
+  return (
+    <div className="chart-panel">
+      <PanelHeader title={title} helpText={helpText} compact />
+      {payload.example ? (
+        <>
+          <BinLegend labels={payload.bin_labels} mode={payload.panel} />
+          <BinExplanationOverlay
+            example={payload.example}
+            mode={payload.panel}
+            positionEdges={positionEdges}
+          />
+          <div className="bin-panel__meta">
+            <span>{datasetLabel}</span>
+            <span>{payload.example.split} split</span>
+            <span>{payload.example.coverage_count} bins covered</span>
+            <span>{payload.example.n_instances} instances</span>
+          </div>
+          <p className="supporting-copy bin-panel__copy">{payload.example.selection_reason}</p>
+          {payload.panel === "size" && payload.bin_spec ? (
+            <div className="bin-spec-grid">
+              {payload.bin_spec.map((row) => (
+                <div key={String(row.size_bin)} className="bin-spec-card">
+                  <strong>{String(row.size_bin)}</strong>
+                  <span>
+                    {formatNormalizedRange(row.bin_min)} to {formatNormalizedRange(row.bin_max)}
+                  </span>
+                  <span>{row.n_instances ?? 0} instances</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="status-panel">No representative example image was found for this dataset.</div>
+      )}
+    </div>
+  );
+}
+
 function GroupDetailCard({
   group,
   examples,
   damage,
+  helpContext,
 }: {
   group: SelectableGroup;
   examples: ExamplesResponse["groups"][number] | undefined;
   damage: CollateralGroupPayload | undefined;
+  helpContext: HelpContext;
 }) {
   const topDamageRows = damage?.damage_rows.slice(0, 12) ?? [];
 
@@ -232,7 +422,11 @@ function GroupDetailCard({
 
       <div className="detail-chart-grid">
         <div className="chart-panel">
-          <h4>Dominance histogram</h4>
+          <PanelHeader
+            title="Dominance histogram"
+            helpText={helpTextForDominanceHistogram(helpContext, group.subgroup_label)}
+            compact
+          />
           {damage && damage.dominance_histogram.length > 0 ? (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={damage.dominance_histogram}>
@@ -249,7 +443,11 @@ function GroupDetailCard({
         </div>
 
         <div className="chart-panel">
-          <h4>Collateral damage</h4>
+          <PanelHeader
+            title="Collateral damage"
+            helpText={helpTextForCollateral(helpContext, group.subgroup_label)}
+            compact
+          />
           {topDamageRows.length > 0 ? (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={topDamageRows} layout="vertical" margin={{ left: 20 }}>
@@ -281,7 +479,13 @@ function GroupDetailCard({
       <div className="examples-grid">
         <div className="examples-column">
           <div className="examples-column__header">
-            <h4>Held-out examples</h4>
+            <div className="examples-column__title">
+              <h4>Held-out examples</h4>
+              <InfoHelp
+                label={`Explain held-out examples for ${group.subgroup_label}`}
+                text={helpTextForHeldOutExamples(helpContext, group.subgroup_label)}
+              />
+            </div>
             <span>{examples?.held_out_examples.length ?? 0} images</span>
           </div>
           {examples && examples.held_out_examples.length > 0 ? (
@@ -295,7 +499,13 @@ function GroupDetailCard({
 
         <div className="examples-column">
           <div className="examples-column__header">
-            <h4>Retained training examples</h4>
+            <div className="examples-column__title">
+              <h4>Retained training examples</h4>
+              <InfoHelp
+                label={`Explain retained examples for ${group.subgroup_label}`}
+                text={helpTextForRetainedExamples(helpContext, group.subgroup_label)}
+              />
+            </div>
             <span>{examples?.retained_examples.length ?? 0} images</span>
           </div>
           {examples && examples.retained_examples.length > 0 ? (
@@ -312,8 +522,13 @@ function GroupDetailCard({
 }
 
 export default function App() {
+  const [datasetCatalog, setDatasetCatalog] = useState<DatasetOption[]>([]);
+  const [selectedDataset, setSelectedDataset] = useState<DatasetId | null>(null);
+  const [datasetsLoading, setDatasetsLoading] = useState(true);
+  const [datasetsError, setDatasetsError] = useState<string | null>(null);
+
   const [options, setOptions] = useState<OptionsResponse | null>(null);
-  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
 
   const [phase, setPhase] = useState<Phase>("phase1");
@@ -343,13 +558,49 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
+    async function loadDatasets() {
+      setDatasetsLoading(true);
+      setDatasetsError(null);
+      try {
+        const payload: DatasetsResponse = await getDatasets();
+        if (cancelled) {
+          return;
+        }
+        setDatasetCatalog(payload.datasets);
+        setSelectedDataset((current) => current ?? payload.default_dataset_id);
+      } catch (error) {
+        if (!cancelled) {
+          setDatasetsError(error instanceof Error ? error.message : "Failed to load datasets");
+        }
+      } finally {
+        if (!cancelled) {
+          setDatasetsLoading(false);
+        }
+      }
+    }
+
+    void loadDatasets();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDataset) {
+      return;
+    }
+
+    const datasetId = selectedDataset;
+    let cancelled = false;
+
     async function loadOptions() {
       setOptionsLoading(true);
       setOptionsError(null);
       try {
-        const payload = await getOptions();
+        const payload = await getOptions(datasetId);
         if (!cancelled) {
           setOptions(payload);
+          setDatasetCatalog(payload.datasets);
         }
       } catch (error) {
         if (!cancelled) {
@@ -366,7 +617,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedDataset]);
 
   const phaseOptions: OptionsPhasePayload | null =
     options == null ? null : phase === "phase1" ? options.phase1 : options.phase2;
@@ -391,6 +642,17 @@ export default function App() {
     }
   }, [phase, phaseOptions, selectedGroupLabels]);
 
+  useEffect(() => {
+    const availableClasses = options?.active_dataset.classes ?? [];
+    if (availableClasses.length === 1) {
+      setClassFilter(availableClasses[0]);
+      return;
+    }
+    if (classFilter !== "all" && !availableClasses.includes(classFilter)) {
+      setClassFilter("all");
+    }
+  }, [classFilter, options]);
+
   const deferredClassFilter = useDeferredValue(classFilter);
   const deferredSizeFilter = useDeferredValue(sizeFilter);
   const deferredPositionFilter = useDeferredValue(positionFilter);
@@ -405,9 +667,13 @@ export default function App() {
 
   const selectedGroups =
     phaseOptions?.groups.filter((group) => selectedGroupLabels.includes(group.subgroup_label)) ?? [];
-  const selectionKey = selectedGroupLabels.join("||");
+  const selectionKey = `${selectedDataset ?? "none"}::${selectedGroupLabels.join("||")}`;
 
   useEffect(() => {
+    if (!selectedDataset) {
+      return;
+    }
+
     const requestGroups = phaseOptions?.groups.filter((group) => selectedGroupLabels.includes(group.subgroup_label)) ?? [];
 
     if (!phaseOptions || requestGroups.length === 0) {
@@ -423,7 +689,7 @@ export default function App() {
 
     setHoldoutLoading(true);
     setHoldoutError(null);
-    void getHoldoutCurves({ phase, groups: groupSpecs })
+    void getHoldoutCurves({ dataset: selectedDataset, phase, groups: groupSpecs })
       .then((payload) => {
         if (!cancelled) {
           setHoldoutData(payload);
@@ -442,7 +708,7 @@ export default function App() {
 
     setCollateralLoading(true);
     setCollateralError(null);
-    void getCollateral({ phase, groups: groupSpecs, tau })
+    void getCollateral({ dataset: selectedDataset, phase, groups: groupSpecs, tau })
       .then((payload) => {
         if (!cancelled) {
           setCollateralData(payload);
@@ -461,7 +727,7 @@ export default function App() {
 
     setPartitionLoading(true);
     setPartitionError(null);
-    void getPartitionComparisons({ phase, groups: groupSpecs, tau, include_zero_counts: false })
+    void getPartitionComparisons({ dataset: selectedDataset, phase, groups: groupSpecs, tau, include_zero_counts: false })
       .then((payload) => {
         if (!cancelled) {
           setPartitionData(payload);
@@ -480,7 +746,7 @@ export default function App() {
 
     setExamplesLoading(true);
     setExamplesError(null);
-    void getExamples({ phase, groups: groupSpecs, tau, example_count: EXAMPLE_COUNT })
+    void getExamples({ dataset: selectedDataset, phase, groups: groupSpecs, tau, example_count: EXAMPLE_COUNT })
       .then((payload) => {
         if (!cancelled) {
           setExamplesData(payload);
@@ -500,7 +766,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [phase, phaseOptions, selectionKey, selectedGroupLabels, tau]);
+  }, [phase, phaseOptions, selectedDataset, selectionKey, selectedGroupLabels, tau]);
 
   const holdoutChartRows = buildHoldoutChartRows(holdoutData);
   const classDistributionRows = partitionData
@@ -516,14 +782,35 @@ export default function App() {
     ? buildCountDistributionByClass(partitionData.per_class_image_count_distribution)
     : [];
 
-  const availableClasses = options?.dataset.classes ?? [];
+  const activeDataset = options?.active_dataset ?? null;
+  const availableClasses = activeDataset?.classes ?? [];
   const availableSizes = options?.constants.size_bin_labels ?? [];
   const availablePositions = options?.constants.position_bin_labels ?? [];
+  const datasetLabel = activeDataset?.label ?? "Selected dataset";
+  const datasetDescription = activeDataset?.description ?? "";
+  const helpContext: HelpContext = {
+    datasetLabel,
+    phase,
+    tau,
+    selectedGroupLabels,
+    classCount: activeDataset?.n_classes ?? 0,
+    heldoutCount: partitionData?.heldout_n_images,
+  };
 
   function handlePhaseChange(nextPhase: Phase) {
     startTransition(() => {
       setPhase(nextPhase);
       setSelectedGroupLabels([]);
+    });
+  }
+
+  function handleDatasetChange(nextDataset: DatasetId) {
+    startTransition(() => {
+      setSelectedDataset(nextDataset);
+      setSelectedGroupLabels([]);
+      setClassFilter("all");
+      setSizeFilter("all");
+      setPositionFilter("all");
     });
   }
 
@@ -549,42 +836,46 @@ export default function App() {
     });
   }
 
+  const datasetsReady = !datasetsLoading && !datasetsError;
+  const classSelectorLocked = availableClasses.length === 1;
+
   return (
     <div className="app-shell">
       <header className="hero">
         <div className="hero__copy">
-          <p className="eyebrow">FLIR Proxy v18</p>
-          <h1>Subgroup hold-out analysis, rebuilt as a live app</h1>
+          <p className="eyebrow">Subgroup Analysis Workspace</p>
+          <h1>Notebook-grounded hold-out analysis across FLIR-style datasets</h1>
           <p className="hero__lede">
-            The backend runs the same subgroup, tau, collateral, and partition logic as the notebook mirror. The
-            frontend turns those tables into an interactive workspace for comparing held-out regimes.
+            Switch datasets, compare subgroup hold-out rules, inspect collateral damage, and review held-out versus
+            retained examples without leaving the live analysis app.
           </p>
         </div>
         <div className="hero__stats">
           <div className="stat-card">
-            <span>images</span>
-            <strong>{options?.dataset.n_images ?? "—"}</strong>
+            <span>dataset</span>
+            <strong>{activeDataset?.label ?? "—"}</strong>
           </div>
           <div className="stat-card">
-            <span>annotations</span>
-            <strong>{options?.dataset.n_annotations ?? "—"}</strong>
+            <span>images</span>
+            <strong>{activeDataset?.n_images ?? "—"}</strong>
           </div>
           <div className="stat-card">
             <span>classes</span>
-            <strong>{options?.dataset.n_classes ?? "—"}</strong>
+            <strong>{activeDataset?.n_classes ?? "—"}</strong>
           </div>
         </div>
       </header>
 
+      <SectionState loading={datasetsLoading} error={datasetsError} />
       <SectionState loading={optionsLoading} error={optionsError} />
 
-      {options && phaseOptions ? (
+      {datasetsReady && options && phaseOptions && selectedDataset ? (
         <>
           <section className="panel controls-panel">
             <div className="controls-header">
               <div>
                 <p className="eyebrow">Controls</p>
-                <h2>Choose the subgroup regime and tau</h2>
+                <h2>Choose the dataset, subgroup regime, and tau</h2>
               </div>
               <div className="phase-toggle">
                 <button
@@ -606,16 +897,37 @@ export default function App() {
 
             <div className="controls-grid">
               <label>
-                <span>Class</span>
-                <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
-                  <option value="all">All classes</option>
-                  {availableClasses.map((classLabel) => (
-                    <option key={classLabel} value={classLabel}>
-                      {classLabel}
+                <span>Dataset</span>
+                <select
+                  value={selectedDataset}
+                  onChange={(event) => handleDatasetChange(event.target.value as DatasetId)}
+                >
+                  {datasetCatalog.map((dataset) => (
+                    <option key={dataset.dataset_id} value={dataset.dataset_id}>
+                      {dataset.label}
                     </option>
                   ))}
                 </select>
               </label>
+
+              {classSelectorLocked ? (
+                <label className="disabled-control">
+                  <span>Class</span>
+                  <input value={availableClasses[0] ?? "No class"} disabled />
+                </label>
+              ) : (
+                <label>
+                  <span>Class</span>
+                  <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+                    <option value="all">All classes</option>
+                    {availableClasses.map((classLabel) => (
+                      <option key={classLabel} value={classLabel}>
+                        {classLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <label>
                 <span>Size bin</span>
@@ -648,7 +960,7 @@ export default function App() {
                 </label>
               )}
 
-              <label className="tau-control">
+              <label className="tau-control controls-grid__span-2">
                 <span>Tau threshold</span>
                 <div className="tau-control__inputs">
                   <input
@@ -670,6 +982,10 @@ export default function App() {
                 </div>
               </label>
             </div>
+
+            <p className="supporting-copy controls-panel__dataset-copy">
+              {datasetDescription}
+            </p>
 
             <div className="selection-toolbar">
               <div className="selection-toolbar__actions">
@@ -733,15 +1049,35 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Held-out size sweep</p>
-                <h2>Held-out images vs tau</h2>
-              </div>
-              <p className="supporting-copy">
-                Every line uses the notebook hold-out rule <code>m_g(x) &gt;= 1</code> and <code>r_g(x) &gt;= tau</code>.
-              </p>
+            <PanelHeader
+              eyebrow="Bin Guide"
+              title="How the backend assigns size bins and position bins"
+              supportingCopy="The visual examples below come from the selected dataset and use the same binning rules that power phase 1 and phase 2 subgroup construction."
+            />
+            <div className="detail-chart-grid">
+              <BinExplanationPanel
+                title="Size bins"
+                payload={options.bin_explanations.size}
+                helpText={helpTextForSizeBinPanel(datasetLabel)}
+                datasetLabel={datasetLabel}
+              />
+              <BinExplanationPanel
+                title="Position bins"
+                payload={options.bin_explanations.position}
+                helpText={helpTextForPositionBinPanel(datasetLabel)}
+                datasetLabel={datasetLabel}
+                positionEdges={options.constants.position_bin_edges}
+              />
             </div>
+          </section>
+
+          <section className="panel">
+            <PanelHeader
+              eyebrow="Held-out size sweep"
+              title="Held-out images vs tau"
+              supportingCopy="Every line uses the notebook hold-out rule m_g(x) >= 1 and r_g(x) >= tau."
+              helpText={helpTextForHoldoutSweep(helpContext)}
+            />
             <SectionState loading={holdoutLoading} error={holdoutError} />
             {holdoutChartRows.length > 0 ? (
               <div className="chart-panel chart-panel--tall">
@@ -771,16 +1107,11 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Union partition view</p>
-                <h2>Before vs after hold-out across the selected group set</h2>
-              </div>
-              <p className="supporting-copy">
-                This section applies the union of held-out images across every selected subgroup and compares the train
-                and held-out partitions.
-              </p>
-            </div>
+            <PanelHeader
+              eyebrow="Union partition view"
+              title="Before vs after hold-out across the selected group set"
+              supportingCopy="This section applies the union of held-out images across every selected subgroup and compares the train and held-out partitions."
+            />
             <SectionState loading={partitionLoading} error={partitionError} />
 
             {partitionData ? (
@@ -804,7 +1135,11 @@ export default function App() {
 
                 <div className="detail-chart-grid">
                   <div className="chart-panel">
-                    <h3>Distinct image presence by class</h3>
+                    <PanelHeader
+                      title="Distinct image presence by class"
+                      helpText={helpTextForDistinctImagePresence(helpContext)}
+                      compact
+                    />
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart data={distinctClassTotals}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -819,7 +1154,11 @@ export default function App() {
                   </div>
 
                   <div className="chart-panel">
-                    <h3>Notebook annotation-class distribution</h3>
+                    <PanelHeader
+                      title="Notebook annotation-class distribution"
+                      helpText={helpTextForAnnotationClassDistribution(helpContext)}
+                      compact
+                    />
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart data={classDistributionRows}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -834,7 +1173,11 @@ export default function App() {
                   </div>
 
                   <div className="chart-panel">
-                    <h3>Notebook subgroup distribution</h3>
+                    <PanelHeader
+                      title="Notebook subgroup distribution"
+                      helpText={helpTextForSubgroupDistribution(helpContext)}
+                      compact
+                    />
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart data={subgroupDistributionRows}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -852,7 +1195,11 @@ export default function App() {
                 <div className="count-grid">
                   {perClassCountCharts.map(({ classLabel, rows }) => (
                     <div key={classLabel} className="count-card">
-                      <h4>{classLabel}</h4>
+                      <PanelHeader
+                        title={classLabel}
+                        helpText={helpTextForPerClassCount(helpContext, classLabel)}
+                        compact
+                      />
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={rows}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -879,6 +1226,7 @@ export default function App() {
                 group={group}
                 examples={examplesData?.groups.find((entry) => entry.subgroup_label === group.subgroup_label)}
                 damage={collateralData?.groups.find((entry) => entry.subgroup_label === group.subgroup_label)}
+                helpContext={helpContext}
               />
             ))}
           </section>

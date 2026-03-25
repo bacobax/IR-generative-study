@@ -1,4 +1,13 @@
 export type Phase = "phase1" | "phase2";
+export type DatasetId = "flir_private_proxy_alignment_v18" | "v18";
+
+export interface DatasetOption {
+  dataset_id: DatasetId;
+  label: string;
+  description: string;
+  data_root: string;
+  is_default: boolean;
+}
 
 export interface GroupSpec {
   class_label: string;
@@ -14,6 +23,9 @@ export interface SelectableGroup extends GroupSpec {
 }
 
 export interface DatasetMetadata {
+  dataset_id: DatasetId;
+  label: string;
+  description: string;
   data_root: string;
   analysis_splits: string[];
   available_splits: string[];
@@ -36,8 +48,49 @@ export interface OptionsPhasePayload {
   size_bin_spec: Array<Record<string, number | string | null>>;
 }
 
+export interface BinExplanationBox {
+  ann_id: number;
+  class_label: string;
+  bbox_x: number;
+  bbox_y: number;
+  bbox_w: number;
+  bbox_h: number;
+  bbox_area_norm: number;
+  bbox_center_x_norm: number;
+  size_bin: string;
+  position_bin: string;
+}
+
+export interface BinExplanationExample {
+  image_key: string;
+  image_id: string;
+  split: string;
+  image_width: number;
+  image_height: number;
+  covered_bins: string[];
+  coverage_count: number;
+  n_instances: number;
+  selection_reason: string;
+  preview_url: string;
+  boxes: BinExplanationBox[];
+}
+
+export interface BinExplanationPanelPayload {
+  panel: "size" | "position";
+  bin_labels: string[];
+  bin_spec?: Array<Record<string, number | string | null>>;
+  bin_edges?: number[];
+  example: BinExplanationExample | null;
+}
+
+export interface DatasetsResponse {
+  default_dataset_id: DatasetId;
+  datasets: DatasetOption[];
+}
+
 export interface OptionsResponse {
-  dataset: DatasetMetadata;
+  datasets: DatasetOption[];
+  active_dataset: DatasetMetadata;
   constants: {
     analysis_splits: string[];
     size_bin_method: string;
@@ -45,8 +98,13 @@ export interface OptionsResponse {
     fixed_size_bins: number[] | null;
     position_mode: string;
     position_bin_labels: string[];
+    position_bin_edges: number[];
     dominance_thresholds: number[];
     feasibility_rules: Record<string, number>;
+  };
+  bin_explanations: {
+    size: BinExplanationPanelPayload;
+    position: BinExplanationPanelPayload;
   };
   phase1: OptionsPhasePayload;
   phase2: OptionsPhasePayload;
@@ -63,6 +121,7 @@ export interface HoldoutCurvePoint {
 }
 
 export interface HoldoutCurvesResponse {
+  dataset: DatasetId;
   phase: Phase;
   thresholds: number[];
   groups: Array<SelectableGroup & { series: HoldoutCurvePoint[] }>;
@@ -96,6 +155,7 @@ export interface CollateralGroupPayload extends SelectableGroup {
 }
 
 export interface CollateralResponse {
+  dataset: DatasetId;
   phase: Phase;
   tau: number;
   groups: CollateralGroupPayload[];
@@ -127,6 +187,7 @@ export interface PerClassImageCountRow {
 }
 
 export interface PartitionComparisonsResponse {
+  dataset: DatasetId;
   phase: Phase;
   tau: number;
   groups: SelectableGroup[];
@@ -168,6 +229,7 @@ export interface ExampleImage {
 }
 
 export interface ExamplesResponse {
+  dataset: DatasetId;
   phase: Phase;
   tau: number;
   example_count: number;

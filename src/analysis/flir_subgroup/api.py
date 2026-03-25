@@ -1,17 +1,18 @@
-"""FastAPI routes for the FLIR subgroup analysis app."""
+"""FastAPI routes for the subgroup analysis app."""
 
 from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Dict, List, Sequence
+from typing import Dict, List, Mapping, Sequence
 from urllib.parse import quote
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from src.analysis.flir_subgroup.analysis import (
+    build_bin_explanations,
     build_dominance_histogram,
     build_example_boxes,
     build_per_class_image_count_distribution,
@@ -24,10 +25,12 @@ from src.analysis.flir_subgroup.analysis import (
 )
 from src.analysis.flir_subgroup.constants import (
     ANALYSIS_SPLITS,
+    DEFAULT_DATASET_ID,
     DEFAULT_EXAMPLE_COUNT,
     DOMINANCE_THRESHOLDS,
     FEASIBILITY_RULES,
     FIXED_SIZE_BINS,
+    POSITION_BIN_EDGES,
     POSITION_BIN_LABELS,
     POSITION_MODE,
     SIZE_BIN_LABELS,
@@ -35,6 +38,13 @@ from src.analysis.flir_subgroup.constants import (
 )
 from src.analysis.flir_subgroup.context import FlirSubgroupAnalysisContext, get_analysis_context
 from src.analysis.flir_subgroup.data import render_preview_png_bytes
+from src.analysis.flir_subgroup.datasets import (
+    DEFAULT_DATASET_REGISTRY,
+    DatasetConfig,
+    default_dataset_id,
+    list_dataset_metadata,
+    resolve_dataset_config,
+)
 from src.analysis.flir_subgroup.schemas import (
     CollateralRequest,
     ExamplesRequest,
@@ -129,7 +139,7 @@ def _serialize_example_rows(
                 "dominance_ratio": float(getattr(row, "dominance_ratio", 0.0) or 0.0),
                 "subgroup_count": int(getattr(row, "subgroup_count", 0) or 0),
                 "class_count": class_count,
-                "preview_url": f"/api/flir-analysis/images/{quote(str(row.image_key), safe='')}",
+                "preview_url": _preview_url(context.dataset_id, str(row.image_key)),
                 "image_width": int(image_meta["image_width"]),
                 "image_height": int(image_meta["image_height"]),
                 "boxes": build_example_boxes(instance_df, str(row.image_key), subgroup_label),
@@ -138,27 +148,79 @@ def _serialize_example_rows(
     return records
 
 
-def create_router(data_root: Path | None = None) -> APIRouter:
-    """Create a router bound to a specific dataset root."""
+def _serialize_visual_example(context: FlirSubgroupAnalysisContext, payload: dict | None) -> dict | None:
+    """Attach preview URLs to a visual bin explanation example."""
+
+    if payload is None:
+        return None
+
+    example = dict(payload)
+    example["preview_url"] = _preview_url(context.dataset_id, str(payload["image_key"]))
+    return example
+
+
+def _preview_url(dataset_id: str, image_key: str) -> str:
+    """Return a dataset-aware preview path."""
+
+    return f"/api/flir-analysis/images/{quote(dataset_id, safe='')}/{quote(image_key, safe='')}"
+
+
+def create_router(
+    data_root: Path | None = None,
+    *,
+    dataset_registry: Mapping[str, DatasetConfig] | None = None,
+) -> APIRouter:
+    """Create the subgroup analysis router."""
+
+    if data_root is not None:
+        active_registry = {
+            DEFAULT_DATASET_ID: DatasetConfig(
+                dataset_id=DEFAULT_DATASET_ID,
+                label="Custom FLIR-compatible dataset",
+                description="Dataset root injected directly into the app factory.",
+                root=data_root.resolve(),
+                is_default=True,
+            )
+        }
+    else:
+        active_registry = dict(dataset_registry or DEFAULT_DATASET_REGISTRY)
 
     router = APIRouter(prefix="/api/flir-analysis", tags=["flir-analysis"])
 
-    def get_context() -> FlirSubgroupAnalysisContext:
-        root_arg = str(data_root.resolve()) if data_root is not None else None
-        return get_analysis_context(root_arg)
+    def get_context_for_dataset(dataset_id: str) -> FlirSubgroupAnalysisContext:
+        try:
+            dataset_config = resolve_dataset_config(dataset_id, registry=active_registry)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return get_analysis_context(dataset_id=dataset_config.dataset_id, data_root=dataset_config.root)
+
+    @router.get("/datasets")
+    def get_datasets() -> dict:
+        return {
+            "default_dataset_id": default_dataset_id(registry=active_registry),
+            "datasets": list_dataset_metadata(registry=active_registry),
+        }
 
     @router.get("/options")
-    def get_options() -> dict:
-        context = get_context()
+    def get_options(dataset: str = Query(..., description="Dataset id to analyze")) -> dict:
+        context = get_context_for_dataset(dataset)
         phase1_bundle = context.get_phase_bundle("phase1")
         phase2_bundle = context.get_phase_bundle("phase2")
+        bin_explanations = build_bin_explanations(
+            context.image_table,
+            phase1_bundle.instance_df,
+            phase1_bundle.size_bin_spec_df,
+        )
+        bin_explanations["size"]["example"] = _serialize_visual_example(context, bin_explanations["size"]["example"])
+        bin_explanations["position"]["example"] = _serialize_visual_example(context, bin_explanations["position"]["example"])
 
         dataset_metadata = context.dataset_summary
         dataset_metadata["layout"] = _records(context.dataset_layout_df)
         dataset_metadata["root_metadata"] = _records(context.root_metadata_df)
 
         return {
-            "dataset": dataset_metadata,
+            "datasets": list_dataset_metadata(registry=active_registry),
+            "active_dataset": dataset_metadata,
             "constants": {
                 "analysis_splits": list(ANALYSIS_SPLITS),
                 "size_bin_method": SIZE_BIN_METHOD,
@@ -166,9 +228,11 @@ def create_router(data_root: Path | None = None) -> APIRouter:
                 "fixed_size_bins": FIXED_SIZE_BINS,
                 "position_mode": POSITION_MODE,
                 "position_bin_labels": list(POSITION_BIN_LABELS),
+                "position_bin_edges": list(POSITION_BIN_EDGES),
                 "dominance_thresholds": list(DOMINANCE_THRESHOLDS),
                 "feasibility_rules": FEASIBILITY_RULES,
             },
+            "bin_explanations": bin_explanations,
             "phase1": {
                 "default_group": next(
                     row for row in _records(phase1_bundle.selectable_groups_df) if row["subgroup_label"] == phase1_bundle.default_subgroup_label
@@ -194,7 +258,7 @@ def create_router(data_root: Path | None = None) -> APIRouter:
 
     @router.post("/holdout-curves")
     def post_holdout_curves(request: HoldoutCurvesRequest) -> dict:
-        context = get_context()
+        context = get_context_for_dataset(request.dataset.value)
         phase_bundle = context.get_phase_bundle(request.phase.value)
         resolved_groups = _resolve_groups(context, request.phase, request.groups)
         thresholds = request.thresholds or list(DOMINANCE_THRESHOLDS)
@@ -209,11 +273,11 @@ def create_router(data_root: Path | None = None) -> APIRouter:
             )
             results.append({**group, "series": _records(holdout_df)})
 
-        return {"phase": request.phase.value, "thresholds": thresholds, "groups": results}
+        return {"dataset": context.dataset_id, "phase": request.phase.value, "thresholds": thresholds, "groups": results}
 
     @router.post("/collateral")
     def post_collateral(request: CollateralRequest) -> dict:
-        context = get_context()
+        context = get_context_for_dataset(request.dataset.value)
         phase_bundle = context.get_phase_bundle(request.phase.value)
         resolved_groups = _resolve_groups(context, request.phase, request.groups)
 
@@ -235,11 +299,11 @@ def create_router(data_root: Path | None = None) -> APIRouter:
                 }
             )
 
-        return {"phase": request.phase.value, "tau": request.tau, "groups": results}
+        return {"dataset": context.dataset_id, "phase": request.phase.value, "tau": request.tau, "groups": results}
 
     @router.post("/partition-comparisons")
     def post_partition_comparisons(request: PartitionComparisonsRequest) -> dict:
-        context = get_context()
+        context = get_context_for_dataset(request.dataset.value)
         phase_bundle = context.get_phase_bundle(request.phase.value)
         resolved_groups = _resolve_groups(context, request.phase, request.groups)
         subgroup_labels = [group["subgroup_label"] for group in resolved_groups]
@@ -258,6 +322,7 @@ def create_router(data_root: Path | None = None) -> APIRouter:
         )
 
         return {
+            "dataset": context.dataset_id,
             "phase": request.phase.value,
             "tau": request.tau,
             "groups": resolved_groups,
@@ -273,7 +338,7 @@ def create_router(data_root: Path | None = None) -> APIRouter:
 
     @router.post("/examples")
     def post_examples(request: ExamplesRequest) -> dict:
-        context = get_context()
+        context = get_context_for_dataset(request.dataset.value)
         phase_bundle = context.get_phase_bundle(request.phase.value)
         resolved_groups = _resolve_groups(context, request.phase, request.groups)
 
@@ -305,11 +370,17 @@ def create_router(data_root: Path | None = None) -> APIRouter:
                 }
             )
 
-        return {"phase": request.phase.value, "tau": request.tau, "example_count": request.example_count, "groups": results}
+        return {
+            "dataset": context.dataset_id,
+            "phase": request.phase.value,
+            "tau": request.tau,
+            "example_count": request.example_count,
+            "groups": results,
+        }
 
-    @router.get("/images/{image_key:path}")
-    def get_image_preview(image_key: str) -> StreamingResponse:
-        context = get_context()
+    @router.get("/images/{dataset}/{image_key:path}")
+    def get_image_preview(dataset: str, image_key: str) -> StreamingResponse:
+        context = get_context_for_dataset(dataset)
         image_table = context.image_table.set_index("image_key")
         if image_key not in image_table.index:
             raise HTTPException(status_code=404, detail=f"Unknown image_key: {image_key}")

@@ -1,4 +1,4 @@
-"""Compatibility wrapper for the FLIR subgroup FastAPI service."""
+"""Compatibility wrapper for the subgroup analysis FastAPI service."""
 
 from src.cli.serve_flir_analysis import main
 

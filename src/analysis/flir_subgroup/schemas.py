@@ -17,6 +17,13 @@ class Phase(str, Enum):
     PHASE2 = "phase2"
 
 
+class DatasetId(str, Enum):
+    """Supported dataset ids."""
+
+    FLIR_PRIVATE_PROXY_ALIGNMENT_V18 = "flir_private_proxy_alignment_v18"
+    V18 = "v18"
+
+
 class GroupSpec(BaseModel):
     """Structured subgroup selector used by the frontend."""
 
@@ -35,6 +42,7 @@ class GroupSpec(BaseModel):
 class HoldoutCurvesRequest(BaseModel):
     """Request payload for hold-out curve data."""
 
+    dataset: DatasetId
     phase: Phase
     groups: list[GroupSpec]
     thresholds: Optional[list[float]] = None
@@ -43,6 +51,7 @@ class HoldoutCurvesRequest(BaseModel):
 class CollateralRequest(BaseModel):
     """Request payload for collateral-damage data."""
 
+    dataset: DatasetId
     phase: Phase
     groups: list[GroupSpec]
     tau: float = Field(..., ge=0.0, le=1.0)
@@ -51,6 +60,7 @@ class CollateralRequest(BaseModel):
 class PartitionComparisonsRequest(BaseModel):
     """Request payload for union partition comparisons."""
 
+    dataset: DatasetId
     phase: Phase
     groups: list[GroupSpec]
     tau: float = Field(..., ge=0.0, le=1.0)
@@ -60,6 +70,7 @@ class PartitionComparisonsRequest(BaseModel):
 class ExamplesRequest(BaseModel):
     """Request payload for held-out and retained examples."""
 
+    dataset: DatasetId
     phase: Phase
     groups: list[GroupSpec]
     tau: float = Field(..., ge=0.0, le=1.0)

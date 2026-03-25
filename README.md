@@ -101,7 +101,7 @@ python generate_datasets.py --mode sd15 \
   --lora_dir ./artifacts/checkpoints/stable_diffusion/lora_runs/.../checkpoint-32000
 ```
 
-## FLIR subgroup analysis web app
+## Multi-dataset subgroup analysis web app
 
 The notebook logic from `docs/notebooks/v18_scene_graph_score_analysis_flir.py`
 now lives in reusable modules under `src/analysis/flir_subgroup/`.
@@ -122,12 +122,22 @@ python serve_flir_analysis.py --host 127.0.0.1 --port 8000
 
 Main routes:
 
-- `GET /api/flir-analysis/options`
+- `GET /api/flir-analysis/datasets`
+- `GET /api/flir-analysis/options?dataset=<dataset_id>`
 - `POST /api/flir-analysis/holdout-curves`
 - `POST /api/flir-analysis/collateral`
 - `POST /api/flir-analysis/partition-comparisons`
 - `POST /api/flir-analysis/examples`
-- `GET /api/flir-analysis/images/{image_key}`
+- `GET /api/flir-analysis/images/{dataset_id}/{image_key}`
+
+The web app now supports both discovered dataset roots:
+
+- `flir_private_proxy_alignment_v18`
+- `v18`
+
+All POST analysis payloads require a `dataset` field, and the frontend lets you
+switch datasets directly from the control panel. The dedicated bin-explainer
+section and all image/chart helpers are dataset-specific.
 
 ### Frontend
 

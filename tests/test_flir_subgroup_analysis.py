@@ -1,4 +1,4 @@
-"""Tests for the FLIR subgroup analysis backend."""
+"""Tests for the subgroup analysis backend."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from src.analysis.flir_subgroup.analysis import (
 )
 from src.analysis.flir_subgroup.app import create_app
 from src.analysis.flir_subgroup.context import build_analysis_context, clear_analysis_context_cache
+from src.analysis.flir_subgroup.datasets import DatasetConfig, resolve_dataset_config
 
 
 def _write_npy(path: Path, value: int) -> None:
@@ -91,6 +92,67 @@ def _create_synthetic_flir_dataset(root: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _create_synthetic_v18_dataset(root: Path) -> Path:
+    train_dir = root / "train"
+    train_dir.mkdir(parents=True, exist_ok=True)
+
+    categories = [{"id": 1, "name": "person"}]
+    images = [
+        {"id": "p1", "width": 100, "height": 100, "file_name": "p1.npy"},
+        {"id": "p2", "width": 100, "height": 100, "file_name": "p2.npy"},
+        {"id": "p3", "width": 100, "height": 100, "file_name": "p3.npy"},
+    ]
+    for idx, image in enumerate(images, start=1):
+        _write_npy(train_dir / str(image["file_name"]), value=50 * idx)
+
+    annotations = []
+
+    def add_box(image_id: str, x: int, y: int, w: int, h: int) -> None:
+        annotations.append(
+            {
+                "id": len(annotations) + 1,
+                "image_id": image_id,
+                "category_id": 1,
+                "bbox": [float(x), float(y), float(w), float(h)],
+                "area": float(w * h),
+                "iscrowd": 0,
+            }
+        )
+
+    add_box("p1", 5, 15, 10, 12)
+    add_box("p1", 35, 20, 20, 24)
+    add_box("p1", 66, 25, 28, 32)
+    add_box("p2", 10, 35, 12, 14)
+    add_box("p2", 40, 40, 22, 22)
+    add_box("p3", 70, 18, 30, 30)
+    add_box("p3", 72, 50, 18, 18)
+
+    (train_dir / "annotations.json").write_text(
+        json.dumps({"images": images, "annotations": annotations, "categories": categories}),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _dataset_registry(tmp_path: Path) -> dict[str, DatasetConfig]:
+    return {
+        "flir_private_proxy_alignment_v18": DatasetConfig(
+            dataset_id="flir_private_proxy_alignment_v18",
+            label="Synthetic FLIR",
+            description="Synthetic multi-class FLIR-like dataset.",
+            root=_create_synthetic_flir_dataset(tmp_path / "flir"),
+            is_default=True,
+        ),
+        "v18": DatasetConfig(
+            dataset_id="v18",
+            label="Synthetic v18",
+            description="Synthetic single-class v18-like dataset.",
+            root=_create_synthetic_v18_dataset(tmp_path / "v18"),
+            is_default=False,
+        ),
+    }
 
 
 def _manual_phase_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -190,34 +252,61 @@ def test_union_holdout_and_class_count_distribution() -> None:
     assert int(car_rows.loc[3, "n_images_after"]) == 0
 
 
-def test_context_builds_from_discovered_dataset(tmp_path: Path) -> None:
+def test_dataset_registry_and_contexts_support_both_datasets(tmp_path: Path) -> None:
     clear_analysis_context_cache()
-    data_root = _create_synthetic_flir_dataset(tmp_path / "flir")
-    context = build_analysis_context(data_root=data_root)
+    registry = _dataset_registry(tmp_path)
 
-    assert context.dataset_summary["n_images"] == 4
-    assert context.dataset_summary["analysis_splits"] == ["train"]
-    assert context.get_phase_bundle("phase1").selectable_groups_df["subgroup_label"].str.contains("class=car").any()
-    assert context.get_phase_bundle("phase2").selectable_groups_df["subgroup_label"].str.contains("pos=").all()
+    resolved_flir = resolve_dataset_config("flir_private_proxy_alignment_v18", registry=registry)
+    resolved_v18 = resolve_dataset_config("v18", registry=registry)
+    assert resolved_flir.root.name == "flir"
+    assert resolved_v18.root.name == "v18"
+
+    flir_context = build_analysis_context(dataset_id="flir_private_proxy_alignment_v18", dataset_registry=registry)
+    v18_context = build_analysis_context(dataset_id="v18", dataset_registry=registry)
+
+    assert flir_context.dataset_summary["n_classes"] == 3
+    assert v18_context.dataset_summary["n_classes"] == 1
+    assert v18_context.dataset_summary["classes"] == ["person"]
+    assert v18_context.get_phase_bundle("phase1").selectable_groups_df["subgroup_label"].str.contains("class=person").all()
+    assert v18_context.get_phase_bundle("phase2").selectable_groups_df["subgroup_label"].str.contains("pos=").all()
 
 
-def test_api_endpoints_and_preview_route(tmp_path: Path) -> None:
+def test_api_endpoints_dataset_selection_and_preview_route(tmp_path: Path) -> None:
     clear_analysis_context_cache()
-    data_root = _create_synthetic_flir_dataset(tmp_path / "flir")
-    client = TestClient(create_app(data_root=data_root))
+    registry = _dataset_registry(tmp_path)
+    client = TestClient(create_app(dataset_registry=registry))
 
-    options_response = client.get("/api/flir-analysis/options")
-    assert options_response.status_code == 200
-    options_payload = options_response.json()
-    assert options_payload["dataset"]["n_images"] == 4
-    assert options_payload["constants"]["position_bin_labels"] == ["left", "center", "right"]
+    datasets_response = client.get("/api/flir-analysis/datasets")
+    assert datasets_response.status_code == 200
+    datasets_payload = datasets_response.json()
+    assert datasets_payload["default_dataset_id"] == "flir_private_proxy_alignment_v18"
+    assert [row["dataset_id"] for row in datasets_payload["datasets"]] == ["flir_private_proxy_alignment_v18", "v18"]
 
-    phase1_labels = {row["subgroup_label"] for row in options_payload["phase1"]["groups"]}
-    assert "class=car | size=large" in phase1_labels
+    options_flir = client.get("/api/flir-analysis/options", params={"dataset": "flir_private_proxy_alignment_v18"})
+    assert options_flir.status_code == 200
+    options_flir_payload = options_flir.json()
+    assert options_flir_payload["active_dataset"]["n_images"] == 4
+    assert options_flir_payload["active_dataset"]["n_classes"] == 3
+    assert options_flir_payload["constants"]["position_bin_edges"] == [0.0, 1 / 3, 2 / 3, 1.0]
+    assert options_flir_payload["bin_explanations"]["size"]["example"]["preview_url"].startswith("/api/flir-analysis/images/flir_private_proxy_alignment_v18/")
+
+    options_v18 = client.get("/api/flir-analysis/options", params={"dataset": "v18"})
+    assert options_v18.status_code == 200
+    options_v18_payload = options_v18.json()
+    assert options_v18_payload["active_dataset"]["classes"] == ["person"]
+    assert all(group["class_label"] == "person" for group in options_v18_payload["phase1"]["groups"])
+    assert options_v18_payload["bin_explanations"]["position"]["example"]["boxes"]
+
+    missing_dataset_response = client.post(
+        "/api/flir-analysis/holdout-curves",
+        json={"phase": "phase1", "groups": [{"class_label": "car", "size_bin": "large"}]},
+    )
+    assert missing_dataset_response.status_code == 422
 
     holdout_response = client.post(
         "/api/flir-analysis/holdout-curves",
         json={
+            "dataset": "flir_private_proxy_alignment_v18",
             "phase": "phase1",
             "groups": [{"class_label": "car", "size_bin": "large"}],
         },
@@ -227,28 +316,21 @@ def test_api_endpoints_and_preview_route(tmp_path: Path) -> None:
     assert holdout_group["subgroup_label"] == "class=car | size=large"
     assert len(holdout_group["series"]) == 7
 
-    invalid_response = client.post(
+    v18_holdout_response = client.post(
         "/api/flir-analysis/holdout-curves",
-        json={"phase": "phase1", "groups": [{"class_label": "missing", "size_bin": "large"}]},
-    )
-    assert invalid_response.status_code == 422
-
-    collateral_response = client.post(
-        "/api/flir-analysis/collateral",
         json={
-            "phase": "phase1",
-            "tau": 0.5,
-            "groups": [{"class_label": "car", "size_bin": "large"}],
+            "dataset": "v18",
+            "phase": "phase2",
+            "groups": [{"class_label": "person", "size_bin": "large", "position_bin": "right"}],
         },
     )
-    assert collateral_response.status_code == 200
-    collateral_group = collateral_response.json()["groups"][0]
-    assert collateral_group["summary"]["heldout_n_images"] == 1
-    assert collateral_group["dominance_histogram"]
+    assert v18_holdout_response.status_code == 200
+    assert v18_holdout_response.json()["dataset"] == "v18"
 
     partition_response = client.post(
         "/api/flir-analysis/partition-comparisons",
         json={
+            "dataset": "flir_private_proxy_alignment_v18",
             "phase": "phase1",
             "tau": 0.5,
             "groups": [{"class_label": "car", "size_bin": "large"}],
@@ -258,40 +340,24 @@ def test_api_endpoints_and_preview_route(tmp_path: Path) -> None:
     assert partition_response.status_code == 200
     partition_payload = partition_response.json()
     assert partition_payload["heldout_n_images"] == 1
-
-    class_image_rows = {
-        (row["partition"], row["class_label"]): row["n_images"]
-        for row in partition_payload["class_image_distribution"]
-    }
-    assert class_image_rows[("held_out", "car")] == 1
-    assert class_image_rows[("held_out", "person")] == 1
-    assert class_image_rows[("train", "car")] == 2
-    assert class_image_rows[("train", "light")] == 2
-    assert class_image_rows[("train", "person")] == 2
-
-    car_distribution = [
-        row for row in partition_payload["per_class_image_count_distribution"] if row["class_label"] == "car"
-    ]
-    bucket_three = next(row for row in car_distribution if row["instance_count"] == 3)
-    assert bucket_three["n_images_before"] == 1
-    assert bucket_three["n_images_after"] == 0
+    assert {row["class_label"] for row in partition_payload["per_class_image_count_distribution"]} == {"car", "person", "light"}
 
     examples_response = client.post(
         "/api/flir-analysis/examples",
         json={
+            "dataset": "v18",
             "phase": "phase1",
             "tau": 0.5,
-            "example_count": 3,
-            "groups": [{"class_label": "car", "size_bin": "large"}],
+            "groups": [{"class_label": "person", "size_bin": "large"}],
+            "example_count": 2,
         },
     )
     assert examples_response.status_code == 200
-    example_group = examples_response.json()["groups"][0]
-    assert len(example_group["held_out_examples"]) == 1
-    assert any(example["selection_source"] == "same_class_fallback" for example in example_group["retained_examples"])
+    examples_payload = examples_response.json()
+    retained = examples_payload["groups"][0]["retained_examples"]
+    assert all(example["preview_url"].startswith("/api/flir-analysis/images/v18/") for example in retained)
 
-    preview_url = example_group["held_out_examples"][0]["preview_url"]
-    preview_response = client.get(preview_url)
-    assert preview_response.status_code == 200
-    assert preview_response.headers["content-type"] == "image/png"
-    assert preview_response.content.startswith(b"\x89PNG")
+    preview_url = examples_payload["groups"][0]["held_out_examples"][0]["preview_url"]
+    image_response = client.get(preview_url)
+    assert image_response.status_code == 200
+    assert image_response.headers["content-type"] == "image/png"

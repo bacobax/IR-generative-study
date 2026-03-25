@@ -16,6 +16,8 @@ from src.analysis.flir_subgroup.constants import (
     FEASIBILITY_RULES,
     FIXED_SIZE_BINS,
     MAX_EXAMPLE_SUBGROUPS,
+    POSITION_BIN_EDGES,
+    POSITION_BIN_LABELS,
     POSITION_MODE,
     SIZE_BIN_LABELS,
     SIZE_BIN_METHOD,
@@ -714,6 +716,118 @@ def build_example_boxes(
             }
         )
     return rows
+
+
+def build_visual_bin_boxes(instance_df: pd.DataFrame, image_key: str) -> List[dict]:
+    """Build overlay boxes for the visual bin explanation panels."""
+
+    image_instances = instance_df.loc[instance_df["image_key"] == image_key].copy()
+    rows: List[dict] = []
+    for row in image_instances.itertuples(index=False):
+        rows.append(
+            {
+                "ann_id": int(row.ann_id),
+                "class_label": str(row.class_label),
+                "bbox_x": float(row.bbox_x),
+                "bbox_y": float(row.bbox_y),
+                "bbox_w": float(row.bbox_w),
+                "bbox_h": float(row.bbox_h),
+                "bbox_area_norm": float(row.bbox_area_norm),
+                "bbox_center_x_norm": float(row.bbox_center_x_norm),
+                "size_bin": str(row.size_bin),
+                "position_bin": str(row.position_bin_horizontal),
+            }
+        )
+    return rows
+
+
+def select_visual_bin_example(
+    image_table: pd.DataFrame,
+    instance_df: pd.DataFrame,
+    *,
+    bin_column: str,
+    expected_labels: Sequence[str],
+) -> dict | None:
+    """Select a deterministic image that best illustrates a set of bins."""
+
+    if image_table.empty or instance_df.empty:
+        return None
+
+    preferred = set(expected_labels)
+    grouped = (
+        instance_df.groupby(["image_key", "split", "image_id"], observed=True)
+        .agg(
+            n_instances=("ann_id", "size"),
+            distinct_bins=(bin_column, lambda series: len({str(value) for value in series.dropna().astype(str)})),
+            covered_bins=(bin_column, lambda series: sorted(preferred.intersection({str(value) for value in series.dropna().astype(str)}))),
+            mean_bbox_area_norm=("bbox_area_norm", "mean"),
+        )
+        .reset_index()
+    )
+    if grouped.empty:
+        return None
+
+    grouped["coverage_count"] = grouped["covered_bins"].apply(len)
+    ranked = grouped.sort_values(
+        ["coverage_count", "n_instances", "distinct_bins", "mean_bbox_area_norm", "image_key"],
+        ascending=[False, False, False, False, True],
+    ).reset_index(drop=True)
+    chosen = ranked.iloc[0]
+    image_lookup = image_table.set_index("image_key")
+    if chosen["image_key"] not in image_lookup.index:
+        return None
+
+    image_meta = image_lookup.loc[chosen["image_key"]]
+    return {
+        "image_key": str(chosen["image_key"]),
+        "image_id": str(chosen["image_id"]),
+        "split": str(chosen["split"]),
+        "image_width": int(image_meta["image_width"]),
+        "image_height": int(image_meta["image_height"]),
+        "covered_bins": list(chosen["covered_bins"]),
+        "coverage_count": int(chosen["coverage_count"]),
+        "n_instances": int(chosen["n_instances"]),
+        "selection_reason": (
+            "Selected from the train split by maximizing visible coverage across the analysis bins, "
+            "then breaking ties by object count, mean normalized box area, and image key."
+        ),
+        "boxes": build_visual_bin_boxes(instance_df, str(chosen["image_key"])),
+    }
+
+
+def build_bin_explanations(
+    image_table: pd.DataFrame,
+    instance_df: pd.DataFrame,
+    size_bin_spec_df: pd.DataFrame,
+) -> dict:
+    """Build chart-ready payloads for the visual bin explanation section."""
+
+    size_example = select_visual_bin_example(
+        image_table,
+        instance_df,
+        bin_column="size_bin",
+        expected_labels=SIZE_BIN_LABELS,
+    )
+    position_example = select_visual_bin_example(
+        image_table,
+        instance_df,
+        bin_column="position_bin_horizontal",
+        expected_labels=POSITION_BIN_LABELS,
+    )
+    return {
+        "size": {
+            "panel": "size",
+            "bin_labels": list(SIZE_BIN_LABELS),
+            "bin_spec": size_bin_spec_df.where(pd.notnull(size_bin_spec_df), None).to_dict(orient="records"),
+            "example": size_example,
+        },
+        "position": {
+            "panel": "position",
+            "bin_labels": list(POSITION_BIN_LABELS),
+            "bin_edges": list(POSITION_BIN_EDGES),
+            "example": position_example,
+        },
+    }
 
 
 @dataclass

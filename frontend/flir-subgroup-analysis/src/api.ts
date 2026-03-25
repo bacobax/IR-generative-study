@@ -1,5 +1,7 @@
 import type {
   CollateralResponse,
+  DatasetId,
+  DatasetsResponse,
   ExamplesResponse,
   GroupSpec,
   HoldoutCurvesResponse,
@@ -37,11 +39,16 @@ export function getApiBaseUrl(): string {
   return API_BASE_URL;
 }
 
-export function getOptions(): Promise<OptionsResponse> {
-  return request<OptionsResponse>("/api/flir-analysis/options");
+export function getDatasets(): Promise<DatasetsResponse> {
+  return request<DatasetsResponse>("/api/flir-analysis/datasets");
+}
+
+export function getOptions(dataset: DatasetId): Promise<OptionsResponse> {
+  return request<OptionsResponse>(`/api/flir-analysis/options?dataset=${encodeURIComponent(dataset)}`);
 }
 
 export function getHoldoutCurves(payload: {
+  dataset: DatasetId;
   phase: Phase;
   groups: GroupSpec[];
   thresholds?: number[];
@@ -53,6 +60,7 @@ export function getHoldoutCurves(payload: {
 }
 
 export function getCollateral(payload: {
+  dataset: DatasetId;
   phase: Phase;
   groups: GroupSpec[];
   tau: number;
@@ -64,6 +72,7 @@ export function getCollateral(payload: {
 }
 
 export function getPartitionComparisons(payload: {
+  dataset: DatasetId;
   phase: Phase;
   groups: GroupSpec[];
   tau: number;
@@ -76,6 +85,7 @@ export function getPartitionComparisons(payload: {
 }
 
 export function getExamples(payload: {
+  dataset: DatasetId;
   phase: Phase;
   groups: GroupSpec[];
   tau: number;
