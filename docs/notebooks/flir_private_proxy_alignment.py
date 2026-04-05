@@ -132,6 +132,7 @@ HEATMAP_BINS_Y = 12
 COUNT_BIN_CAP = 10
 AHASH_SIZE = 8
 USE_CACHE = True
+USE_ALL_FLIR_IMAGES_FOR_EXPORT = True
 
 FLIR_CANONICAL_LABELS = {
     "person": "person",
@@ -165,6 +166,7 @@ display(
                 f"- `EXPORT_ROOT`: `{EXPORT_ROOT}`",
                 f"- `PRIVATE_TARGET_SPLIT`: `{PRIVATE_TARGET_SPLIT}`",
                 f"- `FLIR_SPLITS`: `{tuple(FLIR_SPLIT_DIRS.keys())}`",
+                f"- `USE_ALL_FLIR_IMAGES_FOR_EXPORT`: `{USE_ALL_FLIR_IMAGES_FOR_EXPORT}`",
                 f"- `SEED`: `{SEED}`",
             ]
         )
@@ -767,7 +769,38 @@ def load_all_flir(split_dirs: Dict[str, str], scene_chunk_size: int) -> Tuple[pd
         .drop_duplicates(subset=["category_id"])
         .reset_index(drop=True)
     )
+    images_all, annotations_all = ensure_split_scoped_flir_ids(images_all, annotations_all)
     return images_all, category_union, annotations_all
+
+
+def ensure_split_scoped_flir_ids(
+    images_df: pd.DataFrame,
+    annotations_df: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Repair older FLIR tables whose ids were only unique inside each split."""
+    images_df = images_df.copy()
+    annotations_df = annotations_df.copy()
+
+    image_ids = images_df["image_id"].astype(str)
+    if not image_ids.duplicated().any() and image_ids.str.contains("::").all():
+        return images_df, annotations_df
+
+    if "source_image_id" not in images_df.columns:
+        images_df["source_image_id"] = images_df["image_id"]
+    images_df["source_image_id"] = images_df["source_image_id"].astype(str)
+    images_df["image_id"] = images_df["split"].astype(str) + "::" + images_df["source_image_id"]
+
+    if "source_annotation_id" not in annotations_df.columns:
+        annotations_df["source_annotation_id"] = annotations_df["annotation_id"]
+    if "source_image_id" not in annotations_df.columns:
+        annotations_df["source_image_id"] = annotations_df["image_id"]
+    annotations_df["source_annotation_id"] = annotations_df["source_annotation_id"].astype(str)
+    annotations_df["source_image_id"] = annotations_df["source_image_id"].astype(str)
+    annotations_df["annotation_id"] = (
+        annotations_df["split"].astype(str) + "::" + annotations_df["source_annotation_id"]
+    )
+    annotations_df["image_id"] = annotations_df["split"].astype(str) + "::" + annotations_df["source_image_id"]
+    return images_df, annotations_df
 
 
 def build_image_metrics(
@@ -1595,8 +1628,10 @@ def select_reduced_flir(
     private_constraints: Dict[str, object],
 ) -> Dict[str, object]:
     """Scene-aware FLIR reduction that keeps multiclass support while improving private-domain alignment."""
-    flir_images = flir_profile["images"].copy()
-    flir_annotations = flir_profile["annotations"].copy()
+    flir_images, flir_annotations = ensure_split_scoped_flir_ids(
+        flir_profile["images"],
+        flir_profile["annotations"],
+    )
     image_scores = score_flir_images_against_private(flir_images, flir_annotations, private_constraints)
 
     starting_images = len(flir_images)
@@ -1608,6 +1643,10 @@ def select_reduced_flir(
     split_sizes = flir_images["split"].value_counts().sort_index()
     split_quotas = proportional_quotas(split_sizes, private_constraints["target_total_images"])
     split_quotas = {split: max(1, split_quotas.get(split, 0)) for split in split_sizes.index}
+    split_quotas["train"] = min(
+        int(private_constraints["target_total_images"]),
+        int(split_sizes.get("train", 0)),
+    )
 
     group_features = candidate_images.groupby(["split", "scene_proxy_unit"], as_index=False).agg(
         scene_group_images=("image_id", "size"),
@@ -1703,11 +1742,79 @@ def select_reduced_flir(
     }
 
 
+def build_all_flir_export_bundle(
+    flir_profile: Dict[str, object],
+    private_constraints: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    """Bypass reduction and export all split-pure FLIR images as-is."""
+    flir_images, flir_annotations = ensure_split_scoped_flir_ids(
+        flir_profile["images"],
+        flir_profile["annotations"],
+    )
+    export_images = flir_images.copy()
+    for column, default in (
+        ("match_score", np.nan),
+        ("support_score", np.nan),
+        ("support_rate", np.nan),
+        ("hard_support", False),
+    ):
+        if column not in export_images.columns:
+            export_images[column] = default
+
+    selected_scene_units = sorted(
+        export_images["scene_proxy_unit"].dropna().astype(str).unique().tolist()
+    )
+    split_counts = (
+        export_images["split"].value_counts().sort_index().astype(int).to_dict()
+        if "split" in export_images.columns
+        else {}
+    )
+    stage_rows = [
+        {"stage": "starting_flir", "images": int(len(export_images))},
+        {"stage": "full_export_no_reduction", "images": int(len(export_images))},
+    ]
+    if private_constraints is not None:
+        stage_rows.insert(
+            1,
+            {
+                "stage": "private_target_reference",
+                "images": int(private_constraints["target_total_images"]),
+            },
+        )
+    stage_table = pd.DataFrame(stage_rows)
+
+    return {
+        "images": export_images,
+        "annotations": flir_annotations.copy(),
+        "stage_table": stage_table,
+        "selected_scene_units": selected_scene_units,
+        "split_quotas": split_counts,
+        "image_scores": pd.DataFrame(),
+        "selection_mode": "all_images",
+    }
+
+
+def build_flir_export_bundle(
+    flir_profile: Dict[str, object],
+    private_constraints: Dict[str, object],
+    use_all_images: bool = False,
+) -> Dict[str, object]:
+    """Return either the reduced FLIR subset or the full split-pure FLIR export."""
+    if use_all_images:
+        return build_all_flir_export_bundle(
+            flir_profile=flir_profile,
+            private_constraints=private_constraints,
+        )
+    bundle = select_reduced_flir(flir_profile, private_constraints)
+    bundle["selection_mode"] = "reduced_subset"
+    return bundle
+
+
 def export_reduced_flir_subset(
     reduced_bundle: Dict[str, object],
     flir_category_table: pd.DataFrame,
 ) -> Dict[str, Path]:
-    """Export reduced FLIR manifests and COCO subsets."""
+    """Export reduced FLIR manifests and split-pure COCO subsets."""
     reduced_images = reduced_bundle["images"].copy()
     reduced_annotations = reduced_bundle["annotations"].copy()
 
@@ -1756,11 +1863,12 @@ def export_reduced_flir_subset(
         coco_payload = {
             "info": {
                 "description": "Reduced FLIR thermal proxy subset generated by flir_private_proxy_alignment notebook",
-                "source_split": split,
+                "export_split": split,
             },
             "images": split_images[
                 [
                     "image_id",
+                    "split",
                     "file_name",
                     "width",
                     "height",
@@ -1769,7 +1877,7 @@ def export_reduced_flir_subset(
                     "frame_index",
                 ]
             ]
-            .rename(columns={"image_id": "id"})
+            .rename(columns={"image_id": "id", "split": "source_split"})
             .to_dict(orient="records"),
             "annotations": split_annotations[
                 ["annotation_id", "image_id", "category_id", "bbox", "area", "iscrowd"]
@@ -2250,16 +2358,23 @@ constraint_table_seed
 # %% [markdown]
 # ## 8. Reduced FLIR Construction
 #
-# Construction stages:
+# Construction stages when `USE_ALL_FLIR_IMAGES_FOR_EXPORT = False`:
 #
 # 1. score every FLIR image against the private person-centric envelope,
 # 2. keep a candidate pool that stays inside the hard-support region or contributes rare auxiliary structure,
 # 3. select scene-aware FLIR chunks to approach the private statistics,
 # 4. repair missing auxiliary-class support if the first pass undershoots it,
 # 5. export manifests and split-wise COCO subsets for later experiments.
+#
+# If `USE_ALL_FLIR_IMAGES_FOR_EXPORT = True`, the notebook skips reduction and exports
+# all split-pure FLIR train/val/test images directly.
 
 # %%
-REDUCED_FLIR_BUNDLE = select_reduced_flir(FLIR_PROFILE, PRIVATE_CONSTRAINTS)
+REDUCED_FLIR_BUNDLE = build_flir_export_bundle(
+    FLIR_PROFILE,
+    PRIVATE_CONSTRAINTS,
+    use_all_images=USE_ALL_FLIR_IMAGES_FOR_EXPORT,
+)
 REDUCED_EXPORTS = export_reduced_flir_subset(REDUCED_FLIR_BUNDLE, FLIR_CATEGORY_TABLE)
 
 REDUCED_FLIR_BUNDLE["stage_table"]

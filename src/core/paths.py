@@ -77,6 +77,11 @@ def flir_root() -> Path:
     return raw_data_root() / "flir_private_proxy_alignment_v18"
 
 
+def yolo_test_ds_root() -> Path:
+    """``data/derived/yolo-test-ds/`` — exported YOLO experiment datasets."""
+    return derived_data_root() / "yolo-test-ds"
+
+
 def default_data_dir(split: str = "train") -> Path:
     """Return ``data/raw/v18/<split>/`` for a train/val split."""
     return v18_root() / split
@@ -169,6 +174,11 @@ def analysis_test_dir() -> Path:
     return analysis_root() / "test"
 
 
+def yolo_analysis_root() -> Path:
+    """``artifacts/analysis/yolo/`` — YOLO evaluation and comparison outputs."""
+    return analysis_root() / "yolo"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Checkpoint helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -213,6 +223,11 @@ def count_adapter_checkpoints_root() -> Path:
     return checkpoints_root() / "count_adapter"
 
 
+def yolo_checkpoints_root() -> Path:
+    """``artifacts/checkpoints/yolo/`` — YOLO checkpoint exports."""
+    return checkpoints_root() / "yolo"
+
+
 def count_adapter_runs_dir() -> Path:
     """``artifacts/checkpoints/count_adapter/runs/`` — count adapter runs."""
     return count_adapter_checkpoints_root() / "runs"
@@ -240,3 +255,8 @@ def default_runs_dir() -> Path:
 def runs_test_dir() -> Path:
     """``artifacts/runs/test/`` — test experiment logs."""
     return runs_root() / "test"
+
+
+def yolo_runs_root() -> Path:
+    """``artifacts/runs/yolo/`` — YOLO training runs and TensorBoard logs."""
+    return runs_root() / "yolo"

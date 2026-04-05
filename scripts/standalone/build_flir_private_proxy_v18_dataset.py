@@ -195,6 +195,10 @@ def stem_from_source_file_name(source_file_name: str) -> str:
 
 
 def resolve_source_image_path(flir_root: Path, split: str, source_file_name: str) -> Path:
+    if split not in SPLIT_TO_SOURCE_DIR:
+        raise ValueError(
+            f"Unknown FLIR source split {split!r}. Expected one of {sorted(SPLIT_TO_SOURCE_DIR)}."
+        )
     source_dir = SPLIT_TO_SOURCE_DIR[split]
     return flir_root / source_dir / source_file_name
 
@@ -271,7 +275,8 @@ def convert_split(
         seen_output_filenames.add(output_file_name)
         source_id_to_output_id[source_id] = output_id
 
-        source_path = resolve_source_image_path(flir_root, split, str(image["file_name"]))
+        source_split = str(image.get("source_split", split))
+        source_path = resolve_source_image_path(flir_root, source_split, str(image["file_name"]))
         if not source_path.exists():
             raise FileNotFoundError(f"Missing source image: {source_path}")
 

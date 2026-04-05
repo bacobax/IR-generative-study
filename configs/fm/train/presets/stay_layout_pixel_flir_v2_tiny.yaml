@@ -1,0 +1,70 @@
+# STAY-style layout-conditioned pixel FM v2 — tiny verification run
+# Launcher: python -m src.cli.train --config configs/fm/train/presets/stay_layout_pixel_flir_v2_tiny.yaml
+
+data:
+  dataset_id: "flir_private_proxy_alignment_v18"
+  image_size: 64
+  batch_size: 1
+  num_workers: 0
+  max_train_samples: 8
+  max_val_samples: 4
+  subset_strategy: "first_n"
+
+model:
+  unet_config: "configs/models/fm/layout_pixel_tiny_unet_config.json"
+  vae_config: null
+  vae_weights: null
+  pretrained_unet_path: null
+
+training:
+  epochs: 1
+  lr: 0.0001
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 1
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+
+layout_conditioning:
+  enabled: true
+  variant: "stay_v2"
+  class_embed_dim: 32
+  bbox_embed_dim: 32
+  object_embed_dim: 48
+  use_style_latent: true
+  style_latent_dim: 16
+  style_seed: 1234
+  mask_resolution: 8
+  mask_hidden_channels: 16
+  mask_threshold: 0.5
+  edge_dilation: 1
+  injection_mode: "ea_norm"
+  use_masked_context: true
+  mask_overlap_loss_weight: 0.05
+  mask_sharpness_loss_weight: 0.01
+  mask_activation_loss_weight: 0.01
+  log_internal_maps: true
+
+logging:
+  scalar_every_steps: 1
+  image_every_steps: 1
+  max_logged_images: 4
+
+sampling:
+  sample_every: 0
+  sample_steps: 4
+  sample_batch_size: 2
+  sample_shape: null
+  fixed_validation_examples: 2
+  sample_every_steps: 2
+  save_debug_images: true
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_pixel_flir_v2_tiny"
+  log_dir: "./artifacts/runs/test/flow_matching/stay_layout_pixel_flir_v2_tiny"
+  debug_dir: "./artifacts/debug/stay_layout_pixel_flir_v2_tiny"
+  resume: null
+
+trainer_name: "layout_fm"
+device: null

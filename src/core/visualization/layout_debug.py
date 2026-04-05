@@ -128,6 +128,57 @@ def draw_bbox_overlays(
     return images.clamp(0.0, 1.0)
 
 
+def render_mask_composite(
+    masks: torch.Tensor,
+    *,
+    object_mask: torch.Tensor,
+    labels: Optional[torch.Tensor] = None,
+    alpha_scale: float = 0.65,
+) -> torch.Tensor:
+    """Render a color composite for a batch of soft or hard object masks."""
+    masks = _to_cpu_float(masks)
+    object_mask = object_mask.detach().cpu().to(torch.bool)
+    if labels is None:
+        labels = torch.zeros_like(object_mask, dtype=torch.long)
+    else:
+        labels = labels.detach().cpu().to(torch.long)
+
+    if masks.ndim != 4:
+        raise ValueError(f"Expected masks with shape (B, N, H, W), got {tuple(masks.shape)}")
+
+    batch_size, _, height, width = masks.shape
+    canvas = torch.zeros(batch_size, 3, height, width, dtype=torch.float32)
+
+    for batch_idx in range(batch_size):
+        for object_idx in range(masks.shape[1]):
+            if not object_mask[batch_idx, object_idx]:
+                continue
+            color = _PALETTE[int(labels[batch_idx, object_idx].item()) % len(_PALETTE)].view(3, 1, 1)
+            alpha = masks[batch_idx, object_idx].clamp(0.0, 1.0).unsqueeze(0) * float(alpha_scale)
+            canvas[batch_idx] = canvas[batch_idx] * (1.0 - alpha) + color * alpha
+
+    return canvas.clamp(0.0, 1.0)
+
+
+def draw_mask_overlays(
+    images: torch.Tensor,
+    *,
+    masks: torch.Tensor,
+    object_mask: torch.Tensor,
+    labels: Optional[torch.Tensor] = None,
+    alpha: float = 0.35,
+) -> torch.Tensor:
+    """Overlay soft or hard masks on RGB images normalized to ``[0, 1]``."""
+    images = ensure_rgb(images).clone()
+    mask_composite = render_mask_composite(
+        masks,
+        object_mask=object_mask,
+        labels=labels,
+        alpha_scale=1.0,
+    )
+    return (images * (1.0 - float(alpha)) + mask_composite * float(alpha)).clamp(0.0, 1.0)
+
+
 def make_side_by_side_panel(images: Sequence[torch.Tensor]) -> torch.Tensor:
     """Concatenate a list of image batches horizontally."""
     rgb_batches = [ensure_rgb(image) for image in images]

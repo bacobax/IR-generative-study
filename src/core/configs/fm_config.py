@@ -131,18 +131,32 @@ class LayoutConditioningConfig:
     """Settings for the bbox-conditioned pixel-space FM path."""
 
     enabled: bool = False
+    variant: str = "raster_v1"
     num_classes: Optional[int] = None
     category_id_to_name: Dict[int, str] = field(default_factory=dict)
     class_embed_dim: int = 32
     bbox_embed_dim: int = 32
+    object_embed_dim: int = 64
+    use_style_latent: bool = True
+    style_latent_dim: int = 16
+    style_seed: int = 1234
     spatial_channels: int = 8
     raster_mode: str = "box_fill_mean"
+    mask_resolution: int = 16
+    mask_hidden_channels: int = 32
+    mask_threshold: float = 0.5
+    edge_dilation: int = 1
+    injection_mode: str = "ea_norm"
+    use_masked_context: bool = True
+    mask_overlap_loss_weight: float = 0.05
+    mask_sharpness_loss_weight: float = 0.01
+    mask_activation_loss_weight: float = 0.01
     log_internal_maps: bool = True
 
 
 @dataclass
 class LoggingConfig:
-    """Step-based TensorBoard logging cadence for layout-conditioned FM."""
+    """Scalar cadence plus legacy step-based image logging for layout FM."""
 
     scalar_every_steps: int = 10
     image_every_steps: int = 200
@@ -151,7 +165,7 @@ class LoggingConfig:
 
 @dataclass
 class SampleConfig:
-    """Parameters controlling per-epoch and stand-alone sampling."""
+    """Parameters controlling sampling and image logging cadence."""
 
     sample_every: int = 1
     sample_steps: int = 50

@@ -1,0 +1,70 @@
+{
+  "info": {
+    "description": "Full raw FLIR thermal dataset converted to a v18-style layout",
+    "source_annotations": "/projets/Fbassignana/diffusers_try/flow_matching_trial/data/raw/flir/images_thermal_train/coco.json",
+    "exported_at_utc": "2026-03-26T15:00:55.292791+00:00",
+    "person_only": true
+  },
+  "licenses": [],
+  "categories": [
+    {
+      "id": 0,
+      "name": "person"
+    }
+  ],
+  "images": [
+    {
+      "id": "video-GzdKTLbkG5F7gAunM-frame-000108-QHZmA4QTZCnzBG3HZ",
+      "width": 640,
+      "height": 512,
+      "file_name": "video-GzdKTLbkG5F7gAunM-frame-000108-QHZmA4QTZCnzBG3HZ.npy"
+    },
+    {
+      "id": "video-GzdKTLbkG5F7gAunM-frame-000123-zT9WiGpogNTW2duPu",
+      "width": 640,
+      "height": 512,
+      "file_name": "video-GzdKTLbkG5F7gAunM-frame-000123-zT9WiGpogNTW2duPu.npy"
+    }
+  ],
+  "annotations": [
+    {
+      "id": 0,
+      "image_id": "video-GzdKTLbkG5F7gAunM-frame-000108-QHZmA4QTZCnzBG3HZ",
+      "category_id": 0,
+      "bbox": [
+        446.0,
+        223.0,
+        9.0,
+        32.0
+      ],
+      "area": 288.0,
+      "iscrowd": 0
+    },
+    {
+      "id": 1,
+      "image_id": "video-GzdKTLbkG5F7gAunM-frame-000108-QHZmA4QTZCnzBG3HZ",
+      "category_id": 0,
+      "bbox": [
+        368.0,
+        232.0,
+        8.0,
+        10.0
+      ],
+      "area": 80.0,
+      "iscrowd": 0
+    },
+    {
+      "id": 2,
+      "image_id": "video-GzdKTLbkG5F7gAunM-frame-000123-zT9WiGpogNTW2duPu",
+      "category_id": 0,
+      "bbox": [
+        489.0,
+        222.0,
+        14.0,
+        43.0
+      ],
+      "area": 602.0,
+      "iscrowd": 0
+    }
+  ]
+}

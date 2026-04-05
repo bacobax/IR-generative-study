@@ -1,0 +1,30 @@
+{
+  "info": {
+    "description": "Full raw FLIR thermal dataset converted to a v18-style layout",
+    "source_annotations": "/projets/Fbassignana/diffusers_try/flow_matching_trial/data/raw/flir/images_thermal_val/coco.json",
+    "exported_at_utc": "2026-03-26T15:00:55.283206+00:00",
+    "person_only": true
+  },
+  "licenses": [],
+  "categories": [
+    {
+      "id": 0,
+      "name": "person"
+    }
+  ],
+  "images": [
+    {
+      "id": "video-JhYLiFCieHQHaY8o7-frame-000000-xT7BXRKKyuWEsnywX",
+      "width": 640,
+      "height": 512,
+      "file_name": "video-JhYLiFCieHQHaY8o7-frame-000000-xT7BXRKKyuWEsnywX.npy"
+    },
+    {
+      "id": "video-JhYLiFCieHQHaY8o7-frame-000300-guKooGzgx8fSSGQG7",
+      "width": 640,
+      "height": 512,
+      "file_name": "video-JhYLiFCieHQHaY8o7-frame-000300-guKooGzgx8fSSGQG7.npy"
+    }
+  ],
+  "annotations": []
+}

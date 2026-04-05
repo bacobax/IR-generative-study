@@ -34,6 +34,15 @@ class LayoutFlowMatchingSampler(FlowMatchingSampler):
             "labels": batch["labels"].to(self.device),
             "object_mask": batch["object_mask"].to(self.device),
         }
+        if "style_noise" in batch:
+            cond_kw["style_noise"] = batch["style_noise"].to(self.device)
+        elif hasattr(self.unet, "sample_style_noise") and bool(getattr(self.unet, "use_style_latent", False)):
+            cond_kw["style_noise"] = self.unet.sample_style_noise(
+                batch_size=batch_size,
+                max_objects=int(batch["labels"].shape[1]),
+                device=self.device,
+                dtype=batch["boxes_xyxy_norm"].dtype,
+            )
 
         for step_idx in range(steps):
             t_val = step_idx / steps

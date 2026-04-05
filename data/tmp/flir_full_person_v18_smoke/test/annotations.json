@@ -1,0 +1,17 @@
+{
+  "info": {
+    "description": "Empty scaffold generated for a canonical FLIR split",
+    "source_annotations": "/projets/Fbassignana/diffusers_try/flow_matching_trial/data/raw/flir/video_thermal_test/coco.json",
+    "exported_at_utc": "2026-03-26T15:00:55.292216+00:00",
+    "person_only": true
+  },
+  "licenses": [],
+  "categories": [
+    {
+      "id": 0,
+      "name": "person"
+    }
+  ],
+  "images": [],
+  "annotations": []
+}

@@ -6,6 +6,7 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -15,9 +16,11 @@ from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatc
 from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
 from src.core.visualization.layout_debug import (
     draw_bbox_overlays,
+    draw_mask_overlays,
     ensure_rgb,
     make_side_by_side_panel,
     normalize_feature_map,
+    render_mask_composite,
     render_class_layout,
     save_image_batch,
 )
@@ -26,6 +29,7 @@ from src.models.layout_conditioned_unet import (
     build_layout_conditioned_pixel_unet,
     save_layout_conditioning_metadata,
 )
+from src.models.stay_layout_conditioned_unet import build_stay_layout_conditioned_pixel_unet
 
 
 class LayoutFMTrainer(FlowMatchingTrainer):
@@ -56,6 +60,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             conditioner=None,
         )
         self.layout_config = layout_config
+        self._last_loss_components: Dict[str, float] = {}
 
     @classmethod
     def from_config(
@@ -76,22 +81,48 @@ class LayoutFMTrainer(FlowMatchingTrainer):
 
         base_unet_cfg = load_unet_config(config.model.unet_config)
         image_in_channels = int(base_unet_cfg.get("in_channels", 1))
+        variant = str(getattr(config.layout_conditioning, "variant", "raster_v1"))
         effective_unet_cfg = dict(base_unet_cfg)
         effective_unet_cfg["sample_size"] = int(config.data.image_size)
-        effective_unet_cfg["in_channels"] = image_in_channels + int(config.layout_conditioning.spatial_channels)
         effective_unet_cfg["out_channels"] = image_in_channels
 
-        wrapped_unet = build_layout_conditioned_pixel_unet(
-            effective_unet_cfg,
-            image_in_channels=image_in_channels,
-            num_classes=num_classes,
-            class_embed_dim=int(config.layout_conditioning.class_embed_dim),
-            bbox_embed_dim=int(config.layout_conditioning.bbox_embed_dim),
-            spatial_channels=int(config.layout_conditioning.spatial_channels),
-            raster_mode=str(config.layout_conditioning.raster_mode),
-            category_id_to_name=getattr(config.layout_conditioning, "category_id_to_name", {}),
-            device=device,
-        )
+        if variant == "stay_v2":
+            effective_unet_cfg["in_channels"] = image_in_channels
+            wrapped_unet = build_stay_layout_conditioned_pixel_unet(
+                effective_unet_cfg,
+                image_in_channels=image_in_channels,
+                num_classes=num_classes,
+                class_embed_dim=int(config.layout_conditioning.class_embed_dim),
+                bbox_embed_dim=int(config.layout_conditioning.bbox_embed_dim),
+                object_embed_dim=int(config.layout_conditioning.object_embed_dim),
+                use_style_latent=bool(config.layout_conditioning.use_style_latent),
+                style_latent_dim=int(config.layout_conditioning.style_latent_dim),
+                style_seed=int(config.layout_conditioning.style_seed),
+                mask_resolution=int(config.layout_conditioning.mask_resolution),
+                mask_hidden_channels=int(config.layout_conditioning.mask_hidden_channels),
+                mask_threshold=float(config.layout_conditioning.mask_threshold),
+                edge_dilation=int(config.layout_conditioning.edge_dilation),
+                injection_mode=str(config.layout_conditioning.injection_mode),
+                use_masked_context=bool(config.layout_conditioning.use_masked_context),
+                mask_overlap_loss_weight=float(config.layout_conditioning.mask_overlap_loss_weight),
+                mask_sharpness_loss_weight=float(config.layout_conditioning.mask_sharpness_loss_weight),
+                mask_activation_loss_weight=float(config.layout_conditioning.mask_activation_loss_weight),
+                category_id_to_name=getattr(config.layout_conditioning, "category_id_to_name", {}),
+                device=device,
+            )
+        else:
+            effective_unet_cfg["in_channels"] = image_in_channels + int(config.layout_conditioning.spatial_channels)
+            wrapped_unet = build_layout_conditioned_pixel_unet(
+                effective_unet_cfg,
+                image_in_channels=image_in_channels,
+                num_classes=num_classes,
+                class_embed_dim=int(config.layout_conditioning.class_embed_dim),
+                bbox_embed_dim=int(config.layout_conditioning.bbox_embed_dim),
+                spatial_channels=int(config.layout_conditioning.spatial_channels),
+                raster_mode=str(config.layout_conditioning.raster_mode),
+                category_id_to_name=getattr(config.layout_conditioning, "category_id_to_name", {}),
+                device=device,
+            )
 
         return cls(
             wrapped_unet,
@@ -119,6 +150,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             log_dir=config.output.resolved_log_dir(),
             debug_dir=config.output.resolved_debug_dir(),
             lr=config.training.lr,
+            sample_every=config.sampling.sample_every,
             patience=config.training.patience,
             min_delta=config.training.min_delta,
             sample_steps=config.sampling.sample_steps,
@@ -139,16 +171,36 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             save_unet_config(self.unet_config, os.path.join(self._unet_dir(), "config.json"))
 
         layout_metadata = {
+            "variant": str(getattr(self.layout_config, "variant", "raster_v1")),
             "num_classes": int(self.unet.num_classes),
             "class_embed_dim": int(self.unet.class_embed_dim),
             "bbox_embed_dim": int(self.unet.bbox_embed_dim),
-            "spatial_channels": int(self.unet.spatial_channels),
-            "raster_mode": str(self.unet.raster_mode),
             "image_in_channels": int(self.unet.image_in_channels),
             "category_id_to_name": {
                 str(key): value for key, value in self.unet.category_id_to_name.items()
             },
         }
+        if hasattr(self.unet, "spatial_channels"):
+            layout_metadata["spatial_channels"] = int(self.unet.spatial_channels)
+            layout_metadata["raster_mode"] = str(self.unet.raster_mode)
+        if hasattr(self.unet, "object_embed_dim"):
+            layout_metadata.update(
+                {
+                    "object_embed_dim": int(self.unet.object_embed_dim),
+                    "use_style_latent": bool(self.unet.use_style_latent),
+                    "style_latent_dim": int(self.unet.style_latent_dim),
+                    "style_seed": int(self.unet.style_seed),
+                    "mask_resolution": int(self.unet.mask_resolution),
+                    "mask_hidden_channels": int(self.unet.mask_hidden_channels),
+                    "mask_threshold": float(self.unet.mask_threshold),
+                    "edge_dilation": int(self.unet.edge_dilation),
+                    "injection_mode": str(self.unet.injection_mode),
+                    "use_masked_context": bool(self.unet.use_masked_context),
+                    "mask_overlap_loss_weight": float(self.unet.mask_overlap_loss_weight),
+                    "mask_sharpness_loss_weight": float(self.unet.mask_sharpness_loss_weight),
+                    "mask_activation_loss_weight": float(self.unet.mask_activation_loss_weight),
+                }
+            )
         save_layout_conditioning_metadata(
             layout_metadata,
             os.path.join(self.model_dir, "layout_conditioning.json"),
@@ -169,11 +221,78 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         device: Optional[str] = None,
     ) -> Dict[str, torch.Tensor]:
         target_device = device or self.device
-        return {
+        cond_kwargs = {
             "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(target_device),
             "labels": batch["labels"].to(target_device),
             "object_mask": batch["object_mask"].to(target_device),
         }
+        variant = str(getattr(self.layout_config, "variant", "raster_v1"))
+        if variant == "stay_v2" and bool(getattr(self.layout_config, "use_style_latent", False)):
+            if "style_noise" in batch:
+                cond_kwargs["style_noise"] = batch["style_noise"].to(target_device)
+            else:
+                batch_size, max_objects = int(batch["labels"].shape[0]), int(batch["labels"].shape[1])
+                cond_kwargs["style_noise"] = self.unet.sample_style_noise(
+                    batch_size=batch_size,
+                    max_objects=max_objects,
+                    device=target_device,
+                    dtype=batch["boxes_xyxy_norm"].dtype,
+                )
+        return cond_kwargs
+
+    def _attach_fixed_style_noise(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        variant = str(getattr(self.layout_config, "variant", "raster_v1"))
+        if variant != "stay_v2" or not bool(getattr(self.layout_config, "use_style_latent", False)):
+            return batch
+        if "style_noise" in batch:
+            return batch
+
+        seeded = dict(batch)
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(int(getattr(self.layout_config, "style_seed", 1234)))
+        batch_size, max_objects = int(batch["labels"].shape[0]), int(batch["labels"].shape[1])
+        seeded["style_noise"] = self.unet.sample_style_noise(
+            batch_size=batch_size,
+            max_objects=max_objects,
+            device="cpu",
+            dtype=batch["boxes_xyxy_norm"].dtype,
+            generator=generator,
+        ).cpu()
+        return seeded
+
+    def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
+        if cond_kwargs is None:
+            cond_kwargs = {}
+        batch_size = x_fm.shape[0]
+        z0 = torch.randn_like(x_fm)
+        t = torch.rand(batch_size, device=x_fm.device)
+        t_expanded = t[:, None, None, None]
+
+        zt = (1.0 - t_expanded) * z0 + t_expanded * x_fm
+        v_target = x_fm - z0
+
+        unet_output = self.unet(zt, t * self.t_scale, **cond_kwargs)
+        unet_sample = unet_output.sample
+        if self.train_target == "x0":
+            fm_prediction = (unet_sample - zt) / (1.0 - t_expanded).clamp(min=1e-5)
+        else:
+            fm_prediction = unet_sample
+
+        fm_loss = F.mse_loss(fm_prediction, v_target)
+        aux_loss = getattr(unet_output, "aux_loss", None)
+        if aux_loss is None:
+            aux_loss = torch.zeros((), device=x_fm.device, dtype=fm_loss.dtype)
+        total_loss = fm_loss + aux_loss
+
+        self._last_loss_components = {
+            "total_loss": float(total_loss.detach().item()),
+            "fm_loss": float(fm_loss.detach().item()),
+            "aux_loss": float(aux_loss.detach().item()),
+            "mask_overlap_loss": float(getattr(unet_output, "mask_overlap_loss", aux_loss * 0.0).detach().item()),
+            "mask_sharpness_loss": float(getattr(unet_output, "mask_sharpness_loss", aux_loss * 0.0).detach().item()),
+            "mask_activation_loss": float(getattr(unet_output, "mask_activation_loss", aux_loss * 0.0).detach().item()),
+        }
+        return total_loss
 
     @staticmethod
     def _slice_batch(batch: Dict[str, Any], max_items: int) -> Dict[str, Any]:
@@ -218,11 +337,16 @@ class LayoutFMTrainer(FlowMatchingTrainer):
     def _should_log(step: int, every: int) -> bool:
         return every > 0 and (step == 1 or step % every == 0)
 
+    @staticmethod
+    def _should_log_epoch(epoch_idx: int, every: int) -> bool:
+        return every > 0 and (epoch_idx + 1) % every == 0
+
     def _log_training_visuals(
         self,
         writer: SummaryWriter,
         *,
         batch: Dict[str, Any],
+        cond_kw: Optional[Dict[str, torch.Tensor]],
         global_step: int,
         max_logged_images: int,
         log_internal_maps: bool,
@@ -255,12 +379,20 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         if not log_internal_maps:
             return
 
+        vis_cond_kw = None
+        if cond_kw is not None:
+            vis_cond_kw = {
+                key: value[:max_logged_images] if torch.is_tensor(value) else value
+                for key, value in cond_kw.items()
+            }
+
         with torch.no_grad():
             debug = self.unet.build_conditioning(
                 boxes_xyxy_norm=vis_batch["boxes_xyxy_norm"].to(self.device),
                 labels=labels.to(self.device),
                 object_mask=object_mask.to(self.device),
                 spatial_size=(image_size, image_size),
+                style_noise=None if vis_cond_kw is None else vis_cond_kw.get("style_noise"),
             )
 
         writer.add_images(
@@ -278,6 +410,56 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             normalize_feature_map(debug["conditioning_maps"]),
             global_step,
         )
+        variant = str(getattr(self.layout_config, "variant", "raster_v1"))
+        if variant == "stay_v2":
+            soft_mask_composite = render_mask_composite(
+                debug["soft_masks_full"],
+                object_mask=object_mask,
+                labels=labels,
+            )
+            hard_mask_composite = render_mask_composite(
+                debug["hard_masks_full"],
+                object_mask=object_mask,
+                labels=labels,
+            )
+            owner_mask_composite = render_mask_composite(
+                debug["non_overlap_masks_full"],
+                object_mask=object_mask,
+                labels=labels,
+            )
+            writer.add_images("layout_fm/train/soft_masks", soft_mask_composite, global_step)
+            writer.add_images("layout_fm/train/hard_masks", hard_mask_composite, global_step)
+            writer.add_images("layout_fm/train/non_overlap_masks", owner_mask_composite, global_step)
+            writer.add_images(
+                "layout_fm/train/semantic_map",
+                normalize_feature_map(debug["semantic_map"]),
+                global_step,
+            )
+            writer.add_images(
+                "layout_fm/train/edge_map",
+                normalize_feature_map(debug["edge_map"]),
+                global_step,
+            )
+            writer.add_images(
+                "layout_fm/train/overlap_map",
+                ensure_rgb(debug["overlap_map"]),
+                global_step,
+            )
+            writer.add_images(
+                "layout_fm/train/masked_context",
+                normalize_feature_map(debug["masked_context_map"]),
+                global_step,
+            )
+            writer.add_images(
+                "layout_fm/train/input_mask_overlay",
+                draw_mask_overlays(
+                    display_images,
+                    masks=debug["hard_masks_full"],
+                    object_mask=object_mask,
+                    labels=labels,
+                ),
+                global_step,
+            )
 
     def _log_fixed_validation_samples(
         self,
@@ -294,6 +476,8 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         log_internal_maps: bool,
     ) -> None:
         vis_batch = self._slice_batch(fixed_batch, max_logged_images)
+        variant = str(getattr(self.layout_config, "variant", "raster_v1"))
+        generated_mask_overlay = None
         generated_latents = sampler.sample_euler_layout(
             vis_batch,
             steps=steps,
@@ -321,14 +505,9 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             object_mask=vis_batch["object_mask"],
             image_size=int(vis_batch["pixel_values"].shape[-1]),
         )
-        panel = make_side_by_side_panel(
-            [class_layout, generated_display, generated_overlay, ground_truth_overlay]
-        )
-
         writer.add_images("layout_fm/val/generated", ensure_rgb(generated_display), global_step)
         writer.add_images("layout_fm/val/generated_boxes", generated_overlay, global_step)
         writer.add_images("layout_fm/val/ground_truth_boxes", ground_truth_overlay, global_step)
-        writer.add_images("layout_fm/val/panel", panel, global_step)
 
         if log_internal_maps:
             with torch.no_grad():
@@ -337,6 +516,9 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                     labels=vis_batch["labels"].to(self.device),
                     object_mask=vis_batch["object_mask"].to(self.device),
                     spatial_size=(int(vis_batch["pixel_values"].shape[-2]), int(vis_batch["pixel_values"].shape[-1])),
+                    style_noise=vis_batch.get("style_noise", None).to(self.device)
+                    if isinstance(vis_batch.get("style_noise", None), torch.Tensor)
+                    else None,
                 )
             writer.add_images(
                 "layout_fm/val/objectness",
@@ -353,11 +535,76 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 normalize_feature_map(debug["conditioning_maps"]),
                 global_step,
             )
+            if variant == "stay_v2":
+                soft_mask_composite = render_mask_composite(
+                    debug["soft_masks_full"],
+                    object_mask=vis_batch["object_mask"],
+                    labels=vis_batch["labels"],
+                )
+                hard_mask_composite = render_mask_composite(
+                    debug["hard_masks_full"],
+                    object_mask=vis_batch["object_mask"],
+                    labels=vis_batch["labels"],
+                )
+                owner_mask_composite = render_mask_composite(
+                    debug["non_overlap_masks_full"],
+                    object_mask=vis_batch["object_mask"],
+                    labels=vis_batch["labels"],
+                )
+                generated_mask_overlay = draw_mask_overlays(
+                    generated_display,
+                    masks=debug["hard_masks_full"],
+                    object_mask=vis_batch["object_mask"],
+                    labels=vis_batch["labels"],
+                )
+                writer.add_images("layout_fm/val/soft_masks", soft_mask_composite, global_step)
+                writer.add_images("layout_fm/val/hard_masks", hard_mask_composite, global_step)
+                writer.add_images("layout_fm/val/non_overlap_masks", owner_mask_composite, global_step)
+                writer.add_images(
+                    "layout_fm/val/semantic_map",
+                    normalize_feature_map(debug["semantic_map"]),
+                    global_step,
+                )
+                writer.add_images(
+                    "layout_fm/val/edge_map",
+                    normalize_feature_map(debug["edge_map"]),
+                    global_step,
+                )
+                writer.add_images(
+                    "layout_fm/val/overlap_map",
+                    ensure_rgb(debug["overlap_map"]),
+                    global_step,
+                )
+                writer.add_images(
+                    "layout_fm/val/masked_context",
+                    normalize_feature_map(debug["masked_context_map"]),
+                    global_step,
+                )
+                writer.add_images(
+                    "layout_fm/val/generated_mask_overlay",
+                    generated_mask_overlay,
+                    global_step,
+                )
+                panel = make_side_by_side_panel(
+                    [class_layout, soft_mask_composite, generated_overlay, generated_mask_overlay, ground_truth_overlay]
+                )
+            else:
+                panel = make_side_by_side_panel(
+                    [class_layout, generated_display, generated_overlay, ground_truth_overlay]
+                )
+        else:
+            panel = make_side_by_side_panel(
+                [class_layout, generated_display, generated_overlay, ground_truth_overlay]
+            )
+
+        writer.add_images("layout_fm/val/panel", panel, global_step)
 
         if save_debug_images:
             step_dir = os.path.join(debug_dir, f"step_{global_step:06d}")
             save_image_batch(panel, output_dir=step_dir, prefix="panel")
             save_image_batch(generated_overlay, output_dir=step_dir, prefix="generated_boxes")
+            if generated_mask_overlay is not None:
+                save_image_batch(generated_mask_overlay, output_dir=step_dir, prefix="generated_masks")
 
     def train(
         self,
@@ -370,6 +617,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         log_dir: str = "./artifacts/runs/main/layout_fm",
         debug_dir: str = "./artifacts/debug/layout_fm",
         lr: float = 1e-4,
+        sample_every: int = 0,
         sample_steps: int = 50,
         patience: Optional[int] = None,
         min_delta: float = 0.0,
@@ -423,6 +671,17 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             eval_dataloader or dataloader,
             fixed_validation_examples,
         )
+        if fixed_batch is not None:
+            fixed_batch = self._attach_fixed_style_noise(fixed_batch)
+
+        epoch_image_logging = sample_every > 0
+        if epoch_image_logging and (image_every_steps > 0 or sample_every_steps > 0):
+            print(
+                "[LayoutFM] Epoch-based image logging enabled via "
+                f"sampling.sample_every={sample_every}; ignoring legacy "
+                f"logging.image_every_steps={image_every_steps} and "
+                f"sampling.sample_every_steps={sample_every_steps}."
+            )
 
         def _save_checkpoint(path: str, epoch_idx: int) -> None:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -442,10 +701,14 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         for epoch in range(start_epoch, epochs):
             self.unet.train()
             total_loss = 0.0
+            last_batch: Optional[Dict[str, Any]] = None
+            last_cond_kw: Optional[Dict[str, torch.Tensor]] = None
 
             for batch in tqdm(dataloader, desc=f"LayoutFM Epoch {epoch + 1}/{epochs}"):
                 pixel_values = batch["pixel_values"].to(self.device)
                 cond_kw = self.prepare_conditioning_kwargs(batch)
+                last_batch = batch
+                last_cond_kw = cond_kw
                 x_fm = self.encode_fm_input(pixel_values)
                 loss = self.flow_matching_step(x_fm, cond_kw)
 
@@ -464,9 +727,20 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                             labels=cond_kw["labels"],
                             object_mask=cond_kw["object_mask"],
                             spatial_size=(int(pixel_values.shape[-2]), int(pixel_values.shape[-1])),
+                            style_noise=cond_kw.get("style_noise"),
                         )
                     n_objects = batch["n_objects"].to(torch.float32)
                     writer.add_scalar("layout_fm/loss_step", float(loss.item()), global_step)
+                    writer.add_scalar(
+                        "layout_fm/fm_loss_step",
+                        float(self._last_loss_components.get("fm_loss", float(loss.item()))),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "layout_fm/aux_loss_step",
+                        float(self._last_loss_components.get("aux_loss", 0.0)),
+                        global_step,
+                    )
                     writer.add_scalar("layout_fm/lr", float(optimizer.param_groups[0]["lr"]), global_step)
                     writer.add_scalar("layout_fm/grad_norm", float(grad_norm), global_step)
                     writer.add_scalar("layout_fm/mean_objects", float(n_objects.mean().item()), global_step)
@@ -481,17 +755,59 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                         float(layout_debug["objectness_map"].mean().item()),
                         global_step,
                     )
+                    writer.add_scalar(
+                        "layout_fm/mask_overlap_loss",
+                        float(self._last_loss_components.get("mask_overlap_loss", 0.0)),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "layout_fm/mask_sharpness_loss",
+                        float(self._last_loss_components.get("mask_sharpness_loss", 0.0)),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "layout_fm/mask_activation_loss",
+                        float(self._last_loss_components.get("mask_activation_loss", 0.0)),
+                        global_step,
+                    )
+                    if "soft_masks_full" in layout_debug:
+                        soft_masks = layout_debug["soft_masks_full"]
+                        if soft_masks.numel() > 0:
+                            writer.add_scalar(
+                                "layout_fm/mask_mean",
+                                float(soft_masks.mean().item()),
+                                global_step,
+                            )
+                            writer.add_scalar(
+                                "layout_fm/overlap_ratio",
+                                float(layout_debug["overlap_map"].mean().item()),
+                                global_step,
+                            )
+                        else:
+                            writer.add_scalar("layout_fm/mask_mean", 0.0, global_step)
+                            writer.add_scalar("layout_fm/overlap_ratio", 0.0, global_step)
+                    if "edge_map" in layout_debug:
+                        writer.add_scalar(
+                            "layout_fm/edge_map_energy",
+                            float(layout_debug["edge_map"].abs().mean().item()),
+                            global_step,
+                        )
 
-                if self._should_log(global_step, image_every_steps):
+                if (not epoch_image_logging) and self._should_log(global_step, image_every_steps):
                     self._log_training_visuals(
                         writer,
                         batch=batch,
+                        cond_kw=cond_kw,
                         global_step=global_step,
                         max_logged_images=max_logged_images,
                         log_internal_maps=log_internal_maps,
                     )
 
-                if fixed_batch is not None and self._should_log(global_step, sample_every_steps):
+                if (
+                    (not epoch_image_logging)
+                    and fixed_batch is not None
+                    and self._should_log(global_step, sample_every_steps)
+                ):
                     self._log_fixed_validation_samples(
                         writer,
                         sampler=sampler,
@@ -548,6 +864,31 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                     if bad_epochs >= patience:
                         print(f"Early stopping. Best epoch: {best_epoch + 1}")
                         break
+
+            if epoch_image_logging and self._should_log_epoch(epoch, sample_every):
+                self.unet.eval()
+                if last_batch is not None:
+                    self._log_training_visuals(
+                        writer,
+                        batch=last_batch,
+                        cond_kw=last_cond_kw,
+                        global_step=global_step,
+                        max_logged_images=max_logged_images,
+                        log_internal_maps=log_internal_maps,
+                    )
+                if fixed_batch is not None:
+                    self._log_fixed_validation_samples(
+                        writer,
+                        sampler=sampler,
+                        fixed_batch=fixed_batch,
+                        global_step=global_step,
+                        steps=sample_steps,
+                        sample_shape=sample_shape,
+                        max_logged_images=max_logged_images,
+                        save_debug_images=save_debug_images,
+                        debug_dir=debug_dir,
+                        log_internal_maps=log_internal_maps,
+                    )
 
         writer.close()
 

@@ -88,8 +88,10 @@ class LayoutConditionedPixelUNet(nn.Module):
         labels: torch.Tensor,
         object_mask: torch.Tensor,
         spatial_size: tuple[int, int],
+        style_noise: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Rasterize object embeddings into spatial conditioning maps."""
+        del style_noise  # kept for compatibility with richer layout-conditioning variants
         batch_size, max_objects, _ = boxes_xyxy_norm.shape
         height, width = spatial_size
         device = boxes_xyxy_norm.device

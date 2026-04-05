@@ -1,0 +1,43 @@
+data:
+  dataset_yaml: data/derived/yolo-test-ds/unbalanced.yaml
+  test_dataset_yaml: data/derived/yolo-test-ds/test.yaml
+  batch_size: 16
+  workers: 4
+  image_size: 640
+
+model:
+  weights: yolov8n.pt
+  task: detect
+
+training:
+  epochs: 100
+  lr0: 0.01
+  optimizer: SGD
+  momentum: 0.937
+  weight_decay: 0.0005
+  seed: 7
+  deterministic: true
+  patience: 20
+  cos_lr: false
+  freeze_backbone_epochs: 5
+  freeze_backbone_layers: 10
+  backbone_lr_multiplier: 0.1
+  backbone_param_prefixes:
+    - model.0.
+    - model.1.
+    - model.2.
+    - model.3.
+    - model.4.
+    - model.5.
+    - model.6.
+    - model.7.
+    - model.8.
+    - model.9.
+
+evaluation:
+  split: test
+  save_json: true
+  save_hybrid: false
+
+output:
+  experiment_name: exp_unbalanced

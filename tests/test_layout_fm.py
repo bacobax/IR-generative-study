@@ -234,6 +234,7 @@ def test_layout_trainer_smoke_loop_and_config_loading() -> None:
             log_dir=os.path.join(tmpdir, "tb"),
             debug_dir=os.path.join(tmpdir, "debug"),
             lr=1e-4,
+            sample_every=0,
             sample_steps=2,
             save_every_n_epochs=1,
             scalar_every_steps=1,
@@ -251,3 +252,69 @@ def test_layout_trainer_smoke_loop_and_config_loading() -> None:
         debug_root = os.path.join(tmpdir, "debug")
         assert os.path.isdir(debug_root)
         assert any(os.path.isdir(os.path.join(debug_root, name)) for name in os.listdir(debug_root))
+
+
+def test_layout_trainer_epoch_image_logging_uses_sample_every() -> None:
+    class RecordingLayoutFMTrainer(LayoutFMTrainer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.training_log_steps: list[int] = []
+            self.validation_log_steps: list[int] = []
+
+        def _log_training_visuals(self, writer, *, batch, cond_kw, global_step, max_logged_images, log_internal_maps):
+            self.training_log_steps.append(int(global_step))
+
+        def _log_fixed_validation_samples(
+            self,
+            writer,
+            *,
+            sampler,
+            fixed_batch,
+            global_step,
+            steps,
+            sample_shape,
+            max_logged_images,
+            save_debug_images,
+            debug_dir,
+            log_internal_maps,
+        ):
+            self.validation_log_steps.append(int(global_step))
+
+    unet = _small_layout_unet()
+    samples = [_make_sample(0, n_objects=2), _make_sample(1, n_objects=1)]
+    loader = DataLoader(samples, batch_size=1, shuffle=False, collate_fn=collate_layout_batch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = RecordingLayoutFMTrainer(
+            unet,
+            layout_config=LayoutConditioningConfig(
+                enabled=True,
+                num_classes=4,
+                category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+            ),
+            device="cpu",
+            t_scale=1.0,
+            model_dir=tmpdir,
+            unet_config=unet.base_unet_config,
+        )
+        trainer.train(
+            dataloader=loader,
+            epochs=3,
+            eval_dataloader=loader,
+            log_dir=os.path.join(tmpdir, "tb"),
+            debug_dir=os.path.join(tmpdir, "debug"),
+            lr=1e-4,
+            sample_every=2,
+            sample_steps=2,
+            save_every_n_epochs=0,
+            scalar_every_steps=0,
+            image_every_steps=1,
+            max_logged_images=2,
+            fixed_validation_examples=1,
+            sample_every_steps=1,
+            save_debug_images=False,
+            log_internal_maps=False,
+        )
+
+        assert trainer.training_log_steps == [4]
+        assert trainer.validation_log_steps == [4]
