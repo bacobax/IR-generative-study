@@ -5,3 +5,4 @@ train_dir: ./data/raw/v18/train
 val_dir: ./data/raw/v18/val
 model_dir: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x8
 vae_json: configs/models/fm/vae_config_x8.json
+device: cuda:0

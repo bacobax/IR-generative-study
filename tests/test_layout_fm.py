@@ -6,6 +6,7 @@ import os
 import tempfile
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
@@ -44,6 +45,44 @@ def _small_layout_unet():
         category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
         device="cpu",
     )
+
+
+def _small_layout_latent_unet():
+    config = {
+        "sample_size": 8,
+        "in_channels": 8,
+        "out_channels": 4,
+        "layers_per_block": 1,
+        "block_out_channels": [32, 64],
+        "down_block_types": ["DownBlock2D", "AttnDownBlock2D"],
+        "up_block_types": ["AttnUpBlock2D", "UpBlock2D"],
+        "norm_num_groups": 16,
+    }
+    return build_layout_conditioned_pixel_unet(
+        config,
+        image_in_channels=4,
+        num_classes=4,
+        class_embed_dim=16,
+        bbox_embed_dim=16,
+        spatial_channels=4,
+        category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+        device="cpu",
+    )
+
+
+class _FakeLatentVAE:
+    def encode(self, x: torch.Tensor):
+        latents = F.interpolate(x, size=(8, 8), mode="bilinear", align_corners=False)
+        latents = latents.repeat(1, 4, 1, 1)
+        sigma = torch.ones_like(latents) * 0.5
+        return latents, sigma
+
+    def sampling(self, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+        return mu
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        decoded = z[:, :1]
+        return F.interpolate(decoded, size=(16, 16), mode="bilinear", align_corners=False)
 
 
 def _make_sample(idx: int, *, n_objects: int) -> dict:
@@ -190,6 +229,40 @@ def test_layout_sampler_and_visual_panels_save() -> None:
         saved = save_image_batch(panel, output_dir=tmpdir, prefix="panel")
         assert len(saved) == 2
         assert all(os.path.isfile(path) for path in saved)
+
+
+def test_layout_sampler_from_stable_decodes_latents() -> None:
+    unet = _small_layout_latent_unet()
+    sampler = LayoutFlowMatchingSampler.from_stable(unet, _FakeLatentVAE(), device="cpu", t_scale=1.0)
+    batch = collate_layout_batch([
+        _make_sample(0, n_objects=2),
+        _make_sample(1, n_objects=1),
+    ])
+
+    z = sampler.sample_euler_layout(batch, steps=2, sample_shape=(4, 8, 8))
+    decoded = sampler.decode(z)
+
+    assert z.shape == (2, 4, 8, 8)
+    assert decoded.shape == (2, 1, 16, 16)
+
+
+def test_minibatch_ot_reorders_targets_by_working_space_cost() -> None:
+    unet = _small_layout_unet()
+    trainer = LayoutFMTrainer(
+        unet,
+        layout_config=LayoutConditioningConfig(enabled=True, num_classes=4),
+        device="cpu",
+        t_scale=1.0,
+        model_dir="/tmp/layout_fm_test",
+        path_mode="minibatch_ot",
+    )
+    z0 = torch.stack([torch.ones(1, 16, 16), torch.zeros(1, 16, 16)], dim=0)
+    x_fm = torch.stack([torch.zeros(1, 16, 16), torch.ones(1, 16, 16)], dim=0)
+
+    matched = trainer._match_flow_targets(z0, x_fm, None)
+
+    assert torch.allclose(matched[0], x_fm[1])
+    assert torch.allclose(matched[1], x_fm[0])
 
 
 def test_layout_trainer_smoke_loop_and_config_loading() -> None:

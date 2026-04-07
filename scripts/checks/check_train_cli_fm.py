@@ -72,6 +72,20 @@ expected_defaults = {
     "save_every_n_epochs": 10,
     "sample_batch_size": 4,
     "t_scale": 1000.0,
+    "max_grad_norm": 1.0,
+    "weight_decay": 0.01,
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "scheduler_name": "warmup_cosine",
+    "warmup_ratio": 0.05,
+    "min_lr_ratio": 0.1,
+    "ema_decay": 0.999,
+    "ema_start_step": 100,
+    "mixed_precision": "auto",
+    "path_mode": "independent",
+    "path_solver": "hungarian",
+    "layout_cost_resolution": 16,
+    "condition_weight": 1.0,
     "warmup_frac": 0.1,
     "ramp_frac": 0.3,
     "p_crop_warmup": 0.05,
@@ -107,6 +121,10 @@ check("cfg.data.train_dir matches default", cfg.data.train_dir == "./data/raw/v1
 check("cfg.data.image_size matches default", cfg.data.image_size == 256)
 check("cfg.trainer_name is None (default)", cfg.trainer_name is None)
 check("cfg.sampler_name is None (default)", cfg.sampler_name is None)
+check("cfg.optimizer.name default", cfg.optimizer.name == "adamw")
+check("cfg.scheduler.name default", cfg.scheduler.name == "warmup_cosine")
+check("cfg.precision.mixed_precision default", cfg.precision.mixed_precision == "auto")
+check("cfg.path.mode default", cfg.path.mode == "independent")
 
 from src.core.configs.fm_config import DataConfig
 

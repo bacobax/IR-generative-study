@@ -97,6 +97,38 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Batch size for sampling")
     parser.add_argument("--t_scale", type=float, default=1000,
                         help="Time scale for UNet")
+    parser.add_argument("--max_grad_norm", type=float, default=1.0,
+                        help="Gradient clipping norm.")
+    parser.add_argument("--weight_decay", type=float, default=0.01,
+                        help="AdamW weight decay.")
+    parser.add_argument("--beta1", type=float, default=0.9,
+                        help="Adam/AdamW beta1.")
+    parser.add_argument("--beta2", type=float, default=0.999,
+                        help="Adam/AdamW beta2.")
+    parser.add_argument("--scheduler_name", type=str, default="warmup_cosine",
+                        choices=["none", "warmup_cosine", "constant_with_warmup"],
+                        help="Learning-rate scheduler.")
+    parser.add_argument("--warmup_ratio", type=float, default=0.05,
+                        help="Warmup ratio over total optimizer steps.")
+    parser.add_argument("--min_lr_ratio", type=float, default=0.1,
+                        help="Final LR ratio for cosine schedules.")
+    parser.add_argument("--ema_decay", type=float, default=0.999,
+                        help="EMA decay.")
+    parser.add_argument("--ema_start_step", type=int, default=100,
+                        help="Start EMA updates after this many steps.")
+    parser.add_argument("--mixed_precision", type=str, default="auto",
+                        choices=["auto", "bf16", "fp16", "no"],
+                        help="Mixed precision mode.")
+    parser.add_argument("--path_mode", type=str, default="independent",
+                        choices=["independent", "minibatch_ot", "conditional_ot"],
+                        help="Flow-matching path coupling mode.")
+    parser.add_argument("--path_solver", type=str, default="hungarian",
+                        choices=["hungarian"],
+                        help="Assignment solver for OT-based paths.")
+    parser.add_argument("--layout_cost_resolution", type=int, default=16,
+                        help="Low-resolution raster size for conditional OT layout cost.")
+    parser.add_argument("--condition_weight", type=float, default=1.0,
+                        help="Weight of conditioning cost in conditional OT.")
 
     # Augmentation schedule
     parser.add_argument("--warmup_frac", type=float, default=0.1)
@@ -156,6 +188,21 @@ _FLAT_TO_NESTED = {
     "t_scale":             "training.t_scale",
     "train_target":        "training.train_target",
     "save_every_n_epochs": "training.save_every_n_epochs",
+    "max_grad_norm":       "training.max_grad_norm",
+    # Optimizer / scheduler / EMA / precision / path
+    "weight_decay":        "optimizer.weight_decay",
+    "beta1":               "optimizer.beta1",
+    "beta2":               "optimizer.beta2",
+    "scheduler_name":      "scheduler.name",
+    "warmup_ratio":        "scheduler.warmup_ratio",
+    "min_lr_ratio":        "scheduler.min_lr_ratio",
+    "ema_decay":           "ema.decay",
+    "ema_start_step":      "ema.start_step",
+    "mixed_precision":     "precision.mixed_precision",
+    "path_mode":           "path.mode",
+    "path_solver":         "path.solver",
+    "layout_cost_resolution": "path.layout_cost_resolution",
+    "condition_weight":    "path.condition_weight",
     # Augmentation
     "warmup_frac":         "augment.warmup_frac",
     "ramp_frac":           "augment.ramp_frac",

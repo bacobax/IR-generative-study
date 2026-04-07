@@ -121,6 +121,11 @@ def vae_config_path() -> Path:
     return fm_model_configs_dir() / "vae_config.json"
 
 
+def vae_config_x4_path() -> Path:
+    """Canonical path to the VAE x4 architecture JSON."""
+    return fm_model_configs_dir() / "vae_config_x4.json"
+
+
 def vae_config_x8_path() -> Path:
     """Canonical path to the VAE x8 architecture JSON."""
     return fm_model_configs_dir() / "vae_config_x8.json"

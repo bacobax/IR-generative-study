@@ -46,6 +46,11 @@ try:
         ModelConfig,
         AugmentConfig,
         TrainHyperConfig,
+        OptimizerConfig,
+        SchedulerConfig,
+        EMAConfig,
+        PrecisionConfig,
+        PathConfig,
         SampleConfig,
         OutputConfig,
         FMTrainConfig,
@@ -91,6 +96,26 @@ check("TrainHyperConfig.save_every_n_epochs", t.save_every_n_epochs == 10)
 check("TrainHyperConfig.patience", t.patience is None)
 check("TrainHyperConfig.min_delta", t.min_delta == 0.0)
 check("TrainHyperConfig.strict_load", t.strict_load is True)
+check("TrainHyperConfig.max_grad_norm", t.max_grad_norm == 1.0)
+
+opt = OptimizerConfig()
+check("OptimizerConfig.name", opt.name == "adamw")
+check("OptimizerConfig.weight_decay", opt.weight_decay == 0.01)
+
+sch = SchedulerConfig()
+check("SchedulerConfig.name", sch.name == "warmup_cosine")
+check("SchedulerConfig.warmup_ratio", sch.warmup_ratio == 0.05)
+
+ema = EMAConfig()
+check("EMAConfig.enabled", ema.enabled is True)
+check("EMAConfig.decay", ema.decay == 0.999)
+
+prec = PrecisionConfig()
+check("PrecisionConfig.mixed_precision", prec.mixed_precision == "auto")
+
+path = PathConfig()
+check("PathConfig.mode", path.mode == "independent")
+check("PathConfig.solver", path.solver == "hungarian")
 
 s = SampleConfig()
 check("SampleConfig.sample_every", s.sample_every == 1)
@@ -138,6 +163,20 @@ fake_args = SimpleNamespace(
     sample_batch_size=2,
     model_dir="/tmp/test_model",
     resume="/tmp/ckpt.pt",
+    max_grad_norm=0.5,
+    weight_decay=0.02,
+    beta1=0.85,
+    beta2=0.95,
+    scheduler_name="constant_with_warmup",
+    warmup_ratio=0.15,
+    min_lr_ratio=0.2,
+    ema_decay=0.995,
+    ema_start_step=50,
+    mixed_precision="bf16",
+    path_mode="minibatch_ot",
+    path_solver="hungarian",
+    layout_cost_resolution=8,
+    condition_weight=2.0,
 )
 
 cfg = FMTrainConfig.from_args(fake_args)
@@ -153,10 +192,16 @@ check("training.epochs mapped", cfg.training.epochs == 50)
 check("training.t_scale mapped", cfg.training.t_scale == 500.0)
 check("training.train_target mapped", cfg.training.train_target == "x0")
 check("training.save_every_n_epochs mapped", cfg.training.save_every_n_epochs == 5)
+check("training.max_grad_norm mapped", cfg.training.max_grad_norm == 0.5)
 check("sampling.sample_batch_size mapped", cfg.sampling.sample_batch_size == 2)
 check("output.model_dir mapped", cfg.output.model_dir == "/tmp/test_model")
 check("output.resume mapped", cfg.output.resume == "/tmp/ckpt.pt")
 check("output.resolved_log_dir", cfg.output.resolved_log_dir() == "/tmp/test_model/runs/stable_flow_matching_logs/")
+check("optimizer.weight_decay mapped", cfg.optimizer.weight_decay == 0.02)
+check("scheduler.name mapped", cfg.scheduler.name == "constant_with_warmup")
+check("ema.decay mapped", cfg.ema.decay == 0.995)
+check("precision.mixed_precision mapped", cfg.precision.mixed_precision == "bf16")
+check("path.mode mapped", cfg.path.mode == "minibatch_ot")
 
 
 # ── 4. FlowMatchingTrainer.from_config ───────────────────────────────────────

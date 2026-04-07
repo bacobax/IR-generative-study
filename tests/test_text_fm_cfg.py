@@ -251,6 +251,33 @@ def test_existing_unconditional_fm():
     assert z.shape == (2, 1, 16, 16)
 
 
+def test_unconditional_fm_conditional_ot_falls_back_to_minibatch_ot():
+    """The base FM trainer should accept conditional_ot even without layout costs."""
+    from src.models.fm_unet import build_fm_unet_from_config
+    from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
+
+    config = {
+        "sample_size": 16, "in_channels": 1, "out_channels": 1,
+        "block_out_channels": [32, 64], "layers_per_block": 1,
+        "down_block_types": ["DownBlock2D", "AttnDownBlock2D"],
+        "up_block_types": ["AttnUpBlock2D", "UpBlock2D"],
+    }
+    unet = build_fm_unet_from_config(config, device="cpu")
+    trainer = FlowMatchingTrainer(
+        unet,
+        device="cpu",
+        t_scale=1.0,
+        path_mode="conditional_ot",
+    )
+
+    z0 = torch.stack([torch.ones(1, 16, 16), torch.zeros(1, 16, 16)], dim=0)
+    x_fm = torch.stack([torch.zeros(1, 16, 16), torch.ones(1, 16, 16)], dim=0)
+    matched = trainer._match_flow_targets(z0, x_fm)
+
+    assert torch.allclose(matched[0], x_fm[1])
+    assert torch.allclose(matched[1], x_fm[0])
+
+
 def test_text_image_dataset():
     from src.core.data.datasets import TextImageDataset
 

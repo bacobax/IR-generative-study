@@ -7,13 +7,25 @@ from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
-from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
+from src.algorithms.training.flow_matching_trainer import (
+    FlowMatchingTrainer,
+    _resolve_unet_sample_size,
+)
+from src.core.ot import build_layout_descriptor, match_target_batch, pairwise_mean_squared_cost
+from src.core.training_utils import (
+    EMAState,
+    autocast_context,
+    build_grad_scaler,
+    build_scheduler,
+    grad_norm,
+    move_optimizer_state_to_device,
+    resolve_precision_settings,
+)
 from src.core.visualization.layout_debug import (
     draw_bbox_overlays,
     draw_mask_overlays,
@@ -46,6 +58,12 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         model_dir: str = "./artifacts/checkpoints/flow_matching/layout_fm/",
         from_norm_to_display=None,
         unet_config: Optional[Dict[str, Any]] = None,
+        vae=None,
+        vae_config: Optional[Dict[str, Any]] = None,
+        path_mode: str = "independent",
+        path_solver: str = "hungarian",
+        layout_cost_resolution: int = 16,
+        condition_weight: float = 1.0,
     ) -> None:
         super().__init__(
             unet,
@@ -55,9 +73,13 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             model_dir=model_dir,
             from_norm_to_display=from_norm_to_display,
             unet_config=unet_config,
-            vae=None,
-            vae_config=None,
+            vae=vae,
+            vae_config=vae_config,
             conditioner=None,
+            path_mode=path_mode,
+            path_solver=path_solver,
+            layout_cost_resolution=layout_cost_resolution,
+            condition_weight=condition_weight,
         )
         self.layout_config = layout_config
         self._last_loss_components: Dict[str, float] = {}
@@ -69,6 +91,8 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         *,
         from_norm_to_display=None,
     ) -> "LayoutFMTrainer":
+        from src.models.vae import build_vae_from_config, load_vae_config
+
         device = config.resolved_device() if hasattr(config, "resolved_device") else (
             "cuda" if torch.cuda.is_available() else "cpu"
         )
@@ -80,17 +104,25 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             )
 
         base_unet_cfg = load_unet_config(config.model.unet_config)
+        effective_unet_cfg = dict(base_unet_cfg)
         image_in_channels = int(base_unet_cfg.get("in_channels", 1))
         variant = str(getattr(config.layout_conditioning, "variant", "raster_v1"))
-        effective_unet_cfg = dict(base_unet_cfg)
-        effective_unet_cfg["sample_size"] = int(config.data.image_size)
-        effective_unet_cfg["out_channels"] = image_in_channels
+        vae_cfg = None
+        vae = None
+        if config.model.vae_config is not None:
+            vae_cfg = load_vae_config(config.model.vae_config)
+            effective_unet_cfg["sample_size"] = _resolve_unet_sample_size(config, vae_cfg)
+            effective_unet_cfg["in_channels"] = int(vae_cfg.get("latent_channels", base_unet_cfg.get("in_channels", 4)))
+            effective_unet_cfg["out_channels"] = int(vae_cfg.get("latent_channels", base_unet_cfg.get("out_channels", 4)))
+            vae = build_vae_from_config(vae_cfg, device=device)
+        else:
+            effective_unet_cfg["sample_size"] = int(config.data.image_size)
+            effective_unet_cfg["out_channels"] = image_in_channels
 
         if variant == "stay_v2":
-            effective_unet_cfg["in_channels"] = image_in_channels
             wrapped_unet = build_stay_layout_conditioned_pixel_unet(
                 effective_unet_cfg,
-                image_in_channels=image_in_channels,
+                image_in_channels=int(effective_unet_cfg["in_channels"]),
                 num_classes=num_classes,
                 class_embed_dim=int(config.layout_conditioning.class_embed_dim),
                 bbox_embed_dim=int(config.layout_conditioning.bbox_embed_dim),
@@ -111,10 +143,10 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 device=device,
             )
         else:
-            effective_unet_cfg["in_channels"] = image_in_channels + int(config.layout_conditioning.spatial_channels)
+            effective_unet_cfg["in_channels"] = int(effective_unet_cfg["in_channels"]) + int(config.layout_conditioning.spatial_channels)
             wrapped_unet = build_layout_conditioned_pixel_unet(
                 effective_unet_cfg,
-                image_in_channels=image_in_channels,
+                image_in_channels=int(base_unet_cfg.get("in_channels", 1) if vae is None else effective_unet_cfg["out_channels"]),
                 num_classes=num_classes,
                 class_embed_dim=int(config.layout_conditioning.class_embed_dim),
                 bbox_embed_dim=int(config.layout_conditioning.bbox_embed_dim),
@@ -133,6 +165,12 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             model_dir=config.output.model_dir,
             from_norm_to_display=from_norm_to_display,
             unet_config=effective_unet_cfg,
+            vae=vae,
+            vae_config=vae_cfg,
+            path_mode=getattr(config.path, "mode", "independent"),
+            path_solver=getattr(config.path, "solver", "hungarian"),
+            layout_cost_resolution=getattr(config.path, "layout_cost_resolution", 16),
+            condition_weight=getattr(config.path, "condition_weight", 1.0),
         )
 
     def train_from_config(
@@ -145,11 +183,12 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             dataloader=dataloader,
             epochs=config.training.epochs,
             eval_dataloader=eval_dataloader,
+            pretrained_vae_path=config.model.vae_weights,
             pretrained_unet_path=config.model.pretrained_unet_path,
             strict_load=config.training.strict_load,
             log_dir=config.output.resolved_log_dir(),
             debug_dir=config.output.resolved_debug_dir(),
-            lr=config.training.lr,
+            lr=config.resolved_lr() if hasattr(config, "resolved_lr") else config.training.lr,
             sample_every=config.sampling.sample_every,
             patience=config.training.patience,
             min_delta=config.training.min_delta,
@@ -164,11 +203,28 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             sample_every_steps=config.sampling.sample_every_steps,
             save_debug_images=config.sampling.save_debug_images,
             log_internal_maps=config.layout_conditioning.log_internal_maps,
+            optimizer_name=getattr(config.optimizer, "name", "adamw"),
+            weight_decay=getattr(config.optimizer, "weight_decay", 0.01),
+            beta1=getattr(config.optimizer, "beta1", 0.9),
+            beta2=getattr(config.optimizer, "beta2", 0.999),
+            scheduler_name=getattr(config.scheduler, "name", "warmup_cosine"),
+            warmup_ratio=getattr(config.scheduler, "warmup_ratio", 0.05),
+            min_lr_ratio=getattr(config.scheduler, "min_lr_ratio", 0.1),
+            ema_enabled=getattr(config.ema, "enabled", True),
+            ema_decay=getattr(config.ema, "decay", 0.999),
+            ema_start_step=getattr(config.ema, "start_step", 100),
+            mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
+            max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
         )
 
     def _save_configs(self) -> None:
         if self.unet_config is not None:
             save_unet_config(self.unet_config, os.path.join(self._unet_dir(), "config.json"))
+        if self.vae_config is not None:
+            os.makedirs(self._vae_dir(), exist_ok=True)
+            import json
+            with open(os.path.join(self._vae_dir(), "config.json"), "w", encoding="utf-8") as handle:
+                json.dump(self.vae_config, handle, indent=2, sort_keys=True)
 
         layout_metadata = {
             "variant": str(getattr(self.layout_config, "variant", "raster_v1")),
@@ -207,6 +263,15 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         )
 
     def _make_sampler(self) -> LayoutFlowMatchingSampler:
+        if self.vae is not None:
+            return LayoutFlowMatchingSampler.from_stable(
+                self.unet,
+                self.vae,
+                device=self.device,
+                t_scale=self.t_scale,
+                train_target=self.train_target,
+                from_norm_to_display=self.from_norm_to_display,
+            )
         return LayoutFlowMatchingSampler(
             self.unet,
             device=self.device,
@@ -260,6 +325,33 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         ).cpu()
         return seeded
 
+    def _match_flow_targets(
+        self,
+        z0: torch.Tensor,
+        x_fm: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> torch.Tensor:
+        if self.path_mode != "conditional_ot":
+            return super()._match_flow_targets(z0, x_fm, cond_kwargs)
+        if cond_kwargs is None:
+            raise ValueError("conditional_ot requires layout conditioning kwargs.")
+
+        descriptor = build_layout_descriptor(
+            boxes_xyxy_norm=cond_kwargs["boxes_xyxy_norm"],
+            labels=cond_kwargs["labels"],
+            object_mask=cond_kwargs["object_mask"],
+            num_classes=int(getattr(self.layout_config, "num_classes", self.unet.num_classes) or self.unet.num_classes),
+            resolution=int(self.layout_cost_resolution),
+        )
+        layout_cost = pairwise_mean_squared_cost(descriptor, descriptor)
+        matched, _, _ = match_target_batch(
+            z0,
+            x_fm,
+            solver=self.path_solver,
+            extra_cost=float(self.condition_weight) * layout_cost,
+        )
+        return matched
+
     def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
         if cond_kwargs is None:
             cond_kwargs = {}
@@ -267,9 +359,10 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         z0 = torch.randn_like(x_fm)
         t = torch.rand(batch_size, device=x_fm.device)
         t_expanded = t[:, None, None, None]
+        x_target = self._match_flow_targets(z0, x_fm, cond_kwargs)
 
-        zt = (1.0 - t_expanded) * z0 + t_expanded * x_fm
-        v_target = x_fm - z0
+        zt = (1.0 - t_expanded) * z0 + t_expanded * x_target
+        v_target = x_target - z0
 
         unet_output = self.unet(zt, t * self.t_scale, **cond_kwargs)
         unet_sample = unet_output.sample
@@ -325,13 +418,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
 
     @staticmethod
     def _grad_norm(parameters) -> float:
-        total = 0.0
-        for param in parameters:
-            if param.grad is None:
-                continue
-            grad_norm = param.grad.detach().pow(2).sum().item()
-            total += grad_norm
-        return float(total ** 0.5)
+        return grad_norm(parameters)
 
     @staticmethod
     def _should_log(step: int, every: int) -> bool:
@@ -612,6 +699,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         epochs: int,
         eval_dataloader: Optional[DataLoader] = None,
         *,
+        pretrained_vae_path: Optional[str] = None,
         pretrained_unet_path: Optional[str] = None,
         strict_load: bool = True,
         log_dir: str = "./artifacts/runs/main/layout_fm",
@@ -631,15 +719,52 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         sample_every_steps: int = 0,
         save_debug_images: bool = False,
         log_internal_maps: bool = True,
+        optimizer_name: str = "adamw",
+        weight_decay: float = 0.01,
+        beta1: float = 0.9,
+        beta2: float = 0.999,
+        scheduler_name: str = "warmup_cosine",
+        warmup_ratio: float = 0.05,
+        min_lr_ratio: float = 0.1,
+        ema_enabled: bool = True,
+        ema_decay: float = 0.999,
+        ema_start_step: int = 100,
+        mixed_precision: str = "auto",
+        max_grad_norm: float = 1.0,
     ) -> None:
         self._ensure_dirs()
         self._save_configs()
         os.makedirs(debug_dir, exist_ok=True)
 
+        if str(optimizer_name).lower() != "adamw":
+            raise ValueError(f"Unsupported optimizer_name={optimizer_name!r}. Only 'adamw' is implemented.")
+
+        if pretrained_vae_path is not None and self.vae is not None:
+            self.load_vae_weights(pretrained_vae_path, strict=strict_load)
+            self.vae.eval()
+            for param in self.vae.parameters():
+                param.requires_grad = False
+
         if pretrained_unet_path is not None:
             self.load_unet_weights(pretrained_unet_path, strict=strict_load)
 
-        optimizer = Adam(self.unet.parameters(), lr=lr)
+        total_steps = max(1, epochs * len(dataloader))
+        precision = resolve_precision_settings(self.device, mixed_precision)
+        scaler = build_grad_scaler(precision)
+        optimizer = torch.optim.AdamW(
+            self.unet.parameters(),
+            lr=lr,
+            betas=(float(beta1), float(beta2)),
+            weight_decay=float(weight_decay),
+        )
+        scheduler = build_scheduler(
+            optimizer,
+            scheduler_name=scheduler_name,
+            total_steps=total_steps,
+            warmup_ratio=warmup_ratio,
+            min_lr_ratio=min_lr_ratio,
+        )
+        ema = EMAState(self.unet, decay=ema_decay) if ema_enabled and ema_decay > 0.0 else None
 
         global_step = 0
         best_eval = float("inf")
@@ -652,10 +777,16 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             ckpt = torch.load(resume_from_checkpoint, map_location=self.device)
             self.unet.load_state_dict(ckpt["unet_state"])
             optimizer.load_state_dict(ckpt["optimizer_state"])
-            for state in optimizer.state.values():
-                for key, value in state.items():
-                    if torch.is_tensor(value):
-                        state[key] = value.to(self.device)
+            move_optimizer_state_to_device(optimizer, self.device)
+            if scheduler is not None and ckpt.get("scheduler_state") is not None:
+                scheduler.load_state_dict(ckpt["scheduler_state"])
+            if scaler is not None and ckpt.get("scaler_state") is not None:
+                scaler.load_state_dict(ckpt["scaler_state"])
+            if ema is not None:
+                if ckpt.get("ema_state") is not None:
+                    ema.load_state_dict(ckpt["ema_state"], device=self.device)
+                else:
+                    ema = EMAState(self.unet, decay=ema_decay)
             start_epoch = ckpt["epoch"] + 1
             global_step = ckpt["global_step"]
             best_eval = ckpt.get("best_eval", float("inf"))
@@ -682,6 +813,11 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 f"logging.image_every_steps={image_every_steps} and "
                 f"sampling.sample_every_steps={sample_every_steps}."
             )
+        if precision.requested != precision.mode:
+            print(
+                f"[LayoutFM Precision] requested={precision.requested!r} -> using {precision.mode!r} "
+                f"on device={precision.device_type}"
+            )
 
         def _save_checkpoint(path: str, epoch_idx: int) -> None:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -690,6 +826,9 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 "global_step": global_step,
                 "unet_state": self.unet.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
+                "scheduler_state": None if scheduler is None else scheduler.state_dict(),
+                "scaler_state": None if scaler is None else scaler.state_dict(),
+                "ema_state": None if ema is None else ema.state_dict(),
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
                 "bad_epochs": bad_epochs,
@@ -709,13 +848,33 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 cond_kw = self.prepare_conditioning_kwargs(batch)
                 last_batch = batch
                 last_cond_kw = cond_kw
-                x_fm = self.encode_fm_input(pixel_values)
-                loss = self.flow_matching_step(x_fm, cond_kw)
+                with torch.no_grad():
+                    x_fm = self.encode_fm_input(pixel_values)
 
-                optimizer.zero_grad()
-                loss.backward()
-                grad_norm = self._grad_norm(self.unet.parameters())
-                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                with autocast_context(precision):
+                    loss = self.flow_matching_step(x_fm, cond_kw)
+
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                else:
+                    loss.backward()
+
+                if max_grad_norm and max_grad_norm > 0.0:
+                    torch.nn.utils.clip_grad_norm_(self.unet.parameters(), max_grad_norm)
+                step_grad_norm = self._grad_norm(self.unet.parameters())
+
+                if scaler is not None:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+
+                if scheduler is not None:
+                    scheduler.step()
+                if ema is not None and global_step >= int(ema_start_step):
+                    ema.update(self.unet)
 
                 global_step += 1
                 total_loss += float(loss.item())
@@ -742,7 +901,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                         global_step,
                     )
                     writer.add_scalar("layout_fm/lr", float(optimizer.param_groups[0]["lr"]), global_step)
-                    writer.add_scalar("layout_fm/grad_norm", float(grad_norm), global_step)
+                    writer.add_scalar("layout_fm/grad_norm", float(step_grad_norm), global_step)
                     writer.add_scalar("layout_fm/mean_objects", float(n_objects.mean().item()), global_step)
                     writer.add_scalar("layout_fm/max_objects", float(n_objects.max().item()), global_step)
                     writer.add_scalar(
@@ -794,32 +953,36 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                         )
 
                 if (not epoch_image_logging) and self._should_log(global_step, image_every_steps):
-                    self._log_training_visuals(
-                        writer,
-                        batch=batch,
-                        cond_kw=cond_kw,
-                        global_step=global_step,
-                        max_logged_images=max_logged_images,
-                        log_internal_maps=log_internal_maps,
-                    )
+                    ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                    with ema_context:
+                        self._log_training_visuals(
+                            writer,
+                            batch=batch,
+                            cond_kw=cond_kw,
+                            global_step=global_step,
+                            max_logged_images=max_logged_images,
+                            log_internal_maps=log_internal_maps,
+                        )
 
                 if (
                     (not epoch_image_logging)
                     and fixed_batch is not None
                     and self._should_log(global_step, sample_every_steps)
                 ):
-                    self._log_fixed_validation_samples(
-                        writer,
-                        sampler=sampler,
-                        fixed_batch=fixed_batch,
-                        global_step=global_step,
-                        steps=sample_steps,
-                        sample_shape=sample_shape,
-                        max_logged_images=max_logged_images,
-                        save_debug_images=save_debug_images,
-                        debug_dir=debug_dir,
-                        log_internal_maps=log_internal_maps,
-                    )
+                    ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                    with ema_context:
+                        self._log_fixed_validation_samples(
+                            writer,
+                            sampler=sampler,
+                            fixed_batch=fixed_batch,
+                            global_step=global_step,
+                            steps=sample_steps,
+                            sample_shape=sample_shape,
+                            max_logged_images=max_logged_images,
+                            save_debug_images=save_debug_images,
+                            debug_dir=debug_dir,
+                            log_internal_maps=log_internal_maps,
+                        )
 
             avg_loss = total_loss / max(1, len(dataloader))
             print(f"[LayoutFM Epoch {epoch + 1}] loss={avg_loss:.6f}")
@@ -837,15 +1000,18 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 eval_loss = 0.0
                 n_eval = 0
 
-                with torch.no_grad():
-                    for batch in tqdm(eval_dataloader, desc=f"LayoutFM Eval {epoch + 1}/{epochs}"):
-                        pixel_values = batch["pixel_values"].to(self.device)
-                        cond_kw = self.prepare_conditioning_kwargs(batch)
-                        x_fm = self.encode_fm_input(pixel_values)
-                        loss = self.flow_matching_step(x_fm, cond_kw)
-                        batch_size = int(pixel_values.shape[0])
-                        eval_loss += float(loss.item()) * batch_size
-                        n_eval += batch_size
+                ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                with ema_context:
+                    with torch.no_grad():
+                        for batch in tqdm(eval_dataloader, desc=f"LayoutFM Eval {epoch + 1}/{epochs}"):
+                            pixel_values = batch["pixel_values"].to(self.device)
+                            cond_kw = self.prepare_conditioning_kwargs(batch)
+                            x_fm = self.encode_fm_input(pixel_values)
+                            with autocast_context(precision):
+                                loss = self.flow_matching_step(x_fm, cond_kw)
+                            batch_size = int(pixel_values.shape[0])
+                            eval_loss += float(loss.item()) * batch_size
+                            n_eval += batch_size
 
                 avg_eval = eval_loss / max(1, n_eval)
                 writer.add_scalar("layout_fm/eval_loss_epoch", avg_eval, epoch)
@@ -856,39 +1022,48 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                     best_eval = avg_eval
                     best_epoch = epoch
                     bad_epochs = 0
-                    self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
+                    if ema is not None and global_step >= int(ema_start_step):
+                        with ema.average_parameters(self.unet):
+                            self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
+                    else:
+                        self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
                     print(f"  New best eval={best_eval:.6f} at epoch {epoch + 1}")
                 elif patience is not None:
                     bad_epochs += 1
                     print(f"  No improvement (best={best_eval:.6f}), bad_epochs={bad_epochs}/{patience}")
                     if bad_epochs >= patience:
+                        _save_checkpoint(os.path.join(self._unet_dir(), "unet_last_ckpt.pt"), epoch_idx=epoch)
                         print(f"Early stopping. Best epoch: {best_epoch + 1}")
                         break
 
             if epoch_image_logging and self._should_log_epoch(epoch, sample_every):
                 self.unet.eval()
-                if last_batch is not None:
-                    self._log_training_visuals(
-                        writer,
-                        batch=last_batch,
-                        cond_kw=last_cond_kw,
-                        global_step=global_step,
-                        max_logged_images=max_logged_images,
-                        log_internal_maps=log_internal_maps,
-                    )
-                if fixed_batch is not None:
-                    self._log_fixed_validation_samples(
-                        writer,
-                        sampler=sampler,
-                        fixed_batch=fixed_batch,
-                        global_step=global_step,
-                        steps=sample_steps,
-                        sample_shape=sample_shape,
-                        max_logged_images=max_logged_images,
-                        save_debug_images=save_debug_images,
-                        debug_dir=debug_dir,
-                        log_internal_maps=log_internal_maps,
-                    )
+                ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                with ema_context:
+                    if last_batch is not None:
+                        self._log_training_visuals(
+                            writer,
+                            batch=last_batch,
+                            cond_kw=last_cond_kw,
+                            global_step=global_step,
+                            max_logged_images=max_logged_images,
+                            log_internal_maps=log_internal_maps,
+                        )
+                    if fixed_batch is not None:
+                        self._log_fixed_validation_samples(
+                            writer,
+                            sampler=sampler,
+                            fixed_batch=fixed_batch,
+                            global_step=global_step,
+                            steps=sample_steps,
+                            sample_shape=sample_shape,
+                            max_logged_images=max_logged_images,
+                            save_debug_images=save_debug_images,
+                            debug_dir=debug_dir,
+                            log_internal_maps=log_internal_maps,
+                        )
+
+            _save_checkpoint(os.path.join(self._unet_dir(), "unet_last_ckpt.pt"), epoch_idx=epoch)
 
         writer.close()
 

@@ -124,6 +124,53 @@ class TrainHyperConfig:
     patience: Optional[int] = None
     min_delta: float = 0.0
     strict_load: bool = True
+    max_grad_norm: float = 1.0
+
+
+@dataclass
+class OptimizerConfig:
+    """Optimizer settings for FM training."""
+
+    name: str = "adamw"
+    lr: Optional[float] = None
+    weight_decay: float = 0.01
+    beta1: float = 0.9
+    beta2: float = 0.999
+
+
+@dataclass
+class SchedulerConfig:
+    """Learning-rate scheduler settings."""
+
+    name: str = "warmup_cosine"
+    warmup_ratio: float = 0.05
+    min_lr_ratio: float = 0.1
+
+
+@dataclass
+class EMAConfig:
+    """Exponential moving average settings."""
+
+    enabled: bool = True
+    decay: float = 0.999
+    start_step: int = 100
+
+
+@dataclass
+class PrecisionConfig:
+    """Mixed-precision settings."""
+
+    mixed_precision: str = "auto"
+
+
+@dataclass
+class PathConfig:
+    """Transport-path configuration for FM training."""
+
+    mode: str = "independent"  # independent | minibatch_ot | conditional_ot
+    solver: str = "hungarian"
+    layout_cost_resolution: int = 16
+    condition_weight: float = 1.0
 
 
 @dataclass
@@ -212,6 +259,11 @@ class FMTrainConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     augment: AugmentConfig = field(default_factory=AugmentConfig)
     training: TrainHyperConfig = field(default_factory=TrainHyperConfig)
+    optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    ema: EMAConfig = field(default_factory=EMAConfig)
+    precision: PrecisionConfig = field(default_factory=PrecisionConfig)
+    path: PathConfig = field(default_factory=PathConfig)
     layout_conditioning: LayoutConditioningConfig = field(default_factory=LayoutConditioningConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     sampling: SampleConfig = field(default_factory=SampleConfig)
@@ -227,6 +279,12 @@ class FMTrainConfig:
         if self.device is not None:
             return self.device
         return "cuda" if torch.cuda.is_available() else "cpu"
+
+    def resolved_lr(self) -> float:
+        """Return the effective optimizer learning rate."""
+        if self.optimizer.lr is not None:
+            return float(self.optimizer.lr)
+        return float(self.training.lr)
 
     @classmethod
     def from_args(cls, args) -> "FMTrainConfig":
@@ -265,6 +323,33 @@ class FMTrainConfig:
                 t_scale=args.t_scale,
                 train_target=args.train_target,
                 save_every_n_epochs=args.save_every_n_epochs,
+                max_grad_norm=getattr(args, "max_grad_norm", 1.0),
+            ),
+            optimizer=OptimizerConfig(
+                name=getattr(args, "optimizer_name", "adamw"),
+                lr=getattr(args, "optimizer_lr", None),
+                weight_decay=getattr(args, "weight_decay", 0.01),
+                beta1=getattr(args, "beta1", 0.9),
+                beta2=getattr(args, "beta2", 0.999),
+            ),
+            scheduler=SchedulerConfig(
+                name=getattr(args, "scheduler_name", "warmup_cosine"),
+                warmup_ratio=getattr(args, "warmup_ratio", 0.05),
+                min_lr_ratio=getattr(args, "min_lr_ratio", 0.1),
+            ),
+            ema=EMAConfig(
+                enabled=getattr(args, "ema_enabled", True),
+                decay=getattr(args, "ema_decay", 0.999),
+                start_step=getattr(args, "ema_start_step", 100),
+            ),
+            precision=PrecisionConfig(
+                mixed_precision=getattr(args, "mixed_precision", "auto"),
+            ),
+            path=PathConfig(
+                mode=getattr(args, "path_mode", "independent"),
+                solver=getattr(args, "path_solver", "hungarian"),
+                layout_cost_resolution=getattr(args, "layout_cost_resolution", 16),
+                condition_weight=getattr(args, "condition_weight", 1.0),
             ),
             sampling=SampleConfig(
                 sample_batch_size=args.sample_batch_size,

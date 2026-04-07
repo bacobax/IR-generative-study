@@ -2,16 +2,14 @@
   "attention_levels": [
     false,
     false,
-    true,
     true
   ],
   "in_channels": 1,
-  "latent_channels": 6,
+  "latent_channels": 4,
   "num_channels": [
     64,
     128,
-    256,
-    512
+    256
   ],
   "num_res_blocks": 2,
   "out_channels": 1,

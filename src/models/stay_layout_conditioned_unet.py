@@ -502,8 +502,8 @@ class MaskedObjectContextBlock(nn.Module):
         return hidden_states + self.residual(context), context
 
 
-class STAYLayoutConditionedPixelUNet(nn.Module):
-    """STAY-inspired object-mask conditioned pixel-space UNet wrapper."""
+class STAYLayoutConditionedUNet(nn.Module):
+    """STAY-inspired object-mask conditioned UNet wrapper at model resolution."""
 
     def __init__(
         self,
@@ -552,7 +552,7 @@ class STAYLayoutConditionedPixelUNet(nn.Module):
         self.base_unet_config = dict(base_unet_config or {})
         if self.injection_mode != "ea_norm":
             raise ValueError(
-                f"STAYLayoutConditionedPixelUNet only supports injection_mode='ea_norm', got {self.injection_mode!r}"
+                f"STAYLayoutConditionedUNet only supports injection_mode='ea_norm', got {self.injection_mode!r}"
             )
         self.config = SimpleNamespace(
             in_channels=self.image_in_channels,
@@ -901,7 +901,7 @@ class STAYLayoutConditionedPixelUNet(nn.Module):
         )
 
 
-def build_stay_layout_conditioned_pixel_unet(
+def build_stay_layout_conditioned_unet(
     config: Dict[str, Any],
     *,
     image_in_channels: int,
@@ -923,10 +923,10 @@ def build_stay_layout_conditioned_pixel_unet(
     mask_activation_loss_weight: float,
     category_id_to_name: Optional[Dict[int, str]] = None,
     device: Optional[str] = None,
-) -> STAYLayoutConditionedPixelUNet:
-    """Instantiate the STAY-inspired layout-conditioned wrapper around a base pixel UNet."""
+ ) -> STAYLayoutConditionedUNet:
+    """Instantiate the STAY-inspired layout-conditioned wrapper around a base UNet."""
     base_unet = build_fm_unet_from_config(config, device=device)
-    wrapped_unet = STAYLayoutConditionedPixelUNet(
+    wrapped_unet = STAYLayoutConditionedUNet(
         base_unet,
         image_in_channels=image_in_channels,
         num_classes=num_classes,
@@ -951,3 +951,54 @@ def build_stay_layout_conditioned_pixel_unet(
     if device is not None:
         wrapped_unet = wrapped_unet.to(device)
     return wrapped_unet
+
+
+STAYLayoutConditionedPixelUNet = STAYLayoutConditionedUNet
+
+
+def build_stay_layout_conditioned_pixel_unet(
+    config: Dict[str, Any],
+    *,
+    image_in_channels: int,
+    num_classes: int,
+    class_embed_dim: int,
+    bbox_embed_dim: int,
+    object_embed_dim: int,
+    use_style_latent: bool,
+    style_latent_dim: int,
+    style_seed: int,
+    mask_resolution: int,
+    mask_hidden_channels: int,
+    mask_threshold: float,
+    edge_dilation: int,
+    injection_mode: str,
+    use_masked_context: bool,
+    mask_overlap_loss_weight: float,
+    mask_sharpness_loss_weight: float,
+    mask_activation_loss_weight: float,
+    category_id_to_name: Optional[Dict[int, str]] = None,
+    device: Optional[str] = None,
+) -> STAYLayoutConditionedUNet:
+    """Backward-compatible alias for the resolution-agnostic STAY builder."""
+    return build_stay_layout_conditioned_unet(
+        config,
+        image_in_channels=image_in_channels,
+        num_classes=num_classes,
+        class_embed_dim=class_embed_dim,
+        bbox_embed_dim=bbox_embed_dim,
+        object_embed_dim=object_embed_dim,
+        use_style_latent=use_style_latent,
+        style_latent_dim=style_latent_dim,
+        style_seed=style_seed,
+        mask_resolution=mask_resolution,
+        mask_hidden_channels=mask_hidden_channels,
+        mask_threshold=mask_threshold,
+        edge_dilation=edge_dilation,
+        injection_mode=injection_mode,
+        use_masked_context=use_masked_context,
+        mask_overlap_loss_weight=mask_overlap_loss_weight,
+        mask_sharpness_loss_weight=mask_sharpness_loss_weight,
+        mask_activation_loss_weight=mask_activation_loss_weight,
+        category_id_to_name=category_id_to_name,
+        device=device,
+    )

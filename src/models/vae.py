@@ -11,11 +11,12 @@ from typing import Any, Dict, Optional, Union
 import torch
 from generative.networks.nets import AutoencoderKL
 
-from src.core.paths import vae_config_path, vae_config_x8_path
+from src.core.paths import vae_config_path, vae_config_x4_path, vae_config_x8_path
 
 
 # ── Known built-in config paths (resolved via src.core.paths) ────────────────
 VAE_CONFIG = str(vae_config_path())
+VAE_CONFIG_X4 = str(vae_config_x4_path())
 VAE_CONFIG_X8 = str(vae_config_x8_path())
 
 
@@ -84,6 +85,8 @@ def load_vae_weights(
 ) -> AutoencoderKL:
     """Load state-dict into an existing VAE instance."""
     state = torch.load(path, map_location=map_location or "cpu")
+    if isinstance(state, dict) and "vae_state" in state:
+        state = state["vae_state"]
     missing, unexpected = vae.load_state_dict(state, strict=strict)
     if (not strict) or missing or unexpected:
         print(f"[load_vae_weights] strict={strict}")

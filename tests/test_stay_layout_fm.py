@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from src.algorithms.training.layout_flow_matching_trainer import LayoutFMTrainer
 from src.cli.train import _FLAT_TO_NESTED, build_parser
 from src.core.configs.config_loader import merge_config_and_cli
-from src.core.configs.fm_config import FMTrainConfig, LayoutConditioningConfig
+from src.core.configs.fm_config import DataConfig, FMTrainConfig, LayoutConditioningConfig, ModelConfig, OutputConfig
 from src.core.data.layout_batching import collate_layout_batch
 from src.core.visualization.layout_debug import draw_mask_overlays, render_mask_composite
 from src.models.stay_layout_conditioned_unet import (
@@ -37,6 +37,41 @@ def _small_stay_layout_unet():
     return build_stay_layout_conditioned_pixel_unet(
         config,
         image_in_channels=1,
+        num_classes=4,
+        class_embed_dim=16,
+        bbox_embed_dim=16,
+        object_embed_dim=32,
+        use_style_latent=True,
+        style_latent_dim=8,
+        style_seed=1234,
+        mask_resolution=8,
+        mask_hidden_channels=16,
+        mask_threshold=0.5,
+        edge_dilation=1,
+        injection_mode="ea_norm",
+        use_masked_context=True,
+        mask_overlap_loss_weight=0.05,
+        mask_sharpness_loss_weight=0.01,
+        mask_activation_loss_weight=0.01,
+        category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+        device="cpu",
+    )
+
+
+def _small_stay_layout_latent_unet():
+    config = {
+        "sample_size": 8,
+        "in_channels": 4,
+        "out_channels": 4,
+        "layers_per_block": 1,
+        "block_out_channels": [32, 64],
+        "down_block_types": ["DownBlock2D", "AttnDownBlock2D"],
+        "up_block_types": ["AttnUpBlock2D", "UpBlock2D"],
+        "norm_num_groups": 16,
+    }
+    return build_stay_layout_conditioned_pixel_unet(
+        config,
+        image_in_channels=4,
         num_classes=4,
         class_embed_dim=16,
         bbox_embed_dim=16,
@@ -170,6 +205,26 @@ def test_stay_v2_empty_layout_returns_zero_maps_and_losses() -> None:
     assert float(cond["mask_activation_loss"].item()) == 0.0
 
 
+def test_stay_v2_supports_latent_resolution_inputs() -> None:
+    unet = _small_stay_layout_latent_unet()
+    batch = collate_layout_batch([
+        _make_sample(0, n_objects=2),
+        _make_sample(1, n_objects=1),
+    ])
+    sample = torch.randn(2, 4, 8, 8)
+    t = torch.tensor([0.2, 0.7], dtype=torch.float32)
+
+    out = unet(
+        sample,
+        t,
+        boxes_xyxy_norm=batch["boxes_xyxy_norm"],
+        labels=batch["labels"],
+        object_mask=batch["object_mask"],
+    )
+
+    assert out.sample.shape == (2, 4, 8, 8)
+
+
 def test_stay_v2_overlap_owner_prefers_smaller_object() -> None:
     assembler = LayoutMapAssembler(
         num_classes=4,
@@ -250,6 +305,49 @@ def test_stay_v2_visual_helpers_render_mask_outputs() -> None:
 
     assert mask_composite.shape == (2, 3, 16, 16)
     assert mask_overlay.shape == (2, 3, 16, 16)
+
+
+def test_stay_conditional_ot_keeps_condition_order_when_layout_cost_dominates() -> None:
+    unet = _small_stay_layout_unet()
+    trainer = LayoutFMTrainer(
+        unet,
+        layout_config=LayoutConditioningConfig(
+            enabled=True,
+            variant="stay_v2",
+            num_classes=4,
+            category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+            class_embed_dim=16,
+            bbox_embed_dim=16,
+            object_embed_dim=32,
+            use_style_latent=True,
+            style_latent_dim=8,
+            style_seed=99,
+            mask_resolution=8,
+            mask_hidden_channels=16,
+            mask_threshold=0.5,
+            edge_dilation=1,
+            injection_mode="ea_norm",
+            use_masked_context=True,
+            log_internal_maps=True,
+        ),
+        device="cpu",
+        t_scale=1.0,
+        model_dir="/tmp/stay_layout_fm_test",
+        path_mode="conditional_ot",
+        condition_weight=100.0,
+    )
+    batch = collate_layout_batch([
+        _make_sample(0, n_objects=1),
+        _make_sample(1, n_objects=2),
+    ])
+    cond_kw = trainer.prepare_conditioning_kwargs(batch, device="cpu")
+    z0 = torch.stack([torch.ones(1, 16, 16), torch.zeros(1, 16, 16)], dim=0)
+    x_fm = torch.stack([torch.zeros(1, 16, 16), torch.ones(1, 16, 16)], dim=0)
+
+    matched = trainer._match_flow_targets(z0, x_fm, cond_kw)
+
+    assert torch.allclose(matched[0], x_fm[0])
+    assert torch.allclose(matched[1], x_fm[1])
 
 
 def test_stay_v2_trainer_smoke_loop_and_config_loading() -> None:
@@ -350,3 +448,72 @@ def test_stay_v2_trainer_smoke_loop_and_config_loading() -> None:
             if os.path.isdir(path):
                 saved_debug_files.extend(os.listdir(path))
         assert any(name.startswith("generated_masks") for name in saved_debug_files)
+
+
+def test_stay_v2_latent_from_config_builds_frozen_vae_path() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        unet_json = os.path.join(tmpdir, "tiny_latent_unet.json")
+        vae_json = os.path.join(tmpdir, "tiny_vae.json")
+        with open(unet_json, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "sample_size": 16,
+                        "in_channels": 4,
+                        "out_channels": 4,
+                        "layers_per_block": 1,
+                        "block_out_channels": [32, 64],
+                    "down_block_types": ["DownBlock2D", "AttnDownBlock2D"],
+                    "up_block_types": ["AttnUpBlock2D", "UpBlock2D"],
+                    "norm_num_groups": 16,
+                },
+                handle,
+            )
+        with open(vae_json, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "attention_levels": [False, False],
+                        "in_channels": 1,
+                        "latent_channels": 4,
+                        "num_channels": [16, 32],
+                        "num_res_blocks": 1,
+                        "norm_num_groups": 8,
+                        "out_channels": 1,
+                        "spatial_dims": 2,
+                    },
+                    handle,
+                )
+
+        cfg = FMTrainConfig(
+            data=DataConfig(image_size=32),
+            model=ModelConfig(
+                unet_config=unet_json,
+                vae_config=vae_json,
+                vae_weights=None,
+            ),
+            layout_conditioning=LayoutConditioningConfig(
+                enabled=True,
+                variant="stay_v2",
+                num_classes=4,
+                category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+                class_embed_dim=16,
+                bbox_embed_dim=16,
+                object_embed_dim=32,
+                use_style_latent=True,
+                style_latent_dim=8,
+                style_seed=99,
+                mask_resolution=8,
+                mask_hidden_channels=16,
+                mask_threshold=0.5,
+                edge_dilation=1,
+                injection_mode="ea_norm",
+                use_masked_context=True,
+            ),
+            output=OutputConfig(model_dir=tmpdir),
+            trainer_name="layout_fm",
+            device="cpu",
+        )
+
+        trainer = LayoutFMTrainer.from_config(cfg)
+        assert trainer.vae is not None
+        assert all(not param.requires_grad for param in trainer.vae.parameters())
+        assert trainer.unet.config.sample_size == 16

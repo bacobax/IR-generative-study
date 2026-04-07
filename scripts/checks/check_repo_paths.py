@@ -52,6 +52,7 @@ try:
         stable_unet_config_path,
         non_stable_unet_config_path,
         vae_config_path,
+        vae_config_x4_path,
         vae_config_x8_path,
         default_outputs_dir,
         default_models_dir,
@@ -85,6 +86,7 @@ print("\n=== 3. Config JSON existence ===")
 check("stable_unet_config.json exists", stable_unet_config_path().is_file())
 check("non_stable_unet_config.json exists", non_stable_unet_config_path().is_file())
 check("vae_config.json exists", vae_config_path().is_file())
+check("vae_config_x4.json exists", vae_config_x4_path().is_file())
 check("vae_config_x8.json exists", vae_config_x8_path().is_file())
 check("fm_model_configs_dir() is dir", fm_model_configs_dir().is_dir())
 
@@ -111,11 +113,12 @@ check("dino_cache_dir() == data/cache/dino_cache",
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n=== 5. Module constants ===")
 from src.models.fm_unet import STABLE_UNET_CONFIG, NON_STABLE_UNET_CONFIG
-from src.models.vae import VAE_CONFIG, VAE_CONFIG_X8
+from src.models.vae import VAE_CONFIG, VAE_CONFIG_X4, VAE_CONFIG_X8
 
 check("STABLE_UNET_CONFIG resolves via paths", STABLE_UNET_CONFIG == str(stable_unet_config_path()))
 check("NON_STABLE_UNET_CONFIG resolves via paths", NON_STABLE_UNET_CONFIG == str(non_stable_unet_config_path()))
 check("VAE_CONFIG resolves via paths", VAE_CONFIG == str(vae_config_path()))
+check("VAE_CONFIG_X4 resolves via paths", VAE_CONFIG_X4 == str(vae_config_x4_path()))
 check("VAE_CONFIG_X8 resolves via paths", VAE_CONFIG_X8 == str(vae_config_x8_path()))
 
 

@@ -18,12 +18,21 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 from diffusers import UNet2DModel
-from torch.optim import Adam
+from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler
+from src.core.ot import match_target_batch
+from src.core.training_utils import (
+    EMAState,
+    autocast_context,
+    build_grad_scaler,
+    build_scheduler,
+    move_optimizer_state_to_device,
+    resolve_precision_settings,
+)
 from src.models.fm_unet import save_unet_config, load_unet_config, build_fm_unet_from_config
 
 
@@ -105,6 +114,10 @@ class FlowMatchingTrainer:
         vae=None,
         vae_config: Optional[Dict[str, Any]] = None,
         conditioner=None,
+        path_mode: str = "independent",
+        path_solver: str = "hungarian",
+        layout_cost_resolution: int = 16,
+        condition_weight: float = 1.0,
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -119,6 +132,10 @@ class FlowMatchingTrainer:
         self.vae = vae
         self.vae_config = vae_config
         self.conditioner = conditioner
+        self.path_mode = str(path_mode)
+        self.path_solver = str(path_solver)
+        self.layout_cost_resolution = int(layout_cost_resolution)
+        self.condition_weight = float(condition_weight)
 
         # Freeze VAE if present
         if self.vae is not None:
@@ -151,15 +168,23 @@ class FlowMatchingTrainer:
             "cuda" if torch.cuda.is_available() else "cpu"
         )
 
-        vae_cfg = load_vae_config(config.model.vae_config)
         unet_cfg = load_unet_config(config.model.unet_config)
-        resolved_sample_size = _resolve_unet_sample_size(config, vae_cfg)
+        vae_cfg = None
+        vae = None
+
+        if config.model.vae_config is not None:
+            vae_cfg = load_vae_config(config.model.vae_config)
+            resolved_sample_size = _resolve_unet_sample_size(config, vae_cfg)
+        else:
+            resolved_sample_size = int(getattr(config.data, "image_size", unet_cfg.get("sample_size")))
+
         if resolved_sample_size is not None:
             unet_cfg = dict(unet_cfg)
             unet_cfg["sample_size"] = resolved_sample_size
 
         unet = build_fm_unet_from_config(unet_cfg, device=device)
-        vae = build_vae_from_config(vae_cfg, device=device)
+        if vae_cfg is not None:
+            vae = build_vae_from_config(vae_cfg, device=device)
 
         return cls(
             unet,
@@ -171,6 +196,10 @@ class FlowMatchingTrainer:
             unet_config=unet_cfg,
             vae=vae,
             vae_config=vae_cfg,
+            path_mode=getattr(config.path, "mode", "independent"),
+            path_solver=getattr(config.path, "solver", "hungarian"),
+            layout_cost_resolution=getattr(config.path, "layout_cost_resolution", 16),
+            condition_weight=getattr(config.path, "condition_weight", 1.0),
         )
 
     def train_from_config(
@@ -200,7 +229,19 @@ class FlowMatchingTrainer:
             sample_shape=config.sampling.sample_shape,
             save_every_n_epochs=config.training.save_every_n_epochs,
             resume_from_checkpoint=config.output.resume,
-            lr=getattr(config.training, "lr", 1e-4),
+            lr=config.resolved_lr() if hasattr(config, "resolved_lr") else getattr(config.training, "lr", 1e-4),
+            optimizer_name=getattr(config.optimizer, "name", "adamw"),
+            weight_decay=getattr(config.optimizer, "weight_decay", 0.01),
+            beta1=getattr(config.optimizer, "beta1", 0.9),
+            beta2=getattr(config.optimizer, "beta2", 0.999),
+            scheduler_name=getattr(config.scheduler, "name", "warmup_cosine"),
+            warmup_ratio=getattr(config.scheduler, "warmup_ratio", 0.05),
+            min_lr_ratio=getattr(config.scheduler, "min_lr_ratio", 0.1),
+            ema_enabled=getattr(config.ema, "enabled", True),
+            ema_decay=getattr(config.ema, "decay", 0.999),
+            ema_start_step=getattr(config.ema, "start_step", 100),
+            mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
+            max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
         )
 
     # ------------------------------------------------------------------
@@ -232,6 +273,8 @@ class FlowMatchingTrainer:
     # ------------------------------------------------------------------
     def load_unet_weights(self, path: str, *, strict: bool = True) -> None:
         state = torch.load(path, map_location=self.device)
+        if isinstance(state, dict) and "unet_state" in state:
+            state = state["unet_state"]
         missing, unexpected = self.unet.load_state_dict(state, strict=strict)
         if (not strict) or missing or unexpected:
             print(f"[load_unet_weights] strict={strict}")
@@ -247,6 +290,8 @@ class FlowMatchingTrainer:
     def load_vae_weights(self, path: str, *, strict: bool = True) -> None:
         assert self.vae is not None, "VAE not set."
         state = torch.load(path, map_location=self.device)
+        if isinstance(state, dict) and "vae_state" in state:
+            state = state["vae_state"]
         missing, unexpected = self.vae.load_state_dict(state, strict=strict)
         if (not strict) or missing or unexpected:
             print(f"[load_vae_weights] strict={strict}")
@@ -268,6 +313,30 @@ class FlowMatchingTrainer:
     # ------------------------------------------------------------------
     # Flow-matching loss
     # ------------------------------------------------------------------
+    def _match_flow_targets(
+        self,
+        z0: torch.Tensor,
+        x_fm: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> torch.Tensor:
+        """Apply the configured path coupling and return the matched targets."""
+        del cond_kwargs
+        if self.path_mode == "independent":
+            return x_fm
+        if self.path_mode in {"minibatch_ot", "conditional_ot"}:
+            # The base trainer has no condition-dependent cost term. In that case
+            # conditional OT reduces to plain minibatch OT instead of erroring.
+            matched, _, _ = match_target_batch(
+                z0,
+                x_fm,
+                solver=self.path_solver,
+            )
+            return matched
+        raise ValueError(
+            f"Unsupported path_mode={self.path_mode!r}. Expected 'independent', "
+            "'minibatch_ot', or 'conditional_ot'."
+        )
+
     def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
         """Compute a single flow-matching loss on encoded input *x_fm*."""
         if cond_kwargs is None:
@@ -276,9 +345,10 @@ class FlowMatchingTrainer:
         z0 = torch.randn_like(x_fm)
         t = torch.rand(B, device=x_fm.device)
         t_expanded = t[:, None, None, None]
+        x_target = self._match_flow_targets(z0, x_fm, cond_kwargs)
 
-        zt = (1 - t_expanded) * z0 + t_expanded * x_fm
-        v_target = x_fm - z0
+        zt = (1 - t_expanded) * z0 + t_expanded * x_target
+        v_target = x_target - z0
 
         unet_out = self.unet(zt, t * self.t_scale, **cond_kwargs).sample
 
@@ -333,9 +403,23 @@ class FlowMatchingTrainer:
         save_every_n_epochs: int = 1,
         resume_from_checkpoint: Optional[str] = None,
         lr: float = 1e-4,
+        optimizer_name: str = "adamw",
+        weight_decay: float = 0.01,
+        beta1: float = 0.9,
+        beta2: float = 0.999,
+        scheduler_name: str = "warmup_cosine",
+        warmup_ratio: float = 0.05,
+        min_lr_ratio: float = 0.1,
+        ema_enabled: bool = True,
+        ema_decay: float = 0.999,
+        ema_start_step: int = 100,
+        mixed_precision: str = "auto",
+        max_grad_norm: float = 1.0,
     ) -> None:
         if patience is not None and eval_dataloader is None:
             raise ValueError("eval_dataloader must be provided when using patience early stopping.")
+        if str(optimizer_name).lower() != "adamw":
+            raise ValueError(f"Unsupported optimizer_name={optimizer_name!r}. Only 'adamw' is implemented.")
 
         self._ensure_dirs()
         self._save_configs()
@@ -351,7 +435,23 @@ class FlowMatchingTrainer:
         if pretrained_unet_path is not None:
             self.load_unet_weights(pretrained_unet_path, strict=strict_load)
 
-        optimizer = Adam(self.unet.parameters(), lr=lr)
+        total_steps = max(1, epochs * len(dataloader))
+        precision = resolve_precision_settings(self.device, mixed_precision)
+        scaler = build_grad_scaler(precision)
+        optimizer = AdamW(
+            self.unet.parameters(),
+            lr=lr,
+            betas=(float(beta1), float(beta2)),
+            weight_decay=float(weight_decay),
+        )
+        scheduler = build_scheduler(
+            optimizer,
+            scheduler_name=scheduler_name,
+            total_steps=total_steps,
+            warmup_ratio=warmup_ratio,
+            min_lr_ratio=min_lr_ratio,
+        )
+        ema = EMAState(self.unet, decay=ema_decay) if ema_enabled and ema_decay > 0.0 else None
 
         # Resume state
         global_step = 0
@@ -365,10 +465,16 @@ class FlowMatchingTrainer:
             ckpt = torch.load(resume_from_checkpoint, map_location=self.device)
             self.unet.load_state_dict(ckpt["unet_state"])
             optimizer.load_state_dict(ckpt["optimizer_state"])
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.to(self.device)
+            move_optimizer_state_to_device(optimizer, self.device)
+            if scheduler is not None and ckpt.get("scheduler_state") is not None:
+                scheduler.load_state_dict(ckpt["scheduler_state"])
+            if scaler is not None and ckpt.get("scaler_state") is not None:
+                scaler.load_state_dict(ckpt["scaler_state"])
+            if ema is not None:
+                if ckpt.get("ema_state") is not None:
+                    ema.load_state_dict(ckpt["ema_state"], device=self.device)
+                else:
+                    ema = EMAState(self.unet, decay=ema_decay)
             start_epoch = ckpt["epoch"] + 1
             global_step = ckpt["global_step"]
             best_eval = ckpt.get("best_eval", float("inf"))
@@ -401,6 +507,9 @@ class FlowMatchingTrainer:
                 "global_step": global_step,
                 "unet_state": self.unet.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
+                "scheduler_state": None if scheduler is None else scheduler.state_dict(),
+                "scaler_state": None if scaler is None else scaler.state_dict(),
+                "ema_state": None if ema is None else ema.state_dict(),
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
                 "bad_epochs": bad_epochs,
@@ -423,6 +532,12 @@ class FlowMatchingTrainer:
 
         sampler_obj = self._make_sampler() if sample_every > 0 else None
 
+        if precision.requested != precision.mode:
+            print(
+                f"[FM Precision] requested={precision.requested!r} -> using {precision.mode!r} "
+                f"on device={precision.device_type}"
+            )
+
         for epoch in range(start_epoch, epochs):
             _set_epoch_for_dataloader(dataloader, epoch)
             _set_epoch_for_dataloader(eval_dataloader, epoch)
@@ -431,16 +546,36 @@ class FlowMatchingTrainer:
 
             for x in tqdm(dataloader, desc=f"FM Epoch {epoch+1}/{epochs}"):
                 x = x.to(self.device)
-                x_fm = self.encode_fm_input(x)
+                with torch.no_grad():
+                    x_fm = self.encode_fm_input(x)
                 cond_kw = self.conditioner.prepare_for_training(x, self.device) if self.conditioner is not None else {}
-                loss = self.flow_matching_step(x_fm, cond_kw)
+                optimizer.zero_grad(set_to_none=True)
+                with autocast_context(precision):
+                    loss = self.flow_matching_step(x_fm, cond_kw)
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                else:
+                    loss.backward()
+
+                if max_grad_norm and max_grad_norm > 0.0:
+                    torch.nn.utils.clip_grad_norm_(self.unet.parameters(), max_grad_norm)
+
+                if scaler is not None:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+
+                if scheduler is not None:
+                    scheduler.step()
+                if ema is not None and global_step >= int(ema_start_step):
+                    ema.update(self.unet)
 
                 total_loss += loss.item()
                 writer.add_scalar("fm/loss_step", loss.item(), global_step)
+                writer.add_scalar("fm/lr", float(optimizer.param_groups[0]["lr"]), global_step)
                 global_step += 1
 
             avg_loss = total_loss / max(1, len(dataloader))
@@ -460,16 +595,19 @@ class FlowMatchingTrainer:
                 eval_loss = 0.0
                 n_eval = 0
 
-                with torch.no_grad():
-                    for x in tqdm(eval_dataloader, desc=f"FM Eval  {epoch+1}/{epochs}"):
-                        x = x.to(self.device)
-                        x_fm = self.encode_fm_input(x)
-                        cond_kw = self.conditioner.prepare_for_training(x, self.device) if self.conditioner is not None else {}
-                        loss = self.flow_matching_step(x_fm, cond_kw)
+                ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                with ema_context:
+                    with torch.no_grad():
+                        for x in tqdm(eval_dataloader, desc=f"FM Eval  {epoch+1}/{epochs}"):
+                            x = x.to(self.device)
+                            x_fm = self.encode_fm_input(x)
+                            cond_kw = self.conditioner.prepare_for_training(x, self.device) if self.conditioner is not None else {}
+                            with autocast_context(precision):
+                                loss = self.flow_matching_step(x_fm, cond_kw)
 
-                        bs = x.size(0)
-                        eval_loss += loss.item() * bs
-                        n_eval += bs
+                            bs = x.size(0)
+                            eval_loss += loss.item() * bs
+                            n_eval += bs
 
                 avg_eval_loss = eval_loss / max(1, n_eval)
                 print(f"  [Eval loss: {avg_eval_loss:.6f}]")
@@ -480,7 +618,11 @@ class FlowMatchingTrainer:
                     best_eval = avg_eval_loss
                     best_epoch = epoch
                     bad_epochs = 0
-                    self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
+                    if ema is not None and global_step >= int(ema_start_step):
+                        with ema.average_parameters(self.unet):
+                            self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
+                    else:
+                        self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
                     print(f"  ✅ New best eval_loss={best_eval:.6f} at epoch {epoch+1} -> saved UNET/unet_fm_best.pt")
                 else:
                     bad_epochs += 1
@@ -491,14 +633,16 @@ class FlowMatchingTrainer:
 
             # Sampling
             if sampler_obj is not None and (epoch + 1) % sample_every == 0:
-                sampler_obj.log_samples_to_tensorboard(
-                    writer=writer,
-                    epoch=epoch,
-                    steps=sample_steps,
-                    batch_size=sample_batch_size,
-                    tag="fm/generated",
-                    sample_shape=sample_shape,
-                )
+                ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                with ema_context:
+                    sampler_obj.log_samples_to_tensorboard(
+                        writer=writer,
+                        epoch=epoch,
+                        steps=sample_steps,
+                        batch_size=sample_batch_size,
+                        tag="fm/generated",
+                        sample_shape=sample_shape,
+                    )
 
         writer.close()
 

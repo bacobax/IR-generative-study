@@ -15,6 +15,26 @@ from src.algorithms.inference.flow_matching_sampler import (
 class LayoutFlowMatchingSampler(FlowMatchingSampler):
     """Flow-matching sampler that conditions on padded bbox/layout batches."""
 
+    @classmethod
+    def from_stable(
+        cls,
+        unet,
+        vae,
+        **kwargs,
+    ) -> "LayoutFlowMatchingSampler":
+        """Build a layout sampler wired to a frozen VAE for latent sampling."""
+
+        @torch.no_grad()
+        def _encode(x: torch.Tensor) -> torch.Tensor:
+            z_mu, z_sigma = vae.encode(x)
+            return vae.sampling(z_mu, z_sigma)
+
+        @torch.no_grad()
+        def _decode(z: torch.Tensor) -> torch.Tensor:
+            return vae.decode(z)
+
+        return cls(unet, encoder=_encode, decoder=_decode, **kwargs)
+
     @torch.no_grad()
     def sample_euler_layout(
         self,

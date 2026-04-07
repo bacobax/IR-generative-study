@@ -6,6 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "flow-matching-trial"
 version = "0.1.0"
 requires-python = ">=3.10"
+dependencies = [
+    "scipy>=1.10,<2",
+]
 
 [project.optional-dependencies]
 web = [
