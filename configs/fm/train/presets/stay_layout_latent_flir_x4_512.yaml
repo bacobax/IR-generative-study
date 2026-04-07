@@ -71,8 +71,8 @@ logging:
   max_logged_images: 8
 
 sampling:
-  sample_every: 25
-  sample_steps: 100
+  sample_every: 20
+  sample_steps: 40
   sample_batch_size: 4
   sample_shape: null
   fixed_validation_examples: 4
