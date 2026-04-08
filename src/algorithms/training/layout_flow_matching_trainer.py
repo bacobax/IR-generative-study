@@ -195,6 +195,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             sample_steps=config.sampling.sample_steps,
             sample_shape=config.sampling.sample_shape,
             save_every_n_epochs=config.training.save_every_n_epochs,
+            eval_every=getattr(config.training, "eval_every", 1),
             resume_from_checkpoint=config.output.resume,
             scalar_every_steps=config.logging.scalar_every_steps,
             image_every_steps=config.logging.image_every_steps,
@@ -711,6 +712,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         min_delta: float = 0.0,
         sample_shape: Optional[Tuple[int, int, int]] = None,
         save_every_n_epochs: int = 1,
+        eval_every: int = 1,
         resume_from_checkpoint: Optional[str] = None,
         scalar_every_steps: int = 10,
         image_every_steps: int = 200,
@@ -735,9 +737,14 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         self._ensure_dirs()
         self._save_configs()
         os.makedirs(debug_dir, exist_ok=True)
+        eval_every = int(eval_every)
 
         if str(optimizer_name).lower() != "adamw":
             raise ValueError(f"Unsupported optimizer_name={optimizer_name!r}. Only 'adamw' is implemented.")
+        if patience is not None and eval_dataloader is None:
+            raise ValueError("eval_dataloader must be provided when using patience early stopping.")
+        if patience is not None and eval_every <= 0:
+            raise ValueError("eval_every must be > 0 when using patience early stopping.")
 
         if pretrained_vae_path is not None and self.vae is not None:
             self.load_vae_weights(pretrained_vae_path, strict=strict_load)
@@ -995,7 +1002,12 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                     epoch_idx=epoch,
                 )
 
-            if eval_dataloader is not None:
+            should_run_eval = (
+                eval_dataloader is not None
+                and eval_every > 0
+                and (epoch + 1) % eval_every == 0
+            )
+            if should_run_eval:
                 self.unet.eval()
                 eval_loss = 0.0
                 n_eval = 0

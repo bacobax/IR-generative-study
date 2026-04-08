@@ -77,6 +77,7 @@ class TextTrainHyperConfig:
     t_scale: float = 1000.0
     train_target: str = "v"
     save_every_n_epochs: int = 10
+    eval_every: int = 1
     patience: Optional[int] = None
     min_delta: float = 0.0
     strict_load: bool = True

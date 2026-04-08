@@ -93,6 +93,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_workers", type=int, default=4, help="DataLoader workers")
     parser.add_argument("--save_every_n_epochs", type=int, default=10,
                         help="Save checkpoint every N epochs")
+    parser.add_argument("--eval_every", type=int, default=1,
+                        help="Run validation every N epochs. Set <= 0 to disable.")
     parser.add_argument("--sample_batch_size", type=int, default=4,
                         help="Batch size for sampling")
     parser.add_argument("--t_scale", type=float, default=1000,
@@ -188,6 +190,7 @@ _FLAT_TO_NESTED = {
     "t_scale":             "training.t_scale",
     "train_target":        "training.train_target",
     "save_every_n_epochs": "training.save_every_n_epochs",
+    "eval_every":          "training.eval_every",
     "max_grad_norm":       "training.max_grad_norm",
     # Optimizer / scheduler / EMA / precision / path
     "weight_decay":        "optimizer.weight_decay",

@@ -16,6 +16,7 @@ training:
   t_scale: 1000.0
   train_target: "v"
   save_every_n_epochs: 30
+  eval_every: 3
   patience: null
   min_delta: 0.0
   strict_load: true

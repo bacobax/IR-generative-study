@@ -11,6 +11,7 @@ augment:
 training:
   epochs: 300              # default 100
   save_every_n_epochs: 50  # default 10
+  eval_every: 1
 
 output:
   model_dir: ./artifacts/runs/test/test_fm_dataset

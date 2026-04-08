@@ -228,6 +228,7 @@ class FlowMatchingTrainer:
             min_delta=config.training.min_delta,
             sample_shape=config.sampling.sample_shape,
             save_every_n_epochs=config.training.save_every_n_epochs,
+            eval_every=getattr(config.training, "eval_every", 1),
             resume_from_checkpoint=config.output.resume,
             lr=config.resolved_lr() if hasattr(config, "resolved_lr") else getattr(config.training, "lr", 1e-4),
             optimizer_name=getattr(config.optimizer, "name", "adamw"),
@@ -401,6 +402,7 @@ class FlowMatchingTrainer:
         min_delta: float = 0.0,
         sample_shape: Optional[Tuple[int, int, int]] = None,
         save_every_n_epochs: int = 1,
+        eval_every: int = 1,
         resume_from_checkpoint: Optional[str] = None,
         lr: float = 1e-4,
         optimizer_name: str = "adamw",
@@ -416,8 +418,11 @@ class FlowMatchingTrainer:
         mixed_precision: str = "auto",
         max_grad_norm: float = 1.0,
     ) -> None:
+        eval_every = int(eval_every)
         if patience is not None and eval_dataloader is None:
             raise ValueError("eval_dataloader must be provided when using patience early stopping.")
+        if patience is not None and eval_every <= 0:
+            raise ValueError("eval_every must be > 0 when using patience early stopping.")
         if str(optimizer_name).lower() != "adamw":
             raise ValueError(f"Unsupported optimizer_name={optimizer_name!r}. Only 'adamw' is implemented.")
 
@@ -590,7 +595,12 @@ class FlowMatchingTrainer:
                 )
 
             # Eval + early stopping + best save
-            if patience is not None and eval_dataloader is not None:
+            should_run_eval = (
+                eval_dataloader is not None
+                and eval_every > 0
+                and (epoch + 1) % eval_every == 0
+            )
+            if should_run_eval:
                 self.unet.eval()
                 eval_loss = 0.0
                 n_eval = 0
@@ -624,7 +634,7 @@ class FlowMatchingTrainer:
                     else:
                         self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
                     print(f"  ✅ New best eval_loss={best_eval:.6f} at epoch {epoch+1} -> saved UNET/unet_fm_best.pt")
-                else:
+                elif patience is not None:
                     bad_epochs += 1
                     print(f"  ⏳ No improvement (best={best_eval:.6f}), bad_epochs={bad_epochs}/{patience}")
                     if bad_epochs >= patience:

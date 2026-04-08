@@ -70,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train_target", type=str, default="v",
                         choices=["v", "x0"])
     parser.add_argument("--save_every_n_epochs", type=int, default=10)
+    parser.add_argument("--eval_every", type=int, default=1,
+                        help="Run validation every N epochs. Set <= 0 to disable.")
 
     # Augmentation
     parser.add_argument("--warmup_frac", type=float, default=0.1)
@@ -137,6 +139,7 @@ _FLAT_TO_NESTED = {
     "t_scale":             "training.t_scale",
     "train_target":        "training.train_target",
     "save_every_n_epochs": "training.save_every_n_epochs",
+    "eval_every":          "training.eval_every",
     "warmup_frac":         "augment.warmup_frac",
     "ramp_frac":           "augment.ramp_frac",
     "p_crop_warmup":       "augment.p_crop_warmup",

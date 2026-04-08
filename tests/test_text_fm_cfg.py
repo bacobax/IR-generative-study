@@ -215,18 +215,72 @@ def test_config_system():
     cfg = TextFMTrainConfig()
     assert cfg.trainer_name == "text_fm_cfg"
     assert cfg.conditioning.cond_drop_prob == 0.1
+    assert cfg.training.eval_every == 1
 
     yaml_data = load_yaml("configs/fm/train/presets/text_cfg.yaml")
     assert "conditioning" in yaml_data
+    assert yaml_data["training"]["eval_every"] == 1
 
     parser = build_parser()
-    args = parser.parse_args(["--config", "configs/fm/train/presets/text_cfg.yaml", "--epochs", "5"])
+    args = parser.parse_args([
+        "--config", "configs/fm/train/presets/text_cfg.yaml",
+        "--epochs", "5",
+        "--eval_every", "3",
+    ])
     merged = merge_config_and_cli(TextFMTrainConfig, args.config, parser, args, flat_to_nested=_FLAT_TO_NESTED)
     assert merged.training.epochs == 5
+    assert merged.training.eval_every == 3
     assert merged.conditioning.cond_drop_prob == 0.1
 
     scfg = TextFMSampleConfig()
     assert scfg.guidance_scale == 7.5
+
+
+def test_unconditional_fm_eval_every_controls_validation_cadence():
+    from torch.utils.data import DataLoader
+
+    from src.models.fm_unet import build_fm_unet_from_config
+    from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
+
+    class RecordingFlowMatchingTrainer(FlowMatchingTrainer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.eval_batches_seen = 0
+
+        def flow_matching_step(self, x_fm, cond_kwargs=None):
+            if not self.unet.training:
+                self.eval_batches_seen += 1
+            return super().flow_matching_step(x_fm, cond_kwargs)
+
+    unet = build_fm_unet_from_config(
+        {
+            "sample_size": 16,
+            "in_channels": 1,
+            "out_channels": 1,
+            "block_out_channels": [32, 64],
+            "layers_per_block": 1,
+            "down_block_types": ["DownBlock2D", "AttnDownBlock2D"],
+            "up_block_types": ["AttnUpBlock2D", "UpBlock2D"],
+        },
+        device="cpu",
+    )
+    trainer = RecordingFlowMatchingTrainer(unet, device="cpu", t_scale=1.0)
+    dataset = torch.randn(4, 1, 16, 16)
+    loader = DataLoader(dataset, batch_size=2, shuffle=False)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            dataloader=loader,
+            epochs=3,
+            eval_dataloader=loader,
+            log_dir=os.path.join(tmpdir, "tb"),
+            sample_every=0,
+            save_every_n_epochs=None,
+            eval_every=2,
+            lr=1e-4,
+        )
+
+    assert trainer.eval_batches_seen == len(loader)
 
 
 def test_existing_unconditional_fm():

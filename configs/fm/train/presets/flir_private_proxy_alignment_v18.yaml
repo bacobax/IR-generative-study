@@ -14,6 +14,7 @@ model:
 
 training:
   epochs: 1
+  eval_every: 1
 
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/flir_private_proxy_alignment_v18"

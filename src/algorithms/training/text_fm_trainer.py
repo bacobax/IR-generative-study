@@ -162,6 +162,7 @@ class TextFMTrainer(FlowMatchingTrainer):
             min_delta=config.training.min_delta,
             sample_shape=config.sampling.sample_shape,
             save_every_n_epochs=config.training.save_every_n_epochs,
+            eval_every=getattr(config.training, "eval_every", 1),
             resume_from_checkpoint=config.output.resume,
             lr=config.training.lr,
         )
@@ -292,11 +293,15 @@ class TextFMTrainer(FlowMatchingTrainer):
         min_delta: float = 0.0,
         sample_shape: Optional[Tuple[int, int, int]] = None,
         save_every_n_epochs: int = 1,
+        eval_every: int = 1,
         resume_from_checkpoint: Optional[str] = None,
         lr: float = 1e-4,
     ) -> None:
+        eval_every = int(eval_every)
         if patience is not None and eval_dataloader is None:
             raise ValueError("eval_dataloader required when using patience.")
+        if patience is not None and eval_every <= 0:
+            raise ValueError("eval_every must be > 0 when using patience.")
 
         self._ensure_dirs()
         self._save_configs()
@@ -442,7 +447,12 @@ class TextFMTrainer(FlowMatchingTrainer):
                 )
 
             # Eval + early stopping
-            if patience is not None and eval_dataloader is not None:
+            should_run_eval = (
+                eval_dataloader is not None
+                and eval_every > 0
+                and (epoch + 1) % eval_every == 0
+            )
+            if should_run_eval:
                 self.unet.eval()
                 eval_loss = 0.0
                 n_eval = 0
@@ -469,7 +479,7 @@ class TextFMTrainer(FlowMatchingTrainer):
                         os.path.join(self._unet_dir(), "unet_fm_best.pt"),
                     )
                     print(f"  New best eval={best_eval:.6f} at epoch {epoch+1}")
-                else:
+                elif patience is not None:
                     bad_epochs += 1
                     print(f"  No improvement (best={best_eval:.6f}), bad={bad_epochs}/{patience}")
                     if bad_epochs >= patience:
