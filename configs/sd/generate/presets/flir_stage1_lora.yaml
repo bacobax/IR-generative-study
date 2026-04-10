@@ -1,0 +1,8 @@
+# SD 1.5 generation from a Stage-1 FLIR LoRA artifact.
+mode: sd15
+stage1_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8
+max_samples: null
+output_dir: ./artifacts/generated/main/flir_sd15_lora_stage1
+max_tries: 25
+sd_steps: 100
+generic_prompt: true

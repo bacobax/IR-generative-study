@@ -143,6 +143,7 @@ check("--fm_guidance_method present", "fm_guidance_method" in src)
 
 # SD flags
 check("--base_model present", "base_model" in src)
+check("--stage1_dir present", "stage1_dir" in src)
 check("--lora_dir present", "lora_dir" in src)
 check("--sd_steps present", "sd_steps" in src)
 
@@ -152,6 +153,7 @@ check("--sd_steps present", "sd_steps" in src)
 print("\n=== 8. SD mode ===")
 check("generate_sd15 function exists", "def generate_sd15(" in src)
 check("SD dispatched in main", "generate_sd15(args" in src)
+check("SD stage1 artifact loader used", "load_stage1_pipeline" in src)
 
 # ======================================================================
 # 9. Output format preserved

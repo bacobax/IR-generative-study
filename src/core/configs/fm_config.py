@@ -91,8 +91,12 @@ class ModelConfig:
     """Paths to model architecture configs and pretrained weights."""
 
     unet_config: str = "configs/models/fm/stable_unet_config.json"
-    vae_config: str = "configs/models/fm/vae_config.json"
+    vae_config: Optional[str] = "configs/models/fm/vae_config.json"
     vae_weights: Optional[str] = "./vae_best.pt"
+    vae_pretrained_model_name_or_path: Optional[str] = None
+    vae_pretrained_subfolder: Optional[str] = "vae"
+    vae_revision: Optional[str] = None
+    vae_variant: Optional[str] = None
     pretrained_unet_path: Optional[str] = None
     # Registry component names (None → use default)
     model_builder_name: Optional[str] = None

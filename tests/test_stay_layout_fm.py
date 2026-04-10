@@ -517,3 +517,72 @@ def test_stay_v2_latent_from_config_builds_frozen_vae_path() -> None:
         assert trainer.vae is not None
         assert all(not param.requires_grad for param in trainer.vae.parameters())
         assert trainer.unet.config.sample_size == 16
+
+
+def test_stay_v2_latent_from_config_supports_pretrained_sd15_vae(monkeypatch) -> None:
+    fake_vae_cfg = {
+        "_backend": "diffusers_autoencoder_kl",
+        "latent_channels": 4,
+        "block_out_channels": [128, 256, 512, 512],
+        "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+        "pretrained_subfolder": "vae",
+    }
+
+    class _FakeSDVAE(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+
+        def encode(self, x):
+            return x, torch.ones_like(x)
+
+        def sampling(self, mu, sigma):
+            return mu
+
+        def decode(self, z):
+            return z
+
+    monkeypatch.setattr(
+        "src.models.vae.load_diffusers_vae_config",
+        lambda *args, **kwargs: dict(fake_vae_cfg),
+    )
+    monkeypatch.setattr(
+        "src.models.vae.build_vae_from_config",
+        lambda config, device=None: _FakeSDVAE(),
+    )
+
+    cfg = FMTrainConfig(
+        data=DataConfig(image_size=32),
+        model=ModelConfig(
+            unet_config="configs/models/fm/stable_unet_config.json",
+            vae_config=None,
+            vae_weights=None,
+            vae_pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5",
+            vae_pretrained_subfolder="vae",
+        ),
+        layout_conditioning=LayoutConditioningConfig(
+            enabled=True,
+            variant="stay_v2",
+            num_classes=4,
+            category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+            class_embed_dim=16,
+            bbox_embed_dim=16,
+            object_embed_dim=32,
+            use_style_latent=True,
+            style_latent_dim=8,
+            style_seed=99,
+            mask_resolution=8,
+            mask_hidden_channels=16,
+            mask_threshold=0.5,
+            edge_dilation=1,
+            injection_mode="ea_norm",
+            use_masked_context=True,
+        ),
+        output=OutputConfig(model_dir="/tmp/stay_layout_sd15_vae"),
+        trainer_name="layout_fm",
+        device="cpu",
+    )
+
+    trainer = LayoutFMTrainer.from_config(cfg)
+    assert trainer.vae is not None
+    assert trainer.unet.config.sample_size == 4

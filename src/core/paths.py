@@ -223,6 +223,11 @@ def sd_lora_runs_dir() -> Path:
     return sd_checkpoints_root() / "lora_runs"
 
 
+def sd_unet_runs_dir() -> Path:
+    """``artifacts/checkpoints/stable_diffusion/unet_runs/`` — U-Net adaptation runs."""
+    return sd_checkpoints_root() / "unet_runs"
+
+
 def count_adapter_checkpoints_root() -> Path:
     """``artifacts/checkpoints/count_adapter/`` — count adapter checkpoints."""
     return checkpoints_root() / "count_adapter"

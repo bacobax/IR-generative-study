@@ -91,7 +91,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         *,
         from_norm_to_display=None,
     ) -> "LayoutFMTrainer":
-        from src.models.vae import build_vae_from_config, load_vae_config
+        from src.models.vae import build_vae_from_config, resolve_vae_config_from_model_config
 
         device = config.resolved_device() if hasattr(config, "resolved_device") else (
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -109,8 +109,11 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         variant = str(getattr(config.layout_conditioning, "variant", "raster_v1"))
         vae_cfg = None
         vae = None
-        if config.model.vae_config is not None:
-            vae_cfg = load_vae_config(config.model.vae_config)
+        if (
+            getattr(config.model, "vae_config", None) is not None
+            or getattr(config.model, "vae_pretrained_model_name_or_path", None) is not None
+        ):
+            vae_cfg = resolve_vae_config_from_model_config(config.model)
             effective_unet_cfg["sample_size"] = _resolve_unet_sample_size(config, vae_cfg)
             effective_unet_cfg["in_channels"] = int(vae_cfg.get("latent_channels", base_unet_cfg.get("in_channels", 4)))
             effective_unet_cfg["out_channels"] = int(vae_cfg.get("latent_channels", base_unet_cfg.get("out_channels", 4)))

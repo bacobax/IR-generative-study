@@ -1,4 +1,4 @@
-"""Modular CLI entrypoint for Stable Diffusion LoRA training.
+"""Modular CLI entrypoint for Stage-1 Stable Diffusion IR adaptation.
 
 This module is the **source of truth** for launching SD 1.5 LoRA training.
 The root-level ``train_sd.py`` is a thin compatibility wrapper that forwards
@@ -27,9 +27,9 @@ from diffusers.utils import check_min_version
 from src.algorithms.stable_diffusion.config import parse_args
 from src.algorithms.stable_diffusion.data import create_dataloader
 from src.algorithms.stable_diffusion.models import (
+    configure_trainable_components,
+    get_canonical_output_dir,
     load_models,
-    get_lora_config,
-    setup_lora,
 )
 from src.algorithms.stable_diffusion.training import Trainer
 from src.algorithms.stable_diffusion.utils import setup_logging, save_model_card
@@ -40,7 +40,7 @@ check_min_version("0.37.0.dev0")
 
 
 def main():
-    """Main SD LoRA training function."""
+    """Main SD IR adaptation training function."""
     # Parse arguments first (before accelerator init)
     print("Parsing arguments...")
     config = parse_args()
@@ -84,6 +84,9 @@ def main():
     if config.seed is not None:
         set_seed(config.seed)
 
+    # Resolve canonical output directory before creating accelerator artifacts
+    config.output_dir = get_canonical_output_dir(config)
+
     # Create output directory
     if accelerator.is_main_process:
         os.makedirs(config.output_dir, exist_ok=True)
@@ -97,24 +100,10 @@ def main():
 
     # Load models
     logger.info("Loading models...")
-    models = load_models(
-        pretrained_model_name_or_path=config.pretrained_model_name_or_path,
-        revision=config.revision,
-        variant=config.variant,
-        device=accelerator.device,
-        mixed_precision=config.mixed_precision,
-    )
+    models = load_models(config=config, device=accelerator.device)
 
-    # Setup LoRA
-    logger.info("Setting up LoRA...")
-    lora_config = get_lora_config(rank=config.rank, lora_alpha_scale=config.lora_alpha_scale)
-    models.unet = setup_lora(
-        unet=models.unet,
-        lora_config=lora_config,
-        mixed_precision=config.mixed_precision,
-        gradient_checkpointing=config.gradient_checkpointing,
-        enable_xformers=config.enable_xformers_memory_efficient_attention,
-    )
+    logger.info("Configuring Stage-1 adaptation baseline: %s", config.baseline_mode)
+    adaptation_info = configure_trainable_components(models=models, config=config)
 
     # Enable TF32 for faster training on Ampere GPUs
     if config.allow_tf32:
@@ -123,10 +112,12 @@ def main():
     # Create dataloader
     logger.info("Creating dataloader...")
     with accelerator.main_process_first():
-        train_dataloader = create_dataloader(
+        train_dataloader, normalization_mode = create_dataloader(
+            dataset_id=config.dataset_id,
             dataset_name=config.dataset_name,
             dataset_config_name=config.dataset_config_name,
             train_data_dir=config.train_data_dir,
+            train_split=config.train_split,
             cache_dir=config.cache_dir,
             tokenizer=models.tokenizer,
             resolution=config.resolution,
@@ -139,9 +130,8 @@ def main():
             num_workers=config.dataloader_num_workers,
             max_train_samples=config.max_train_samples,
             seed=config.seed,
-            accelerator=accelerator,
             use_ir_preprocessing=config.use_ir_preprocessing,
-            generic_prompt=config.generic_prompt,
+            prompt_text=config.resolved_prompt_text(),
         )
 
     # Create trainer
@@ -150,6 +140,8 @@ def main():
         config=config,
         models=models,
         train_dataloader=train_dataloader,
+        normalization_mode=normalization_mode,
+        adaptation_info=adaptation_info,
         accelerator=accelerator,
     )
 

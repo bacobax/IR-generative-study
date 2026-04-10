@@ -11,7 +11,7 @@ Usage::
     # SD 1.5 LoRA
     python -m src.cli.generate \\
         --mode sd15 \\
-        --lora_dir ./artifacts/checkpoints/stable_diffusion/lora_runs/.../checkpoint-32000 \\
+        --stage1_dir ./artifacts/checkpoints/stable_diffusion/lora_runs/... \\
         --max_samples 100 --output_dir ./artifacts/generated/main/sd15
 
     # Stable Flow Matching
@@ -34,14 +34,12 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-from src.core.normalization import (
-    sd_output_to_uint16,
-    fm_output_to_uint16,
-    uint16_to_png_uint8,
-)
+from src.core.normalization import fm_output_to_uint16, raw_array_to_png_uint8, sd_output_to_npy, uint16_to_png_uint8
 from src.core.configs.fm_config import FMSampleConfig
 from src.core.configs.config_loader import apply_yaml_defaults
 from src.core.registry import REGISTRIES
+from src.core.normalization import RAW_UINT16_PERCENTILE
+from src.algorithms.stable_diffusion.models import load_stage1_pipeline
 
 # Ensure default FM components are registered
 import src.algorithms.inference.flow_matching_sampler  # noqa: F401
@@ -53,6 +51,8 @@ import src.algorithms.inference.flow_matching_sampler  # noqa: F401
 
 def load_metadata(jsonl_path: str, max_samples: int) -> List[Dict]:
     entries: List[Dict] = []
+    if not os.path.isfile(jsonl_path):
+        return [{"text": "", "file_name": ""} for _ in range(max_samples)]
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -69,12 +69,6 @@ def load_metadata(jsonl_path: str, max_samples: int) -> List[Dict]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def generate_sd15(args, entries: List[Dict]):
-    from diffusers import StableDiffusionPipeline, AutoencoderKL, UNet2DConditionModel
-    from transformers import CLIPTextModel, CLIPTokenizer
-    from peft import LoraConfig
-    from peft.utils import set_peft_model_state_dict
-    from diffusers.utils import convert_unet_state_dict_to_peft
-
     dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
     weight_dtype = dtype_map[args.precision]
     if args.device is None:
@@ -82,48 +76,29 @@ def generate_sd15(args, entries: List[Dict]):
     else:
         device = args.device
 
-    print(f"[SD1.5] Loading base model: {args.base_model}")
-    tokenizer = CLIPTokenizer.from_pretrained(args.base_model, subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained(
-        args.base_model, subfolder="text_encoder", torch_dtype=weight_dtype,
-    )
-    vae = AutoencoderKL.from_pretrained(
-        args.base_model, subfolder="vae", torch_dtype=weight_dtype,
-    )
-    unet = UNet2DConditionModel.from_pretrained(
-        args.base_model, subfolder="unet", torch_dtype=weight_dtype,
-    )
+    normalization_mode = RAW_UINT16_PERCENTILE
+    artifact_prompt_text = None
+    if args.stage1_dir is not None:
+        print(f"[SD1.5] Loading stage-1 artifact from {args.stage1_dir}")
+        pipe, manifest = load_stage1_pipeline(
+            stage1_dir=args.stage1_dir,
+            base_model=args.base_model,
+            torch_dtype=weight_dtype,
+        )
+        normalization_mode = manifest.get("normalization_mode", RAW_UINT16_PERCENTILE)
+        artifact_prompt_text = manifest.get("prompt_text")
+    else:
+        from diffusers import StableDiffusionPipeline
 
-    # --- Apply LoRA ---
-    print(f"[SD1.5] Loading LoRA weights from {args.lora_dir}")
-    lora_state_dict, _ = StableDiffusionPipeline.lora_state_dict(args.lora_dir)
-    unet_state_dict = {
-        k.replace("unet.", ""): v for k, v in lora_state_dict.items() if k.startswith("unet.")
-    }
-    unet_state_dict = convert_unet_state_dict_to_peft(unet_state_dict)
+        print(f"[SD1.5] Loading legacy LoRA weights from {args.lora_dir}")
+        pipe = StableDiffusionPipeline.from_pretrained(
+            args.base_model,
+            torch_dtype=weight_dtype,
+            safety_checker=None,
+            requires_safety_checker=False,
+        )
+        pipe.load_lora_weights(args.lora_dir)
 
-    unet_lora_config = LoraConfig(
-        r=args.lora_rank,
-        lora_alpha=args.lora_rank * args.lora_alpha_scale,
-        init_lora_weights="gaussian",
-        target_modules=["to_k", "to_q", "to_v", "to_out.0", "proj_in", "proj_out"],
-    )
-    print(f"[SD1.5] Applying LoRA with rank={args.lora_rank} and alpha={unet_lora_config.lora_alpha}")
-    unet.add_adapter(unet_lora_config)
-    set_peft_model_state_dict(unet, unet_state_dict, adapter_name="default")
-
-    unet = unet.to(device)
-    vae = vae.to(device)
-    text_encoder = text_encoder.to(device)
-
-    pipe = StableDiffusionPipeline.from_pretrained(
-        args.base_model,
-        unet=unet,
-        vae=vae,
-        text_encoder=text_encoder,
-        tokenizer=tokenizer,
-        torch_dtype=weight_dtype,
-    )
     pipe.to(device)
 
     autocast_ctx = (
@@ -135,9 +110,9 @@ def generate_sd15(args, entries: List[Dict]):
     os.makedirs(args.output_dir, exist_ok=True)
 
     print(f"[SD1.5] Generating {len(entries)} samples ...")
-    generic_prompt_text = "overhead infrared surveillance image with any people or objects"
+    generic_prompt_text = artifact_prompt_text or "overhead infrared surveillance image with any people or objects"
     for idx, entry in enumerate(entries):
-        prompt = generic_prompt_text if args.generic_prompt else entry.get("text", generic_prompt_text)
+        prompt = generic_prompt_text if args.generic_prompt else entry.get("text") or generic_prompt_text
         base_seed = args.seed + idx
 
         image = None
@@ -172,12 +147,12 @@ def generate_sd15(args, entries: List[Dict]):
         if last_flagged:
             print(f"  [SD1.5] NSFW detected for sample {idx:05d}; saved last retry seed={seed}")
 
-        raw_uint16 = sd_output_to_uint16(image)
+        raw_arr = sd_output_to_npy(image, normalization_mode=normalization_mode)
         out_path = os.path.join(args.output_dir, f"sample_{idx:05d}.npy")
-        np.save(out_path, raw_uint16)
+        np.save(out_path, raw_arr)
 
         png_path = os.path.join(args.output_dir, f"sample_{idx:05d}.png")
-        vis = uint16_to_png_uint8(raw_uint16)
+        vis = raw_array_to_png_uint8(raw_arr, normalization_mode=normalization_mode)
         Image.fromarray(vis, mode="L").save(png_path)
 
         if (idx + 1) % 50 == 0 or idx == len(entries) - 1:
@@ -435,6 +410,7 @@ def parse_args():
     # --- SD 1.5 specific ---
     sd = p.add_argument_group("SD 1.5 options")
     sd.add_argument("--base_model", type=str, default="runwayml/stable-diffusion-v1-5")
+    sd.add_argument("--stage1_dir", type=str, default=None)
     sd.add_argument("--lora_dir", type=str, default=None)
     sd.add_argument("--lora_rank", type=int, default=4)
     sd.add_argument("--sd_steps", type=int, default=30)
@@ -505,8 +481,8 @@ def main():
     print(f"Loaded {len(entries)} entries from {args.metadata}")
 
     if args.mode == "sd15":
-        if args.lora_dir is None:
-            raise ValueError("--lora_dir is required for mode=sd15")
+        if args.stage1_dir is None and args.lora_dir is None:
+            raise ValueError("--stage1_dir or --lora_dir is required for mode=sd15")
         generate_sd15(args, entries)
 
     elif args.mode == "fm":

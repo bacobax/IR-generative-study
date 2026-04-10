@@ -1,0 +1,18 @@
+# Example Stage-1 SD full U-Net baseline on v18.
+pretrained_model_name_or_path: runwayml/stable-diffusion-v1-5
+baseline_mode: sd_ir_unet
+dataset_id: v18
+train_split: train
+prompt_text: "overhead infrared surveillance image, circular field of view"
+resolution: 512
+train_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 5.0e-6
+lr_warmup_steps: 0
+unet_train_mode: full
+freeze_vae: true
+freeze_text_encoder: true
+validation_prompt: "overhead infrared surveillance image, circular field of view"
+checkpointing_steps: 1000
+output_dir: ./artifacts/checkpoints/stable_diffusion/unet_runs/v18_sd15_unet_full_stage1
+seed: 42

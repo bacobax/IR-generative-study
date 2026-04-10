@@ -222,6 +222,29 @@ def sd_output_to_uint16(image_pil) -> np.ndarray:
     return np.clip(uint16_val, 0, 65535).astype(np.uint16)
 
 
+def sd_output_to_npy(
+    image_pil,
+    *,
+    normalization_mode: str = RAW_UINT16_PERCENTILE,
+) -> np.ndarray:
+    """SD output PIL image -> raw-domain numpy array for the requested dataset mode."""
+    raw = np.asarray(image_pil).astype(np.float32) / 255.0
+    if raw.ndim == 3:
+        raw = raw.mean(axis=-1)
+
+    if normalization_mode == RAW_UINT16_PERCENTILE:
+        uint16_val = _A + np.clip(raw, 0.0, 1.0) * _S
+        return np.clip(uint16_val, 0, 65535).astype(np.uint16)
+
+    if normalization_mode == UINT8_LINEAR:
+        return np.clip(np.rint(raw * 255.0), 0, 255).astype(np.uint8)
+
+    raise ValueError(
+        f"Unknown normalization_mode={normalization_mode!r}. "
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, {UINT8_LINEAR!r}"
+    )
+
+
 def uint16_to_png_uint8(arr_uint16: np.ndarray) -> np.ndarray:
     """uint16 image → uint8 for PNG visualization (per-image p1–p99 stretch).
 
@@ -242,3 +265,21 @@ def uint16_to_png_uint8(arr_uint16: np.ndarray) -> np.ndarray:
         return np.zeros_like(arr_uint16, dtype=np.uint8)
     norm = (arr - p1) / (p99 - p1)
     return (norm * 255.0).clip(0, 255).astype(np.uint8)
+
+
+def raw_array_to_png_uint8(
+    arr: np.ndarray,
+    *,
+    normalization_mode: str = RAW_UINT16_PERCENTILE,
+) -> np.ndarray:
+    """Raw-domain array -> uint8 PNG visualization for the requested dataset mode."""
+    if normalization_mode == RAW_UINT16_PERCENTILE:
+        return uint16_to_png_uint8(arr.astype(np.uint16, copy=False))
+
+    if normalization_mode == UINT8_LINEAR:
+        return np.clip(arr, 0, 255).astype(np.uint8, copy=False)
+
+    raise ValueError(
+        f"Unknown normalization_mode={normalization_mode!r}. "
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, {UINT8_LINEAR!r}"
+    )

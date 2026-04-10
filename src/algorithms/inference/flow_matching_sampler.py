@@ -183,7 +183,13 @@ class FlowMatchingSampler:
         *config*, then wires them into a latent-space sampler.
         """
         from src.models.fm_unet import load_unet_config as _load_unet_config, build_fm_unet_from_config as _build_unet
-        from src.models.vae import load_vae_config as _load_vae_config, build_vae_from_config as _build_vae, load_vae_weights as _load_vae_w, freeze_vae as _freeze_vae
+        from src.models.vae import (
+            build_vae_from_config as _build_vae,
+            freeze_vae as _freeze_vae,
+            is_diffusers_vae_config as _is_diffusers_vae_config,
+            load_vae_config as _load_vae_config,
+            load_vae_weights as _load_vae_w,
+        )
         import os as _os
 
         device = config.resolved_device()
@@ -209,8 +215,12 @@ class FlowMatchingSampler:
         if not _os.path.isfile(vae_w):
             vae_w = _pick_latest(vae_dir, "vae_epoch_")
         if vae_w is None or not _os.path.isfile(vae_w):
-            raise FileNotFoundError(f"No VAE weights in {vae_dir}")
-        _load_vae_w(vae, vae_w, map_location=device)
+            if _is_diffusers_vae_config(vae_cfg):
+                vae_w = None
+            else:
+                raise FileNotFoundError(f"No VAE weights in {vae_dir}")
+        if vae_w is not None and _os.path.isfile(vae_w):
+            _load_vae_w(vae, vae_w, map_location=device)
 
         if config.vae_weights is not None:
             _load_vae_w(vae, config.vae_weights, map_location=device)

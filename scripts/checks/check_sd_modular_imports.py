@@ -119,10 +119,16 @@ check("__getattr__" in sd_init or "import_module" in sd_init,
       "sd_src/__init__.py uses lazy import mechanism")
 
 # ── 7. Source inspection: data.py import fix ───────────────────────────
-print("\n=== 7. data.py uses src.core.constants ===")
+print("\n=== 7. data.py uses repo-native shared helpers ===")
 data_src = (sd_pkg / "data.py").read_text()
-check("from src.core.constants import" in data_src,
-      "data.py imports from src.core.constants")
+check(
+    "from src.core.normalization import" in data_src,
+    "data.py imports from src.core.normalization",
+)
+check(
+    "from src.core.data.dataset_targets import" in data_src,
+    "data.py imports from src.core.data.dataset_targets",
+)
 check("from sd_src." not in data_src,
       "data.py does NOT import from sd_src.*")
 

@@ -46,11 +46,21 @@ def _default_from_norm_to_display(x: torch.Tensor) -> torch.Tensor:
 def _infer_vae_downsample_factor(vae_config: Dict[str, Any]) -> int:
     """Infer the VAE spatial downsample factor from its channel schedule."""
     num_channels = vae_config.get("num_channels")
-    if not isinstance(num_channels, (list, tuple)) or not num_channels:
-        raise ValueError(
-            "VAE config must define a non-empty num_channels sequence to infer sample_size."
-        )
-    return 2 ** max(0, len(num_channels) - 1)
+    if isinstance(num_channels, (list, tuple)) and num_channels:
+        return 2 ** max(0, len(num_channels) - 1)
+
+    block_out_channels = vae_config.get("block_out_channels")
+    if isinstance(block_out_channels, (list, tuple)) and block_out_channels:
+        return 2 ** max(0, len(block_out_channels) - 1)
+
+    down_block_types = vae_config.get("down_block_types")
+    if isinstance(down_block_types, (list, tuple)) and down_block_types:
+        return 2 ** max(0, len(down_block_types) - 1)
+
+    raise ValueError(
+        "VAE config must define a non-empty num_channels, block_out_channels, "
+        "or down_block_types sequence to infer sample_size."
+    )
 
 
 def _resolve_unet_sample_size(config, vae_config: Dict[str, Any]) -> int | None:
@@ -162,7 +172,7 @@ class FlowMatchingTrainer:
         from_norm_to_display : callable, optional
             Override display normalisation if needed.
         """
-        from src.models.vae import load_vae_config, build_vae_from_config
+        from src.models.vae import build_vae_from_config, resolve_vae_config_from_model_config
 
         device = config.resolved_device() if hasattr(config, "resolved_device") else (
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -172,8 +182,11 @@ class FlowMatchingTrainer:
         vae_cfg = None
         vae = None
 
-        if config.model.vae_config is not None:
-            vae_cfg = load_vae_config(config.model.vae_config)
+        if (
+            getattr(config.model, "vae_config", None) is not None
+            or getattr(config.model, "vae_pretrained_model_name_or_path", None) is not None
+        ):
+            vae_cfg = resolve_vae_config_from_model_config(config.model)
             resolved_sample_size = _resolve_unet_sample_size(config, vae_cfg)
         else:
             resolved_sample_size = int(getattr(config.data, "image_size", unet_cfg.get("sample_size")))
@@ -290,16 +303,14 @@ class FlowMatchingTrainer:
 
     def load_vae_weights(self, path: str, *, strict: bool = True) -> None:
         assert self.vae is not None, "VAE not set."
-        state = torch.load(path, map_location=self.device)
-        if isinstance(state, dict) and "vae_state" in state:
-            state = state["vae_state"]
-        missing, unexpected = self.vae.load_state_dict(state, strict=strict)
-        if (not strict) or missing or unexpected:
-            print(f"[load_vae_weights] strict={strict}")
-            if missing:
-                print("  Missing keys:", missing)
-            if unexpected:
-                print("  Unexpected keys:", unexpected)
+        from src.models.vae import load_vae_weights as _load_vae_weights
+
+        _load_vae_weights(
+            self.vae,
+            path,
+            strict=strict,
+            map_location=self.device,
+        )
 
     # ------------------------------------------------------------------
     # Encode helper (pixel-space passthrough or VAE)

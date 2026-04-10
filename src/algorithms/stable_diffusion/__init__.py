@@ -1,6 +1,6 @@
-# Stable Diffusion 1.5 LoRA Fine-tuning Package
+# Stable Diffusion 1.5 IR Adaptation Package
 """
-Modular package for fine-tuning Stable Diffusion 1.5 with LoRA.
+Modular package for Stage-1 Stable Diffusion 1.5 IR adaptation.
 
 This is the source-of-truth location under the ``src`` namespace.
 The legacy ``sd_src`` package re-exports from here for backward compatibility.
@@ -8,7 +8,7 @@ The legacy ``sd_src`` package re-exports from here for backward compatibility.
 Modules:
     - config: Argument parsing and configuration management
     - data: Dataset loading, preprocessing, and data augmentation
-    - models: Model loading, LoRA configuration, and model utilities
+    - models: Model loading, adaptation configuration, and artifact utilities
     - training: Training loop, validation, and checkpointing
     - utils: Helper functions and utilities
 
