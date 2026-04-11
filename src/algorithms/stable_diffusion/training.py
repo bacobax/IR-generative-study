@@ -49,6 +49,7 @@ if is_wandb_available():
 
 
 logger = get_logger(__name__, log_level="INFO")
+CHECKPOINT_METADATA_FILENAME = "training_state.json"
 
 
 def _sanitize_tracker_value(value):
@@ -244,17 +245,97 @@ class Trainer:
         self.accelerator.register_save_state_pre_hook(save_hook)
         self.accelerator.register_load_state_pre_hook(load_hook)
 
+    def _checkpoint_metadata(self) -> Dict[str, object]:
+        return {
+            "global_step": self.global_step,
+            "lr_scheduler": self.config.lr_scheduler,
+            "lr_warmup_steps": self.config.lr_warmup_steps,
+            "max_train_steps": self.config.max_train_steps,
+        }
+
+    def _write_checkpoint_metadata(self, checkpoint_dir: Path) -> None:
+        metadata_path = checkpoint_dir / CHECKPOINT_METADATA_FILENAME
+        metadata_path.write_text(
+            json.dumps(self._checkpoint_metadata(), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    def _read_checkpoint_metadata(self, checkpoint_dir: Path) -> Optional[Dict[str, object]]:
+        metadata_path = checkpoint_dir / CHECKPOINT_METADATA_FILENAME
+        if not metadata_path.exists():
+            return None
+        with open(metadata_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+
+    def _validate_resume_constraints(self, checkpoint_dir: Path, *, step: int) -> None:
+        if self.config.max_train_steps is not None and self.config.max_train_steps < step:
+            raise ValueError(
+                "Cannot resume from a checkpoint beyond max_train_steps: "
+                f"checkpoint step={step}, max_train_steps={self.config.max_train_steps}."
+            )
+
+        metadata = self._read_checkpoint_metadata(checkpoint_dir)
+        if metadata is None:
+            if self.config.lr_scheduler == "constant" and self.config.lr_warmup_steps == 0:
+                logger.warning(
+                    "Checkpoint %s has no %s metadata; allowing resume because the current "
+                    "schedule is constant with zero warmup.",
+                    checkpoint_dir,
+                    CHECKPOINT_METADATA_FILENAME,
+                )
+                return
+            raise ValueError(
+                f"Checkpoint {checkpoint_dir} has no {CHECKPOINT_METADATA_FILENAME} metadata. "
+                "Resume is only allowed without metadata when lr_scheduler='constant' and "
+                "lr_warmup_steps=0."
+            )
+
+        saved_scheduler = metadata.get("lr_scheduler")
+        saved_warmup = metadata.get("lr_warmup_steps")
+        saved_max_train_steps = metadata.get("max_train_steps")
+
+        if saved_scheduler != self.config.lr_scheduler or saved_warmup != self.config.lr_warmup_steps:
+            raise ValueError(
+                "Resume config does not match the checkpointed LR schedule: "
+                f"checkpoint has lr_scheduler={saved_scheduler!r}, "
+                f"lr_warmup_steps={saved_warmup!r}; current config has "
+                f"lr_scheduler={self.config.lr_scheduler!r}, "
+                f"lr_warmup_steps={self.config.lr_warmup_steps!r}."
+            )
+
+        if (
+            saved_max_train_steps is not None
+            and self.config.max_train_steps is not None
+            and saved_max_train_steps != self.config.max_train_steps
+        ):
+            if not (
+                self.config.lr_scheduler == "constant"
+                and self.config.lr_warmup_steps == 0
+                and self.config.max_train_steps > saved_max_train_steps
+            ):
+                raise ValueError(
+                    "Changing max_train_steps across resume is only supported for a constant "
+                    "schedule with zero warmup when extending the run. "
+                    f"Checkpoint max_train_steps={saved_max_train_steps}, "
+                    f"current max_train_steps={self.config.max_train_steps}."
+                )
+
     def resume_from_checkpoint(self) -> None:
         if self.config.resume_from_checkpoint is None:
             return
 
         if self.config.resume_from_checkpoint != "latest":
-            path = os.path.basename(self.config.resume_from_checkpoint)
+            checkpoint_dir = Path(self.config.resume_from_checkpoint)
+            if not checkpoint_dir.is_absolute():
+                checkpoint_dir = Path(self.config.output_dir) / checkpoint_dir
+            path = checkpoint_dir.name
         else:
             dirs = os.listdir(self.config.output_dir)
             dirs = [d for d in dirs if d.startswith("checkpoint")]
             dirs = sorted(dirs, key=lambda x: int(x.split("-")[1]))
             path = dirs[-1] if dirs else None
+            checkpoint_dir = Path(self.config.output_dir) / path if path is not None else None
 
         if path is None:
             self.accelerator.print(
@@ -263,9 +344,12 @@ class Trainer:
             self.config.resume_from_checkpoint = None
             return
 
+        assert checkpoint_dir is not None
+        step = int(path.split("-")[1])
+        self._validate_resume_constraints(checkpoint_dir, step=step)
         self.accelerator.print(f"Resuming from checkpoint {path}")
-        self.accelerator.load_state(os.path.join(self.config.output_dir, path))
-        self.global_step = int(path.split("-")[1])
+        self.accelerator.load_state(str(checkpoint_dir))
+        self.global_step = step
         self.first_epoch = self.global_step // self.num_update_steps_per_epoch
 
     def train(self) -> None:
@@ -464,6 +548,7 @@ class Trainer:
 
         save_path = os.path.join(self.config.output_dir, f"checkpoint-{self.global_step}")
         self.accelerator.save_state(save_path)
+        self._write_checkpoint_metadata(Path(save_path))
         logger.info("Saved checkpoint to %s", save_path)
 
     def _run_validation(self, epoch: int, is_final: bool = False) -> List:
@@ -489,6 +574,7 @@ class Trainer:
             pipeline=pipeline,
             validation_prompt=self.config.validation_prompt,
             num_images=self.config.num_validation_images,
+            num_inference_steps=self.config.validation_num_inference_steps,
             device=self.accelerator.device,
             seed=self.config.seed,
             accelerator=self.accelerator,
@@ -540,6 +626,7 @@ class Trainer:
                     pipeline=pipeline,
                     validation_prompt=self.config.validation_prompt,
                     num_images=self.config.num_validation_images,
+                    num_inference_steps=self.config.validation_num_inference_steps,
                     device=self.accelerator.device,
                     seed=self.config.seed,
                     accelerator=self.accelerator,
@@ -581,6 +668,7 @@ def log_validation(
     pipeline,
     validation_prompt: str,
     num_images: int,
+    num_inference_steps: int,
     device: torch.device,
     seed: Optional[int],
     accelerator: Accelerator,
@@ -605,7 +693,7 @@ def log_validation(
         for _ in range(num_images):
             image = pipeline(
                 validation_prompt,
-                num_inference_steps=30,
+                num_inference_steps=num_inference_steps,
                 generator=generator,
             ).images[0]
             images.append(image)

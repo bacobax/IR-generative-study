@@ -37,6 +37,7 @@ unet_trainable_modules:
 
 logging_dir: "logs"
 report_to: "tensorboard"
+validation_num_inference_steps: 30
 checkpointing_steps: 1000
 output_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_r8"
 seed: 42

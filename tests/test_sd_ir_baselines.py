@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 from diffusers import UNet2DConditionModel
 
@@ -16,6 +18,8 @@ from src.algorithms.stable_diffusion.data import (
     resolve_training_data_source,
 )
 from src.algorithms.stable_diffusion.models import ModelComponents, configure_trainable_components
+import src.algorithms.stable_diffusion.training as sd_training
+from src.algorithms.stable_diffusion.training import Trainer, log_validation
 from src.core.normalization import RAW_UINT16_PERCENTILE, UINT8_LINEAR
 
 
@@ -34,6 +38,65 @@ class _MockTokenizer:
             texts = list(text)
         batch = torch.ones(len(texts), self.model_max_length, dtype=torch.long)
         return _TokenizerOutput(batch)
+
+
+class _TensorboardWriter:
+    def __init__(self):
+        self.images = []
+        self.scalars = []
+
+    def add_images(self, tag, images, step, dataformats):
+        self.images.append((tag, images.shape, step, dataformats))
+
+    def add_scalar(self, tag, value, step):
+        self.scalars.append((tag, float(value), step))
+
+
+class _Tracker:
+    def __init__(self):
+        self.name = "tensorboard"
+        self.writer = _TensorboardWriter()
+
+
+class _FakeValidationAccelerator:
+    def __init__(self):
+        self.trackers = [_Tracker()]
+
+
+class _FakeResumeAccelerator:
+    def __init__(self):
+        self.loaded_path = None
+        self.messages = []
+
+    def print(self, message):
+        self.messages.append(message)
+
+    def load_state(self, path):
+        self.loaded_path = path
+
+
+class _FakePipeline:
+    def __init__(self):
+        self.calls = []
+        self.progress_bar_disabled = None
+        self.device = None
+
+    def to(self, device):
+        self.device = device
+        return self
+
+    def set_progress_bar_config(self, *, disable):
+        self.progress_bar_disabled = disable
+
+    def __call__(self, prompt, *, num_inference_steps, generator):
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "num_inference_steps": num_inference_steps,
+                "seed": generator.initial_seed(),
+            }
+        )
+        return type("PipelineOutput", (), {"images": [np.zeros((4, 4, 3), dtype=np.uint8)]})()
 
 
 def _tiny_unet() -> UNet2DConditionModel:
@@ -85,6 +148,43 @@ def test_sd_config_parses_new_baseline_options():
     assert cfg.prompt_text == "thermal image"
     assert cfg.unet_train_mode == "partial"
     assert cfg.unet_trainable_modules == ["mid_block", "up_blocks"]
+
+
+def test_sd_config_yaml_parses_training_and_validation_steps(tmp_path: Path):
+    config_path = tmp_path / "sd_config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "dataset_id: flir_private_proxy_alignment_v18",
+                f"output_dir: {tmp_path / 'sd_run'}",
+                "max_train_steps: 1234",
+                "validation_num_inference_steps: 17",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = parse_args(["--config", str(config_path)])
+
+    assert cfg.max_train_steps == 1234
+    assert cfg.validation_num_inference_steps == 17
+
+
+def test_sd_config_yaml_rejects_unknown_keys(tmp_path: Path):
+    config_path = tmp_path / "sd_bad.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "dataset_id: flir_private_proxy_alignment_v18",
+                f"output_dir: {tmp_path / 'sd_run'}",
+                "validation_num_inference_stepz: 17",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unknown keys in SD config"):
+        parse_args(["--config", str(config_path)])
 
 
 def test_dataset_resolution_uses_repo_normalization_modes():
@@ -239,6 +339,114 @@ def test_unet_partial_mode_fails_on_no_match():
         assert "zero trainable parameters" in str(exc)
     else:
         raise AssertionError("Expected partial U-Net config to fail when no modules match.")
+
+
+def test_log_validation_uses_configured_inference_steps(monkeypatch):
+    monkeypatch.setattr(sd_training, "logger", logging.getLogger("test_sd_validation"))
+    pipeline = _FakePipeline()
+    accelerator = _FakeValidationAccelerator()
+
+    images = log_validation(
+        pipeline=pipeline,
+        validation_prompt="thermal image",
+        num_images=3,
+        num_inference_steps=17,
+        device=torch.device("cpu"),
+        seed=123,
+        accelerator=accelerator,
+        epoch=2,
+    )
+
+    assert len(images) == 3
+    assert pipeline.progress_bar_disabled is True
+    assert [call["num_inference_steps"] for call in pipeline.calls] == [17, 17, 17]
+
+
+def test_resume_allows_constant_schedule_extension_without_metadata(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(sd_training, "logger", logging.getLogger("test_sd_resume"))
+    checkpoint_dir = tmp_path / "checkpoint-12000"
+    checkpoint_dir.mkdir()
+
+    accelerator = _FakeResumeAccelerator()
+    trainer = Trainer(
+        config=parse_args(
+            [
+                "--baseline_mode",
+                "sd_ir_unet",
+                "--dataset_id",
+                "flir_private_proxy_alignment_v18",
+                "--output_dir",
+                str(tmp_path),
+                "--resume_from_checkpoint",
+                "latest",
+                "--max_train_steps",
+                "20000",
+                "--lr_scheduler",
+                "constant",
+                "--lr_warmup_steps",
+                "0",
+            ]
+        ),
+        models=None,
+        train_dataloader=None,
+        normalization_mode="uint8_linear",
+        adaptation_info={},
+        accelerator=accelerator,
+    )
+    trainer.num_update_steps_per_epoch = 100
+
+    trainer.resume_from_checkpoint()
+
+    assert accelerator.loaded_path == str(checkpoint_dir)
+    assert trainer.global_step == 12000
+    assert trainer.first_epoch == 120
+
+
+def test_resume_rejects_extending_non_constant_schedule(tmp_path: Path):
+    checkpoint_dir = tmp_path / "checkpoint-12000"
+    checkpoint_dir.mkdir()
+    (checkpoint_dir / "training_state.json").write_text(
+        json.dumps(
+            {
+                "global_step": 12000,
+                "lr_scheduler": "linear",
+                "lr_warmup_steps": 0,
+                "max_train_steps": 12000,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    accelerator = _FakeResumeAccelerator()
+    trainer = Trainer(
+        config=parse_args(
+            [
+                "--baseline_mode",
+                "sd_ir_unet",
+                "--dataset_id",
+                "flir_private_proxy_alignment_v18",
+                "--output_dir",
+                str(tmp_path),
+                "--resume_from_checkpoint",
+                "latest",
+                "--max_train_steps",
+                "20000",
+                "--lr_scheduler",
+                "linear",
+                "--lr_warmup_steps",
+                "0",
+            ]
+        ),
+        models=None,
+        train_dataloader=None,
+        normalization_mode="uint8_linear",
+        adaptation_info={},
+        accelerator=accelerator,
+    )
+    trainer.num_update_steps_per_epoch = 100
+
+    with pytest.raises(ValueError, match="Changing max_train_steps across resume is only supported"):
+        trainer.resume_from_checkpoint()
 
 
 def count_trainable(module: torch.nn.Module) -> int:

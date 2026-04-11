@@ -44,6 +44,7 @@ def main():
     # Parse arguments first (before accelerator init)
     print("Parsing arguments...")
     config = parse_args()
+    config.output_dir = get_canonical_output_dir(config)
 
     # Setup accelerator
     print("Initializing accelerator...")
@@ -83,9 +84,6 @@ def main():
     # Set seed for reproducibility
     if config.seed is not None:
         set_seed(config.seed)
-
-    # Resolve canonical output directory before creating accelerator artifacts
-    config.output_dir = get_canonical_output_dir(config)
 
     # Create output directory
     if accelerator.is_main_process:

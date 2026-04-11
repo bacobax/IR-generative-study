@@ -7,9 +7,10 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Sequence
 
-from src.core.configs.config_loader import apply_yaml_defaults
+from src.core.configs.config_loader import apply_yaml_defaults, load_yaml
 from src.core.data.dataset_targets import supported_dataset_ids
 
 
@@ -105,6 +106,7 @@ class TrainingConfig:
     validation_prompt: Optional[str] = None
     num_validation_images: int = 4
     validation_epochs: int = 1
+    validation_num_inference_steps: int = 30
 
     # Output and logging
     output_dir: str = "sd-model-finetuned-lora"
@@ -182,6 +184,45 @@ class TrainingConfig:
                 "You cannot use both --report_to=wandb and --hub_token due to a security risk."
                 " Please use `hf auth login` to authenticate with the Hub."
             )
+
+        if self.num_train_epochs <= 0:
+            raise ValueError("--num_train_epochs must be positive.")
+        if self.max_train_steps is not None and self.max_train_steps <= 0:
+            raise ValueError("--max_train_steps must be positive when set.")
+        if self.lr_warmup_steps < 0:
+            raise ValueError("--lr_warmup_steps must be >= 0.")
+        if self.num_validation_images <= 0:
+            raise ValueError("--num_validation_images must be positive.")
+        if self.validation_epochs <= 0:
+            raise ValueError("--validation_epochs must be positive.")
+        if self.validation_num_inference_steps <= 0:
+            raise ValueError("--validation_num_inference_steps must be positive.")
+        if self.checkpointing_steps <= 0:
+            raise ValueError("--checkpointing_steps must be positive.")
+
+
+def _validate_yaml_config_keys(
+    parser: argparse.ArgumentParser,
+    config_path: str | Path | None,
+) -> None:
+    """Fail fast when a SD YAML config contains unsupported keys."""
+    if not config_path:
+        return
+
+    data = load_yaml(config_path)
+    if not data:
+        return
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected top-level mapping in SD config {config_path!s}.")
+
+    known_dests = {action.dest for action in parser._actions}
+    unknown = sorted(key for key in data if key not in known_dests)
+    if unknown:
+        unknown_list = ", ".join(unknown)
+        raise ValueError(
+            f"Unknown keys in SD config {config_path}: {unknown_list}. "
+            "Remove them or add matching argparse/config fields."
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -349,6 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     val_group.add_argument("--validation_prompt", type=str, default=None)
     val_group.add_argument("--num_validation_images", type=int, default=4)
     val_group.add_argument("--validation_epochs", type=int, default=1)
+    val_group.add_argument("--validation_num_inference_steps", type=int, default=30)
 
     output_group = parser.add_argument_group("Output and Logging")
     output_group.add_argument("--output_dir", type=str, default="sd-model-finetuned-lora")
@@ -393,6 +435,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> TrainingConfig:
     parser = build_parser()
 
     preliminary, _ = parser.parse_known_args(argv)
+    _validate_yaml_config_keys(parser, preliminary.config)
     apply_yaml_defaults(parser, preliminary.config)
     args = parser.parse_args(argv)
 
