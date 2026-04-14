@@ -1,0 +1,19 @@
+output:
+  runs_root: artifacts/runs/yolo/exp_a/flir_yolov8m
+  checkpoints_root: artifacts/checkpoints/yolo/exp_a/flir_yolov8m
+  analysis_root: artifacts/analysis/yolo/exp_a/flir_yolov8m
+
+launcher:
+  ordered_config_paths:
+    - configs/yolo/exp_a/flir_yolov8m/exp_balanced.yaml
+    - configs/yolo/exp_a/flir_yolov8m/exp_unbalanced.yaml
+    - configs/yolo/exp_a/flir_yolov8m/exp_full_train.yaml
+    - configs/yolo/exp_a/flir_yolov8m/exp_full_train_baseline_a.yaml
+    - configs/yolo/exp_a/flir_yolov8m/exp_full_train_baseline_b.yaml
+  ordered_labels:
+    - balanced
+    - unbalanced
+    - full_train
+    - full_train_baseline_a
+    - full_train_baseline_b
+  notes: "Run with python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/flir_yolov8m/run_exp_a_all.yaml"

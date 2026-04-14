@@ -1,7 +1,5 @@
 data:
-  balanced_dataset_yaml: data/derived/yolo-test-ds/balanced.yaml
-  unbalanced_dataset_yaml: data/derived/yolo-test-ds/unbalanced.yaml
-  full_train_dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
+  dataset_yaml: data/derived/yolo-test-ds/unbalanced.yaml
   test_dataset_yaml: data/derived/yolo-test-ds/test.yaml
   batch_size: 16
   workers: 4
@@ -12,7 +10,7 @@ model:
   task: detect
 
 training:
-  epochs: 50
+  epochs: 100
   lr0: 0.01
   optimizer: SGD
   momentum: 0.937
@@ -39,9 +37,10 @@ training:
 evaluation:
   split: test
   save_json: true
+  save_hybrid: false
 
-launcher:
-  balanced_experiment_name: exp_balanced
-  unbalanced_experiment_name: exp_unbalanced
-  full_train_experiment_name: exp_full_train
-  comparison_filename: comparison_summary.csv
+output:
+  experiment_name: exp_unbalanced
+  runs_root: artifacts/runs/yolo/exp_a/flir
+  checkpoints_root: artifacts/checkpoints/yolo/exp_a/flir
+  analysis_root: artifacts/analysis/yolo/exp_a/flir

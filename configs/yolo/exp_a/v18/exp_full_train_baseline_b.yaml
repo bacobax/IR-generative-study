@@ -1,6 +1,6 @@
 data:
-  dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
-  test_dataset_yaml: data/derived/yolo-test-ds/test.yaml
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  test_dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
   batch_size: 16
   workers: 4
   image_size: 640
@@ -35,13 +35,23 @@ training:
     - model.9.
 
 baseline:
-  mode: baseline_a
+  mode: baseline_b
   rarity_alpha: 1.0
   rarity_eps: 1.0e-6
   image_score_top_k: 3
   normalize_weights: true
   clip_weight_max: 10.0
   sampler_replacement: true
+  targeted_aug_probability: 0.5
+  targeted_aug_rarity_quantile: 0.8
+  translate_fraction: 0.05
+  scale_min: 0.9
+  scale_max: 1.1
+  crop_scale_min: 0.85
+  crop_scale_max: 1.0
+  crop_min_rare_box_area_retained: 0.5
+  crop_max_attempts: 10
+  allow_horizontal_flip: true
   seed: 7
 
 evaluation:
@@ -50,4 +60,7 @@ evaluation:
   save_hybrid: false
 
 output:
-  experiment_name: exp_full_train_baseline_a
+  experiment_name: exp_full_train_baseline_b
+  runs_root: artifacts/runs/yolo/exp_a/v18
+  checkpoints_root: artifacts/checkpoints/yolo/exp_a/v18
+  analysis_root: artifacts/analysis/yolo/exp_a/v18

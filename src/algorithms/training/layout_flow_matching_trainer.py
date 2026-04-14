@@ -596,6 +596,8 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             object_mask=vis_batch["object_mask"],
             image_size=int(vis_batch["pixel_values"].shape[-1]),
         )
+        writer.add_images("layout_fm/val/input", ensure_rgb(ground_truth_display), global_step)
+        writer.add_images("layout_fm/val/input_boxes", ground_truth_overlay, global_step)
         writer.add_images("layout_fm/val/generated", ensure_rgb(generated_display), global_step)
         writer.add_images("layout_fm/val/generated_boxes", generated_overlay, global_step)
         writer.add_images("layout_fm/val/ground_truth_boxes", ground_truth_overlay, global_step)

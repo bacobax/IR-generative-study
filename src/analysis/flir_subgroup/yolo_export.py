@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -23,11 +24,15 @@ class YOLOPartitionExportSummary:
     split_name: str
     image_dir: str
     label_dir: str
+    n_images_requested: int
     n_images: int
     n_label_files: int
+    n_annotations_requested: int
     n_annotations_source: int
     n_annotations_exported: int
     n_empty_images: int
+    n_missing_source_images: int
+    n_annotations_skipped_missing_source: int
 
 
 def _ensure_clean_dir(path: Path, *, overwrite: bool) -> None:
@@ -62,6 +67,20 @@ def _yolo_line_from_row(row, *, class_id_to_yolo: dict[int, int]) -> str:
     return f"{class_idx} {x_center:.8f} {y_center:.8f} {width:.8f} {height:.8f}"
 
 
+def _resolve_source_path(image_row) -> Optional[Path]:
+    """Return the best-effort source path from an image row."""
+
+    for field_name in ("file_path", "image_path", "source_path"):
+        raw_value = getattr(image_row, field_name, None)
+        if raw_value is None or pd.isna(raw_value):
+            continue
+        value = str(raw_value).strip()
+        if not value or value.lower() == "nan":
+            continue
+        return Path(value)
+    return None
+
+
 def export_partition_to_yolo(
     *,
     dataset_name: str,
@@ -71,6 +90,7 @@ def export_partition_to_yolo(
     category_table: pd.DataFrame,
     output_root: Path,
     overwrite: bool = False,
+    skip_missing_source_images: bool = True,
 ) -> YOLOPartitionExportSummary:
     """Export one partition to standard YOLO image/label folders."""
 
@@ -84,19 +104,44 @@ def export_partition_to_yolo(
     _ensure_clean_dir(image_dir, overwrite=overwrite)
     _ensure_clean_dir(label_dir, overwrite=overwrite)
 
+    exportable_rows = []
+    missing_image_ids: list[str] = []
+    for image_row in image_df.itertuples(index=False):
+        image_id = str(image_row.image_id)
+        source_path = _resolve_source_path(image_row)
+        if source_path is None or not source_path.exists():
+            if not skip_missing_source_images:
+                missing_value = source_path if source_path is not None else getattr(image_row, "file_path", None)
+                raise FileNotFoundError(
+                    f"Missing source image for YOLO export: dataset={dataset_name!r}, "
+                    f"split={split_name!r}, image_id={image_id!r}, file_path={missing_value!r}"
+                )
+            missing_image_ids.append(image_id)
+            continue
+        exportable_rows.append((image_row, source_path))
+
+    if missing_image_ids:
+        preview = ", ".join(missing_image_ids[:5])
+        if len(missing_image_ids) > 5:
+            preview = f"{preview}, ..."
+        warnings.warn(
+            f"Skipping {len(missing_image_ids)} images with missing source files for "
+            f"{dataset_name}/{split_name}: {preview}",
+            stacklevel=2,
+        )
+
+    exportable_image_ids = {str(image_row.image_id) for image_row, _ in exportable_rows}
+    exportable_instance_df = instance_df.loc[instance_df["image_id"].astype(str).isin(exportable_image_ids)].copy()
+
     annotations_by_image = {
         str(image_id): group_df
-        for image_id, group_df in instance_df.groupby("image_id", sort=False)
+        for image_id, group_df in exportable_instance_df.groupby("image_id", sort=False)
     }
 
     exported_annotations = 0
     empty_images = 0
-    for image_row in image_df.itertuples(index=False):
+    for image_row, source_path in exportable_rows:
         image_id = str(image_row.image_id)
-        source_path = Path(image_row.file_path)
-        if not source_path.exists():
-            raise FileNotFoundError(f"Missing source image for YOLO export: {source_path}")
-
         stem = Path(str(image_row.file_name)).stem
         image_out_path = image_dir / f"{stem}.png"
         label_out_path = label_dir / f"{stem}.txt"
@@ -118,11 +163,15 @@ def export_partition_to_yolo(
         split_name=split_name,
         image_dir=str(image_dir),
         label_dir=str(label_dir),
-        n_images=int(len(image_df)),
+        n_images_requested=int(len(image_df)),
+        n_images=len(exportable_rows),
         n_label_files=len(label_files),
-        n_annotations_source=int(len(instance_df)),
+        n_annotations_requested=int(len(instance_df)),
+        n_annotations_source=int(len(exportable_instance_df)),
         n_annotations_exported=exported_annotations,
         n_empty_images=empty_images,
+        n_missing_source_images=len(missing_image_ids),
+        n_annotations_skipped_missing_source=int(len(instance_df) - len(exportable_instance_df)),
     )
 
     _validate_partition_export(summary=summary, class_labels=class_labels)
@@ -201,6 +250,7 @@ def export_experiment_a_yolo_datasets(
     test_image_df: pd.DataFrame,
     test_instance_df: pd.DataFrame,
     overwrite: bool = False,
+    skip_missing_source_images: bool = True,
 ) -> dict[str, object]:
     """Export the balanced/unbalanced/full-train/val/test partitions for Experiment A."""
 
@@ -217,6 +267,7 @@ def export_experiment_a_yolo_datasets(
             category_table=category_table,
             output_root=output_root,
             overwrite=overwrite,
+            skip_missing_source_images=skip_missing_source_images,
         ),
         export_partition_to_yolo(
             dataset_name="unbalanced",
@@ -226,6 +277,7 @@ def export_experiment_a_yolo_datasets(
             category_table=category_table,
             output_root=output_root,
             overwrite=overwrite,
+            skip_missing_source_images=skip_missing_source_images,
         ),
     ]
     if full_train_image_df is not None and full_train_instance_df is not None:
@@ -238,6 +290,7 @@ def export_experiment_a_yolo_datasets(
                 category_table=category_table,
                 output_root=output_root,
                 overwrite=overwrite,
+                skip_missing_source_images=skip_missing_source_images,
             )
         )
     summaries.extend(
@@ -250,6 +303,7 @@ def export_experiment_a_yolo_datasets(
                 category_table=category_table,
                 output_root=output_root,
                 overwrite=overwrite,
+                skip_missing_source_images=skip_missing_source_images,
             ),
             export_partition_to_yolo(
                 dataset_name="test",
@@ -259,6 +313,7 @@ def export_experiment_a_yolo_datasets(
                 category_table=category_table,
                 output_root=output_root,
                 overwrite=overwrite,
+                skip_missing_source_images=skip_missing_source_images,
             ),
         ]
     )

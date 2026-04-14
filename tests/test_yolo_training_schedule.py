@@ -97,11 +97,11 @@ def test_validate_config_yaml_keys_rejects_unknown_baseline_entries(tmp_path: Pa
 def test_ordered_experiment_entries_follow_launcher_order() -> None:
     cfg = YOLOExperimentConfig()
     cfg.launcher.ordered_config_paths = [
-        "configs/yolo/exp_a/exp_balanced.yaml",
-        "configs/yolo/exp_a/exp_unbalanced.yaml",
-        "configs/yolo/exp_a/exp_full_train.yaml",
-        "configs/yolo/exp_a/exp_full_train_baseline_a.yaml",
-        "configs/yolo/exp_a/exp_full_train_baseline_b.yaml",
+        "configs/yolo/exp_a/flir/exp_balanced.yaml",
+        "configs/yolo/exp_a/flir/exp_unbalanced.yaml",
+        "configs/yolo/exp_a/flir/exp_full_train.yaml",
+        "configs/yolo/exp_a/flir/exp_full_train_baseline_a.yaml",
+        "configs/yolo/exp_a/flir/exp_full_train_baseline_b.yaml",
     ]
     cfg.launcher.ordered_labels = [
         "balanced",
@@ -112,9 +112,9 @@ def test_ordered_experiment_entries_follow_launcher_order() -> None:
     ]
 
     assert _ordered_experiment_entries(cfg) == [
-        ("balanced", "configs/yolo/exp_a/exp_balanced.yaml"),
-        ("unbalanced", "configs/yolo/exp_a/exp_unbalanced.yaml"),
-        ("full_train", "configs/yolo/exp_a/exp_full_train.yaml"),
-        ("full_train_baseline_a", "configs/yolo/exp_a/exp_full_train_baseline_a.yaml"),
-        ("full_train_baseline_b", "configs/yolo/exp_a/exp_full_train_baseline_b.yaml"),
+        ("balanced", "configs/yolo/exp_a/flir/exp_balanced.yaml"),
+        ("unbalanced", "configs/yolo/exp_a/flir/exp_unbalanced.yaml"),
+        ("full_train", "configs/yolo/exp_a/flir/exp_full_train.yaml"),
+        ("full_train_baseline_a", "configs/yolo/exp_a/flir/exp_full_train_baseline_a.yaml"),
+        ("full_train_baseline_b", "configs/yolo/exp_a/flir/exp_full_train_baseline_b.yaml"),
     ]

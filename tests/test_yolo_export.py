@@ -142,3 +142,71 @@ def test_export_experiment_a_yolo_datasets(tmp_path: Path) -> None:
 
     manifest_path = Path(result["manifest_path"])
     assert manifest_path.exists()
+
+
+def test_export_skips_missing_source_images(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    output_root = tmp_path / "yolo-test-ds"
+    category_table = pd.DataFrame(
+        [
+            {"split": "train", "class_id": 1, "class_label": "car"},
+            {"split": "train", "class_id": 2, "class_label": "person"},
+        ]
+    )
+
+    balanced_images = pd.DataFrame([_image_row("b1", source_root, value=10)])
+    unbalanced_images = pd.DataFrame([_image_row("u1", source_root, value=20)])
+    val_images = pd.DataFrame(
+        [
+            _image_row("v1", source_root, value=30),
+            {
+                **_image_row("v_missing", source_root, value=31),
+                "file_path": None,
+                "image_exists": False,
+            },
+        ]
+    )
+    test_images = pd.DataFrame([_image_row("t1", source_root, value=40)])
+
+    balanced_instances = pd.DataFrame([_instance_row("b1", 1, 1, x=4, y=5, w=8, h=10)])
+    unbalanced_instances = pd.DataFrame([_instance_row("u1", 2, 2, x=10, y=12, w=6, h=7)])
+    val_instances = pd.DataFrame(
+        [
+            _instance_row("v1", 3, 2, x=1, y=2, w=7, h=8),
+            _instance_row("v_missing", 4, 1, x=3, y=4, w=5, h=6),
+        ]
+    )
+    test_instances = pd.DataFrame([_instance_row("t1", 5, 1, x=6, y=6, w=10, h=10)])
+
+    result = export_experiment_a_yolo_datasets(
+        output_root=output_root,
+        category_table=category_table,
+        balanced_image_df=balanced_images,
+        balanced_instance_df=balanced_instances,
+        unbalanced_image_df=unbalanced_images,
+        unbalanced_instance_df=unbalanced_instances,
+        val_image_df=val_images,
+        val_instance_df=val_instances,
+        test_image_df=test_images,
+        test_instance_df=test_instances,
+        overwrite=True,
+    )
+
+    summary_df = result["summary_df"]
+    val_summary = summary_df.loc[summary_df["dataset_name"] == "val"].iloc[0]
+    assert int(val_summary["n_images_requested"]) == 2
+    assert int(val_summary["n_images"]) == 1
+    assert int(val_summary["n_missing_source_images"]) == 1
+    assert int(val_summary["n_annotations_requested"]) == 2
+    assert int(val_summary["n_annotations_source"]) == 1
+    assert int(val_summary["n_annotations_exported"]) == 1
+    assert int(val_summary["n_annotations_skipped_missing_source"]) == 1
+
+    exported_val_image = output_root / "val" / "images" / "val" / "v1.png"
+    skipped_val_image = output_root / "val" / "images" / "val" / "v_missing.png"
+    exported_val_label = output_root / "val" / "labels" / "val" / "v1.txt"
+    skipped_val_label = output_root / "val" / "labels" / "val" / "v_missing.txt"
+    assert exported_val_image.exists()
+    assert exported_val_label.exists()
+    assert not skipped_val_image.exists()
+    assert not skipped_val_label.exists()

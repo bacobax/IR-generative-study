@@ -20,7 +20,7 @@ from src.core.paths import repo_root
 
 
 REPO_ROOT = repo_root()
-DEFAULT_CONFIG = REPO_ROOT / "configs" / "yolo" / "exp_a" / "run_exp_a_all.yaml"
+DEFAULT_CONFIG = REPO_ROOT / "configs" / "yolo" / "exp_a" / "flir" / "run_exp_a_all.yaml"
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,6 +1,6 @@
 data:
-  dataset_yaml: data/derived/yolo-test-ds/unbalanced.yaml
-  test_dataset_yaml: data/derived/yolo-test-ds/test.yaml
+  dataset_yaml: data/derived/yolo-test-ds_v18/balanced.yaml
+  test_dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
   batch_size: 16
   workers: 4
   image_size: 640
@@ -40,4 +40,7 @@ evaluation:
   save_hybrid: false
 
 output:
-  experiment_name: exp_unbalanced
+  experiment_name: exp_balanced
+  runs_root: artifacts/runs/yolo/exp_a/v18
+  checkpoints_root: artifacts/checkpoints/yolo/exp_a/v18
+  analysis_root: artifacts/analysis/yolo/exp_a/v18

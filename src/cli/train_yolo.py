@@ -2,10 +2,10 @@
 
 Usage::
 
-    python -m src.cli.train_yolo --action train --config configs/yolo/exp_a/exp_balanced.yaml
-    python -m src.cli.train_yolo --action eval --config configs/yolo/exp_a/exp_balanced.yaml
-    python -m src.cli.train_yolo --action run_exp_a --config configs/yolo/exp_a/run_exp_a.yaml
-    python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/run_exp_a_all.yaml
+    python -m src.cli.train_yolo --action train --config configs/yolo/exp_a/flir/exp_balanced.yaml
+    python -m src.cli.train_yolo --action eval --config configs/yolo/exp_a/flir/exp_balanced.yaml
+    python -m src.cli.train_yolo --action run_exp_a --config configs/yolo/exp_a/flir/run_exp_a.yaml
+    python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/v18/run_exp_a_all.yaml
 """
 
 from __future__ import annotations

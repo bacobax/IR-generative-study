@@ -228,6 +228,11 @@ def sd_unet_runs_dir() -> Path:
     return sd_checkpoints_root() / "unet_runs"
 
 
+def sd_layout_runs_dir() -> Path:
+    """``artifacts/checkpoints/stable_diffusion/layout_runs/`` — layout stage-2 runs."""
+    return sd_checkpoints_root() / "layout_runs"
+
+
 def count_adapter_checkpoints_root() -> Path:
     """``artifacts/checkpoints/count_adapter/`` — count adapter checkpoints."""
     return checkpoints_root() / "count_adapter"
