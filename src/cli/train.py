@@ -375,6 +375,8 @@ def run_training(cfg: FMTrainConfig) -> None:
                 text_mode=False,
                 curriculum=cfg.curriculum,
                 transform=train_transform,
+                resize_target=cfg.data.image_size,
+                normalization_mode=resolved_data.normalization_mode,
             )
             eval_dataset = AnnotationFMDataset(
                 root_dir=resolved_data.val_dir,
@@ -382,6 +384,8 @@ def run_training(cfg: FMTrainConfig) -> None:
                 text_mode=False,
                 curriculum=None,
                 transform=eval_transform,
+                resize_target=cfg.data.image_size,
+                normalization_mode=resolved_data.normalization_mode,
             )
         else:
             train_dataset = NPYImageDataset(root_dir=resolved_data.train_dir, transform=train_transform)

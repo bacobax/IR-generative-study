@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
@@ -13,6 +14,7 @@ from src.algorithms.training.layout_flow_matching_trainer import LayoutFMTrainer
 from src.cli.train import _FLAT_TO_NESTED, build_parser
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.configs.fm_config import DataConfig, FMTrainConfig, LayoutConditioningConfig, ModelConfig, OutputConfig
+from src.core.normalization import RAW_UINT16_PERCENTILE
 from src.core.data.layout_batching import collate_layout_batch
 from src.core.visualization.layout_debug import draw_mask_overlays, render_mask_composite
 from src.models.stay_layout_conditioned_unet import (
@@ -586,3 +588,29 @@ def test_stay_v2_latent_from_config_supports_pretrained_sd15_vae(monkeypatch) ->
     trainer = LayoutFMTrainer.from_config(cfg)
     assert trainer.vae is not None
     assert trainer.unet.config.sample_size == 4
+
+
+def test_stay_v18_latent_preset_resolves_named_dataset_percentile_path() -> None:
+    from src.cli.train import _resolve_training_data
+
+    preset_path = Path("configs/fm/train/presets/stay_layout_latent_v18_x4_512.yaml")
+    parser = build_parser()
+    args = parser.parse_args(["--config", str(preset_path)])
+    cfg = merge_config_and_cli(
+        FMTrainConfig,
+        str(preset_path),
+        parser,
+        args,
+        flat_to_nested=_FLAT_TO_NESTED,
+    )
+
+    resolved = _resolve_training_data(cfg)
+
+    assert cfg.data.dataset_id == "v18"
+    assert cfg.layout_conditioning.enabled is True
+    assert cfg.layout_conditioning.variant == "stay_v2"
+    assert resolved.normalization_mode == RAW_UINT16_PERCENTILE
+    assert resolved.train_dir.endswith("data/raw/v18/train")
+    assert resolved.val_dir.endswith("data/raw/v18/val")
+    assert resolved.train_annotations_path.endswith("data/raw/v18/train/annotations.json")
+    assert resolved.val_annotations_path.endswith("data/raw/v18/val/annotations.json")

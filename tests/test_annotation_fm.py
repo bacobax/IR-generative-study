@@ -20,6 +20,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 import numpy as np
+import torch
 
 try:
     import pytest
@@ -300,6 +301,43 @@ def test_annotation_dataset_text_mode_multiclass_counts_only_people():
         item = ds[0]
         assert "1 person" in item["text"]
         assert item["condition_id"] == 1
+
+
+def test_annotation_dataset_respects_resize_target_and_normalization_mode():
+    from src.core.data.annotation_dataset import AnnotationFMDataset
+    from src.core.normalization import UINT8_LINEAR
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        img_dir = os.path.join(tmpdir, "images")
+        os.makedirs(img_dir, exist_ok=True)
+        fname = "uint8_like.npy"
+        arr = np.array([[0, 255]], dtype=np.uint8)[None, ...]
+        np.save(os.path.join(img_dir, fname), arr)
+
+        annot_path = os.path.join(tmpdir, "annotations.json")
+        with open(annot_path, "w") as f:
+            json.dump(
+                {
+                    "images": [{"id": 1, "file_name": fname, "width": 2, "height": 1}],
+                    "annotations": [],
+                    "categories": [{"id": 0, "name": "person"}],
+                },
+                f,
+            )
+
+        ds = AnnotationFMDataset(
+            root_dir=img_dir,
+            annotations_path=annot_path,
+            text_mode=False,
+            resize_target=32,
+            normalization_mode=UINT8_LINEAR,
+        )
+
+        item = ds[0]
+        assert isinstance(item, torch.Tensor)
+        assert item.shape == (1, 32, 32)
+        assert torch.isclose(item.min(), torch.tensor(-1.0), atol=1e-5)
+        assert torch.isclose(item.max(), torch.tensor(1.0), atol=1e-5)
 
 
 def test_annotation_dataset_curriculum():

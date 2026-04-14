@@ -35,7 +35,7 @@ from src.core.data.annotations import (
     load_coco_annotations,
     sample_person_crop,
 )
-from src.core.normalization import resize_and_normalize_256
+from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
 
 
 def _resolve_allowed_counts(
@@ -96,11 +96,13 @@ class AnnotationFMDataset(Dataset):
         count_filter: Optional[Any] = None,
         transform: Optional[Callable] = None,
         resize_target: int = 256,
+        normalization_mode: str = RAW_UINT16_PERCENTILE,
     ):
         self.root_dir = root_dir
         self.text_mode = text_mode
         self.transform = transform
-        self.resize_target = resize_target
+        self.resize_target = int(resize_target)
+        self.normalization_mode = str(normalization_mode)
         self._epoch = 0
 
         # Load and index annotations
@@ -271,7 +273,11 @@ class AnnotationFMDataset(Dataset):
         if self.transform is not None:
             x = self.transform(x)
         else:
-            x = resize_and_normalize_256(x)
+            x = resize_and_normalize(
+                x,
+                image_size=self.resize_target,
+                normalization_mode=self.normalization_mode,
+            )
 
         # Produce output
         if not self.text_mode:
