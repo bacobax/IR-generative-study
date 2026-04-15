@@ -1,0 +1,25 @@
+dataset_id: flir_private_proxy_alignment_v18
+input_size: 128
+context_ratio: 1.25
+negative_iou_threshold: 0.01
+negative_max_retries: 64
+context_preview_size: 192
+
+seed: 0
+device: cuda:0
+mixed_precision: auto
+
+batch_size: 128
+epochs: 20
+num_workers: 4
+lr: 0.001
+weight_decay: 0.0001
+scheduler: warmup_cosine
+warmup_ratio: 0.05
+min_lr_ratio: 0.1
+patience: 5
+min_delta: 0.0001
+
+scalar_every_steps: 20
+image_every: 1
+max_logged_images: 8

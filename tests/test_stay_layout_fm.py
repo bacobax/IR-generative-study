@@ -614,3 +614,30 @@ def test_stay_v18_latent_preset_resolves_named_dataset_percentile_path() -> None
     assert resolved.val_dir.endswith("data/raw/v18/val")
     assert resolved.train_annotations_path.endswith("data/raw/v18/train/annotations.json")
     assert resolved.val_annotations_path.endswith("data/raw/v18/val/annotations.json")
+
+
+def test_stay_v18_sd15ft_preset_points_to_saved_vae_artifact() -> None:
+    from src.algorithms.training.flow_matching_trainer import _resolve_unet_sample_size
+    from src.models.vae import resolve_vae_config_from_model_config
+
+    preset_path = Path("configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256.yaml")
+    parser = build_parser()
+    args = parser.parse_args(["--config", str(preset_path)])
+    cfg = merge_config_and_cli(
+        FMTrainConfig,
+        str(preset_path),
+        parser,
+        args,
+        flat_to_nested=_FLAT_TO_NESTED,
+    )
+
+    vae_cfg = resolve_vae_config_from_model_config(cfg.model)
+    sample_size = _resolve_unet_sample_size(cfg, vae_cfg)
+
+    assert cfg.data.dataset_id == "v18"
+    assert cfg.model.vae_config.endswith("artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/config.json")
+    assert cfg.model.vae_weights.endswith("artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_best.pt")
+    assert vae_cfg["_backend"] == "diffusers_autoencoder_kl"
+    assert vae_cfg["pretrained_model_name_or_path"] == "runwayml/stable-diffusion-v1-5"
+    assert int(vae_cfg["latent_channels"]) == 4
+    assert sample_size == 32

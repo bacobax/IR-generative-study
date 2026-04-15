@@ -1,0 +1,96 @@
+# STAY-style latent FM on v18 using the finetuned SD1.5 VAE artifact.
+# This preset rebuilds the diffusers-backed VAE from the saved artifact config
+# and then loads the finetuned checkpoint weights from the same run.
+#
+# Launcher:
+#   python -m src.cli.train --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256.yaml
+
+data:
+  dataset_id: "v18"
+  image_size: 256
+  batch_size: 4
+  num_workers: 4
+
+model:
+  unet_config: "configs/models/fm/stable_unet_x4_256.json"
+  vae_config: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_best.pt"
+  pretrained_unet_path: null
+
+training:
+  epochs: 300
+  lr: 0.0001
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 30
+  eval_every: 3
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+  max_grad_norm: 1.0
+
+optimizer:
+  name: "adamw"
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+scheduler:
+  name: "warmup_cosine"
+  warmup_ratio: 0.05
+  min_lr_ratio: 0.1
+
+ema:
+  enabled: true
+  decay: 0.999
+  start_step: 100
+
+precision:
+  mixed_precision: "auto"
+
+path:
+  mode: "conditional_ot"
+  solver: "hungarian"
+  layout_cost_resolution: 16
+  condition_weight: 1.0
+
+layout_conditioning:
+  enabled: true
+  variant: "stay_v2"
+  class_embed_dim: 48
+  bbox_embed_dim: 48
+  object_embed_dim: 64
+  use_style_latent: true
+  style_latent_dim: 16
+  style_seed: 1234
+  mask_resolution: 16
+  mask_hidden_channels: 32
+  mask_threshold: 0.5
+  edge_dilation: 1
+  injection_mode: "ea_norm"
+  use_masked_context: true
+  mask_overlap_loss_weight: 0.05
+  mask_sharpness_loss_weight: 0.01
+  mask_activation_loss_weight: 0.01
+  log_internal_maps: true
+
+logging:
+  scalar_every_steps: 50
+  max_logged_images: 8
+
+sampling:
+  sample_every: 20
+  sample_steps: 40
+  sample_batch_size: 4
+  sample_shape: null
+  fixed_validation_examples: 4
+  save_debug_images: true
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256"
+  log_dir: "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256"
+  resume: null
+
+trainer_name: "layout_fm"
+device: "cuda:0"

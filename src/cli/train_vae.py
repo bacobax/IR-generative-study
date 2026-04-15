@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn.functional as F
 from torch.optim import AdamW
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -28,12 +28,14 @@ from src.core.normalization import (
     RAW_UINT16_PERCENTILE,
     UINT8_LINEAR,
     norm_to_display as from_norm_to_display,
+    norm_to_uint16,
     resize_and_normalize,
 )
 from src.core.data.datasets import NPYImageDataset
 from src.models.vae import (
-    load_vae_config,
     build_vae_from_config,
+    load_diffusers_vae_config,
+    load_vae_config,
     save_vae_config,
     save_vae_weights,
 )
@@ -78,6 +80,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--t-scale", type=int, default=1000, help="Pipeline t_scale (saved in config).")
     parser.add_argument("--model-dir", type=str, default="artifacts/checkpoints/vae/vae_runs/vae_fm_x8", help="VAE model dir.")
     parser.add_argument("--vae-json", type=str, default="configs/models/fm/vae_config.json", help="VAE config JSON.")
+    parser.add_argument(
+        "--vae-pretrained-model-name-or-path",
+        type=str,
+        default=None,
+        help="Optional diffusers model id/path used to load a pretrained VAE.",
+    )
+    parser.add_argument(
+        "--vae-pretrained-subfolder",
+        type=str,
+        default="vae",
+        help="Subfolder containing the pretrained diffusers VAE.",
+    )
+    parser.add_argument("--vae-revision", type=str, default=None, help="Optional pretrained VAE revision.")
+    parser.add_argument("--vae-variant", type=str, default=None, help="Optional pretrained VAE variant.")
     parser.add_argument("--log-dir", type=str, default="./artifacts/runs/main/autoencoder_kl", help="TensorBoard log dir.")
     parser.add_argument("--patience", type=int, default=4, help="Early-stopping patience.")
     parser.add_argument("--min-delta", type=float, default=0.0, help="Early-stopping min delta.")
@@ -138,6 +154,36 @@ def _resize_and_normalize(
     )
 
 
+def _resize_raw(x: torch.Tensor, size: int) -> torch.Tensor:
+    return F.interpolate(
+        x.unsqueeze(0),
+        size=(size, size),
+        mode="bilinear",
+        align_corners=False,
+    ).squeeze(0)
+
+
+class _VAEReconstructionDataset(Dataset):
+    """Return both normalized inputs and raw resized targets for VAE training."""
+
+    def __init__(self, root_dir: str, image_size: int, normalization_mode: str):
+        self.base_dataset = NPYImageDataset(root_dir=root_dir, transform=None)
+        self.image_size = int(image_size)
+        self.normalization_mode = normalization_mode
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        x = self.base_dataset[idx]
+        raw_resized = _resize_raw(x, self.image_size)
+        normalized = _resize_and_normalize(x, self.image_size, self.normalization_mode)
+        return {
+            "normalized": normalized,
+            "raw_resized": raw_resized,
+        }
+
+
 def _build_dataloader(
     root_dir: str,
     image_size: int,
@@ -147,9 +193,10 @@ def _build_dataloader(
     pin_memory: bool,
     shuffle: bool,
 ) -> DataLoader:
-    dataset = NPYImageDataset(
+    dataset = _VAEReconstructionDataset(
         root_dir=root_dir,
-        transform=lambda x: _resize_and_normalize(x, image_size, normalization_mode),
+        image_size=image_size,
+        normalization_mode=normalization_mode,
     )
     return DataLoader(
         dataset,
@@ -158,6 +205,17 @@ def _build_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
+
+
+def _resolve_vae_config(args: argparse.Namespace) -> dict[str, Any]:
+    if args.vae_pretrained_model_name_or_path:
+        return load_diffusers_vae_config(
+            args.vae_pretrained_model_name_or_path,
+            subfolder=args.vae_pretrained_subfolder,
+            revision=args.vae_revision,
+            variant=args.vae_variant,
+        )
+    return load_vae_config(path=args.vae_json)
 
 
 def _stretch_for_vis(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -191,12 +249,24 @@ def _kl_weight_at_step(
     return float(start_weight) + alpha * (float(end_weight) - float(start_weight))
 
 
-def _compute_psnr(x: torch.Tensor, recon: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+def _compute_psnr(
+    x: torch.Tensor,
+    recon: torch.Tensor,
+    *,
+    data_range: float = 2.0,
+    eps: float = 1e-8,
+) -> torch.Tensor:
     mse = torch.mean((x.float() - recon.float()).pow(2), dim=(1, 2, 3)).clamp(min=eps)
-    return 10.0 * torch.log10(4.0 / mse)
+    return 10.0 * torch.log10((float(data_range) ** 2) / mse)
 
 
-def _compute_ssim(x: torch.Tensor, recon: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+def _compute_ssim(
+    x: torch.Tensor,
+    recon: torch.Tensor,
+    *,
+    data_range: float = 2.0,
+    eps: float = 1e-6,
+) -> torch.Tensor:
     """Cheap global SSIM for grayscale monitoring."""
     x = x.float()
     recon = recon.float()
@@ -205,12 +275,53 @@ def _compute_ssim(x: torch.Tensor, recon: torch.Tensor, eps: float = 1e-6) -> to
     sigma_x = ((x - mu_x) ** 2).mean(dim=(2, 3), keepdim=True)
     sigma_y = ((recon - mu_y) ** 2).mean(dim=(2, 3), keepdim=True)
     sigma_xy = ((x - mu_x) * (recon - mu_y)).mean(dim=(2, 3), keepdim=True)
-    c1 = 0.01 ** 2
-    c2 = 0.03 ** 2
+    c1 = (0.01 * float(data_range)) ** 2
+    c2 = (0.03 * float(data_range)) ** 2
     ssim = ((2 * mu_x * mu_y + c1) * (2 * sigma_xy + c2)) / (
         (mu_x.pow(2) + mu_y.pow(2) + c1) * (sigma_x + sigma_y + c2) + eps
     )
     return ssim.mean(dim=(1, 2, 3))
+
+
+def _unpack_vae_batch(
+    batch: Any,
+    device: torch.device | str,
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    if isinstance(batch, dict):
+        normalized = batch.get("normalized")
+        raw_resized = batch.get("raw_resized")
+        if normalized is None:
+            raise KeyError("Expected batch['normalized'] in VAE batch mapping.")
+        return normalized.to(device), None if raw_resized is None else raw_resized.to(device)
+    return batch.to(device), None
+
+
+def _raw_metric_data_range(normalization_mode: str) -> Optional[float]:
+    if normalization_mode != RAW_UINT16_PERCENTILE:
+        return None
+    bounds = torch.tensor([-1.0, 1.0], dtype=torch.float32)
+    raw_bounds = norm_to_uint16(bounds)
+    return float((raw_bounds[1] - raw_bounds[0]).item())
+
+
+def _compute_raw_reconstruction_metrics(
+    raw_target: Optional[torch.Tensor],
+    recon: torch.Tensor,
+    *,
+    normalization_mode: str,
+) -> Optional[dict[str, torch.Tensor]]:
+    raw_data_range = _raw_metric_data_range(normalization_mode)
+    if raw_target is None or raw_data_range is None:
+        return None
+
+    recon_raw = norm_to_uint16(recon)
+    return {
+        "recon_raw": recon_raw,
+        "l1": F.l1_loss(recon_raw, raw_target),
+        "mse": F.mse_loss(recon_raw, raw_target),
+        "psnr": _compute_psnr(raw_target, recon_raw, data_range=raw_data_range),
+        "ssim": _compute_ssim(raw_target, recon_raw, data_range=raw_data_range),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -245,6 +356,7 @@ def train_vae(
     ema_start_step: int = 100,
     resume: Optional[str] = None,
     save_every_n_epochs: int = 10,
+    normalization_mode: str = RAW_UINT16_PERCENTILE,
 ):
     """Standalone VAE training loop (no old pipeline dependency)."""
     if eval_dataloader is None:
@@ -336,10 +448,12 @@ def train_vae(
         vae.train()
         train_total = train_l1 = train_mse = train_kl = 0.0
         train_psnr = train_ssim = train_grad_norm = 0.0
+        train_raw_l1 = train_raw_mse = train_raw_psnr = train_raw_ssim = 0.0
         n_train = 0
+        n_train_raw = 0
 
-        for x in tqdm(dataloader, desc=f"VAE Train {epoch + 1}/{epochs}"):
-            x = x.to(device)
+        for batch in tqdm(dataloader, desc=f"VAE Train {epoch + 1}/{epochs}"):
+            x, raw_resized = _unpack_vae_batch(batch, device)
             beta = _kl_weight_at_step(
                 global_step,
                 total_steps=total_steps,
@@ -378,8 +492,13 @@ def train_vae(
                 ema.update(vae)
 
             with torch.no_grad():
-                psnr = _compute_psnr(x, recon)
-                ssim = _compute_ssim(x, recon)
+                psnr = _compute_psnr(x, recon, data_range=2.0)
+                ssim = _compute_ssim(x, recon, data_range=2.0)
+                raw_metrics = _compute_raw_reconstruction_metrics(
+                    raw_resized,
+                    recon,
+                    normalization_mode=normalization_mode,
+                )
                 # Log one un-stretched sanity image early so TensorBoard shows the true display range.
                 if global_step == 2:
                     sanity_vis = from_norm_to_display(x[:4]).clamp(0, 1)
@@ -394,6 +513,12 @@ def train_vae(
             train_ssim += float(ssim.mean().item()) * bs
             train_grad_norm += float(batch_grad_norm) * bs
             n_train += bs
+            if raw_metrics is not None:
+                train_raw_l1 += raw_metrics["l1"].item() * bs
+                train_raw_mse += raw_metrics["mse"].item() * bs
+                train_raw_psnr += float(raw_metrics["psnr"].mean().item()) * bs
+                train_raw_ssim += float(raw_metrics["ssim"].mean().item()) * bs
+                n_train_raw += bs
             writer.add_scalar("train/total_step", float(loss.item()), global_step)
             writer.add_scalar("train/kl_weight", float(beta), global_step)
             writer.add_scalar("train/lr", float(optimizer.param_groups[0]["lr"]), global_step)
@@ -406,17 +531,24 @@ def train_vae(
         train_psnr /= max(1, n_train)
         train_ssim /= max(1, n_train)
         train_grad_norm /= max(1, n_train)
+        if n_train_raw > 0:
+            train_raw_l1 /= n_train_raw
+            train_raw_mse /= n_train_raw
+            train_raw_psnr /= n_train_raw
+            train_raw_ssim /= n_train_raw
 
         vae.eval()
         eval_total = eval_l1 = eval_mse = eval_kl = 0.0
         eval_psnr = eval_ssim = eval_mu_abs = eval_sigma_mean = 0.0
+        eval_raw_l1 = eval_raw_mse = eval_raw_psnr = eval_raw_ssim = 0.0
         n_eval = 0
+        n_eval_raw = 0
 
         eval_context = ema.average_parameters(vae) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
         with eval_context:
             with torch.no_grad():
-                for x in tqdm(eval_dataloader, desc=f"VAE Eval  {epoch + 1}/{epochs}"):
-                    x = x.to(device)
+                for batch in tqdm(eval_dataloader, desc=f"VAE Eval  {epoch + 1}/{epochs}"):
+                    x, raw_resized = _unpack_vae_batch(batch, device)
 
                     with autocast_context(precision):
                         recon, mu, sigma = vae(x)
@@ -425,8 +557,13 @@ def train_vae(
                         kl_loss = _compute_kl_loss(mu, sigma)
                         loss = recon_l1 + float(recon_mse_weight) * recon_mse + float(kl_end_weight) * kl_loss
 
-                    psnr = _compute_psnr(x, recon)
-                    ssim = _compute_ssim(x, recon)
+                    psnr = _compute_psnr(x, recon, data_range=2.0)
+                    ssim = _compute_ssim(x, recon, data_range=2.0)
+                    raw_metrics = _compute_raw_reconstruction_metrics(
+                        raw_resized,
+                        recon,
+                        normalization_mode=normalization_mode,
+                    )
 
                     bs = x.size(0)
                     eval_total += loss.item() * bs
@@ -438,6 +575,12 @@ def train_vae(
                     eval_mu_abs += float(mu.detach().abs().mean().item()) * bs
                     eval_sigma_mean += float(sigma.detach().mean().item()) * bs
                     n_eval += bs
+                    if raw_metrics is not None:
+                        eval_raw_l1 += raw_metrics["l1"].item() * bs
+                        eval_raw_mse += raw_metrics["mse"].item() * bs
+                        eval_raw_psnr += float(raw_metrics["psnr"].mean().item()) * bs
+                        eval_raw_ssim += float(raw_metrics["ssim"].mean().item()) * bs
+                        n_eval_raw += bs
 
         eval_total /= max(1, n_eval)
         eval_l1 /= max(1, n_eval)
@@ -447,12 +590,23 @@ def train_vae(
         eval_ssim /= max(1, n_eval)
         eval_mu_abs /= max(1, n_eval)
         eval_sigma_mean /= max(1, n_eval)
+        if n_eval_raw > 0:
+            eval_raw_l1 /= n_eval_raw
+            eval_raw_mse /= n_eval_raw
+            eval_raw_psnr /= n_eval_raw
+            eval_raw_ssim /= n_eval_raw
 
-        print(
+        summary = (
             f"[Epoch {epoch + 1}/{epochs}] "
             f"train: total={train_total:.6f} l1={train_l1:.6f} mse={train_mse:.6f} kl={train_kl:.6f} | "
             f"eval: total={eval_total:.6f} l1={eval_l1:.6f} mse={eval_mse:.6f} kl={eval_kl:.6f}"
         )
+        if n_train_raw > 0 or n_eval_raw > 0:
+            summary += (
+                f" | raw train: l1={train_raw_l1:.6f} mse={train_raw_mse:.6f}"
+                f" | raw eval: l1={eval_raw_l1:.6f} mse={eval_raw_mse:.6f}"
+            )
+        print(summary)
 
         writer.add_scalar("train/total", train_total, epoch)
         writer.add_scalar("train/recon_l1", train_l1, epoch)
@@ -469,6 +623,16 @@ def train_vae(
         writer.add_scalar("eval/ssim", eval_ssim, epoch)
         writer.add_scalar("eval/mu_abs_mean", eval_mu_abs, epoch)
         writer.add_scalar("eval/sigma_mean", eval_sigma_mean, epoch)
+        if n_train_raw > 0:
+            writer.add_scalar("train/raw_recon_l1", train_raw_l1, epoch)
+            writer.add_scalar("train/raw_recon_mse", train_raw_mse, epoch)
+            writer.add_scalar("train/raw_psnr", train_raw_psnr, epoch)
+            writer.add_scalar("train/raw_ssim", train_raw_ssim, epoch)
+        if n_eval_raw > 0:
+            writer.add_scalar("eval/raw_recon_l1", eval_raw_l1, epoch)
+            writer.add_scalar("eval/raw_recon_mse", eval_raw_mse, epoch)
+            writer.add_scalar("eval/raw_psnr", eval_raw_psnr, epoch)
+            writer.add_scalar("eval/raw_ssim", eval_raw_ssim, epoch)
 
         if save_every_n_epochs and (epoch + 1) % int(save_every_n_epochs) == 0:
             save_vae_weights(vae, os.path.join(vae_dir, f"vae_epoch_{epoch + 1}.pt"))
@@ -476,14 +640,14 @@ def train_vae(
         image_context = ema.average_parameters(vae) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
         with image_context:
             with torch.no_grad():
-                x_tr = next(iter(dataloader)).to(device)
+                x_tr, _ = _unpack_vae_batch(next(iter(dataloader)), device)
                 recon_tr, _, _ = vae(x_tr)
                 x_tr_vis = _stretch_for_vis(x_tr[:4])
                 recon_tr_vis = _stretch_for_vis(recon_tr[:4])
                 writer.add_images("train/input", x_tr_vis, epoch)
                 writer.add_images("train/reconstruction", recon_tr_vis, epoch)
 
-                x_ev = next(iter(eval_dataloader)).to(device)
+                x_ev, _ = _unpack_vae_batch(next(iter(eval_dataloader)), device)
                 recon_ev, _, _ = vae(x_ev)
                 x_ev_vis = _stretch_for_vis(x_ev[:4])
                 recon_ev_vis = _stretch_for_vis(recon_ev[:4])
@@ -556,7 +720,7 @@ def main() -> None:
     print(f"Using device: {device}, GPU info:\n{smi_out}")
 
     # Build VAE from config JSON using src/models/vae.py
-    vae_config = load_vae_config(path=args.vae_json)
+    vae_config = _resolve_vae_config(args)
     vae = build_vae_from_config(vae_config, device=device)
 
     # Save config to model_dir/VAE/
@@ -592,6 +756,7 @@ def main() -> None:
         ema_start_step=args.ema_start_step,
         resume=args.resume,
         save_every_n_epochs=args.save_every_n_epochs,
+        normalization_mode=args.normalization_mode,
     )
 
 

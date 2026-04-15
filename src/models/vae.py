@@ -65,6 +65,14 @@ class DiffusersAutoencoderAdapter(nn.Module):
         scale = self.scaling_factor
         return self.autoencoder.decode(z / scale).sample
 
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return reconstructions and posterior stats like the repo VAE API."""
+        z_mu, z_sigma = self.encode(x)
+        z = self.sampling(z_mu, z_sigma)
+        recon = self.decode(z)
+        recon = _match_channel_count(recon, int(x.shape[1]))
+        return recon, z_mu, z_sigma
+
     def state_dict(self, *args, **kwargs):
         return self.autoencoder.state_dict(*args, **kwargs)
 
