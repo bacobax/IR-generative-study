@@ -10,6 +10,8 @@ from src.core.data.datasets import (
 )
 from src.core.data.foreground_background_dataset import (
     ForegroundBackgroundCropDataset,
+    MultiClassCropDataset,
+    build_balanced_sample_weights,
     collate_foreground_background_batch,
 )
 from src.core.data.layout_batching import collate_layout_batch
@@ -19,9 +21,11 @@ __all__ = [
     "AnnotationLayoutDataset",
     "BBoxConditioningDataset",
     "ForegroundBackgroundCropDataset",
+    "MultiClassCropDataset",
     "NPYImageDataset",
     "NPYStemDataset",
     "TextImageDataset",
+    "build_balanced_sample_weights",
     "collate_foreground_background_batch",
     "collate_layout_batch",
 ]

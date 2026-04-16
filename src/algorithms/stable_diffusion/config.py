@@ -135,10 +135,10 @@ class TrainingConfig:
 
     def resolved_prompt_text(self) -> Optional[str]:
         """Return the effective constant prompt, if any."""
-        if self.prompt_text:
-            return self.prompt_text
         if self.generic_prompt:
             return LEGACY_GENERIC_PROMPT
+        if self.prompt_text:
+            return self.prompt_text
         return None
 
     def validate(self):
@@ -166,6 +166,8 @@ class TrainingConfig:
                 raise ValueError("LoRA baseline requires freeze_vae=True.")
             if not self.freeze_text_encoder:
                 raise ValueError("LoRA baseline requires freeze_text_encoder=True.")
+            if self.rank <= 0:
+                raise ValueError("--rank must be positive for LoRA baseline.")
             if not self.lora_target_modules:
                 raise ValueError("LoRA baseline requires at least one lora_target_modules entry.")
         else:

@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import Dataset
 
 from src.core.data.annotations import (
+    build_category_id_to_name,
     clip_box_to_image,
     coco_bbox_to_xyxy,
     index_annotations,
@@ -44,6 +45,10 @@ class CropSampleMetadata:
     crop_area_ratio: float
     image_width: int
     image_height: int
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    is_background: bool = False
+    model_label_index: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to a JSON-friendly dict."""
@@ -61,6 +66,10 @@ class CropSampleMetadata:
             "crop_area_ratio": float(self.crop_area_ratio),
             "image_width": int(self.image_width),
             "image_height": int(self.image_height),
+            "category_id": None if self.category_id is None else int(self.category_id),
+            "category_name": self.category_name,
+            "is_background": bool(self.is_background),
+            "model_label_index": None if self.model_label_index is None else int(self.model_label_index),
         }
 
 
@@ -174,6 +183,8 @@ class ForegroundBackgroundCropDataset(Dataset):
             raise FileNotFoundError(f"Missing split directory: {self.split_dir}")
 
         coco = load_coco_annotations(self.annotations_path)
+        self.category_id_to_name = build_category_id_to_name(coco)
+        self.category_ids = sorted(self.category_id_to_name)
         self.images_by_id, self.anns_by_image_id, _ = index_annotations(coco)
         self.image_ids = list(self.images_by_id.keys())
         self._boxes_xyxy_by_image_id: Dict[Any, np.ndarray] = {}
@@ -223,6 +234,10 @@ class ForegroundBackgroundCropDataset(Dataset):
                         crop_area_ratio=_box_area(crop_box) / float(width * height),
                         image_width=width,
                         image_height=height,
+                        category_id=None,
+                        category_name=None,
+                        is_background=False,
+                        model_label_index=1,
                     )
                 )
 
@@ -293,6 +308,10 @@ class ForegroundBackgroundCropDataset(Dataset):
                 crop_area_ratio=crop_area_ratio,
                 image_width=width,
                 image_height=height,
+                category_id=None,
+                category_name="background",
+                is_background=True,
+                model_label_index=0,
             )
         return None
 
@@ -338,6 +357,7 @@ class ForegroundBackgroundCropDataset(Dataset):
             "num_positive": len(self._positive_entries),
             "num_negative": len(self._negative_entries),
             "num_total": len(self.samples),
+            "category_id_to_name": {int(k): str(v) for k, v in self.category_id_to_name.items()},
         }
 
     def render_context_previews(
@@ -396,3 +416,256 @@ def collate_foreground_background_batch(batch: Iterable[Dict[str, Any]]) -> Dict
         "label": torch.stack([item["label"] for item in items], dim=0),
         "metadata": [item["metadata"] for item in items],
     }
+
+
+class MultiClassCropDataset(Dataset):
+    """Multiclass crop dataset with all foreground classes plus background."""
+
+    def __init__(
+        self,
+        *,
+        split: str,
+        dataset_id: str = "flir_private_proxy_alignment_v18",
+        dataset_root: str | Path | None = None,
+        normalization_mode: str | None = None,
+        input_size: int = 128,
+        context_ratio: float = 1.25,
+        negative_iou_threshold: float = 0.01,
+        negative_max_retries: int = 64,
+        seed: int = 0,
+        max_samples: int = 0,
+        context_preview_size: int = 192,
+    ) -> None:
+        self.split = str(split)
+        self.input_size = int(input_size)
+        self.context_ratio = float(context_ratio)
+        self.negative_iou_threshold = float(negative_iou_threshold)
+        self.negative_max_retries = int(negative_max_retries)
+        self.context_preview_size = int(context_preview_size)
+
+        target = resolve_dataset_target(dataset_id)
+        self.dataset_root = Path(dataset_root) if dataset_root is not None else target.root
+        self.split_dir = self.dataset_root / self.split
+        self.annotations_path = self.split_dir / "annotations.json"
+        self.normalization_mode = str(normalization_mode or target.normalization_mode)
+
+        if not self.annotations_path.is_file():
+            raise FileNotFoundError(f"Missing annotations file: {self.annotations_path}")
+        if not self.split_dir.is_dir():
+            raise FileNotFoundError(f"Missing split directory: {self.split_dir}")
+
+        coco = load_coco_annotations(self.annotations_path)
+        self.category_id_to_name = build_category_id_to_name(coco)
+        self.category_ids = sorted(self.category_id_to_name)
+        self.category_id_to_model_index = {
+            int(category_id): idx for idx, category_id in enumerate(self.category_ids)
+        }
+        self.model_index_to_category_id = {
+            idx: int(category_id) for category_id, idx in self.category_id_to_model_index.items()
+        }
+        self.background_class_index = len(self.category_ids)
+        self.num_classes = self.background_class_index + 1
+
+        self.images_by_id, self.anns_by_image_id, _ = index_annotations(coco)
+        self.image_ids = list(self.images_by_id.keys())
+        self._boxes_xyxy_by_image_id: Dict[Any, np.ndarray] = {}
+        self._positive_entries: List[CropSampleMetadata] = []
+        self._negative_entries: List[CropSampleMetadata] = []
+
+        split_seed = int(seed) + _SPLIT_SEED_OFFSETS.get(self.split, 0)
+        self._rng = random.Random(split_seed)
+
+        for image_id, image_info in self.images_by_id.items():
+            anns = self.anns_by_image_id.get(image_id, [])
+            boxes_xyxy = np.asarray(
+                [coco_bbox_to_xyxy(ann["bbox"]) for ann in anns],
+                dtype=np.float32,
+            )
+            if boxes_xyxy.size == 0:
+                boxes_xyxy = boxes_xyxy.reshape(0, 4)
+            self._boxes_xyxy_by_image_id[image_id] = boxes_xyxy
+
+            width = int(image_info["width"])
+            height = int(image_info["height"])
+            for ann in anns:
+                category_id = int(ann["category_id"])
+                category_name = str(self.category_id_to_name.get(category_id, category_id))
+                source_box = coco_bbox_to_xyxy(ann["bbox"])
+                crop_box = _expand_box_with_context(
+                    source_box,
+                    image_width=width,
+                    image_height=height,
+                    context_ratio=self.context_ratio,
+                )
+                self._positive_entries.append(
+                    CropSampleMetadata(
+                        split=self.split,
+                        file_name=str(image_info["file_name"]),
+                        image_id=image_id,
+                        label=category_id,
+                        sample_kind="positive",
+                        crop_box_xyxy=crop_box,
+                        source_bbox_xyxy=tuple(float(v) for v in source_box),
+                        source_area_ratio=_box_area(source_box) / float(width * height),
+                        crop_area_ratio=_box_area(crop_box) / float(width * height),
+                        image_width=width,
+                        image_height=height,
+                        category_id=category_id,
+                        category_name=category_name,
+                        is_background=False,
+                        model_label_index=self.category_id_to_model_index[category_id],
+                    )
+                )
+
+        if max_samples and max_samples > 0:
+            self._positive_entries = self._positive_entries[: int(max_samples)]
+
+        self._negative_entries = self._build_negative_entries(self._positive_entries)
+        self.samples: List[CropSampleMetadata] = self._positive_entries + self._negative_entries
+
+    def _build_negative_entries(
+        self,
+        positive_entries: Sequence[CropSampleMetadata],
+    ) -> List[CropSampleMetadata]:
+        negatives: List[CropSampleMetadata] = []
+        if not positive_entries:
+            return negatives
+
+        for positive in positive_entries:
+            pos_crop = positive.crop_box_xyxy
+            crop_width = float(pos_crop[2] - pos_crop[0])
+            crop_height = float(pos_crop[3] - pos_crop[1])
+            negative_metadata = self._sample_negative_metadata(
+                crop_width=crop_width,
+                crop_height=crop_height,
+                primary_image_id=positive.image_id,
+                image_ids=self.image_ids,
+            )
+            if negative_metadata is not None:
+                negatives.append(negative_metadata)
+        return negatives
+
+    def _sample_negative_metadata(
+        self,
+        *,
+        crop_width: float,
+        crop_height: float,
+        primary_image_id: Any,
+        image_ids: Sequence[Any],
+    ) -> Optional[CropSampleMetadata]:
+        for attempt_idx in range(max(1, self.negative_max_retries)):
+            image_id = primary_image_id if attempt_idx == 0 else self._rng.choice(image_ids)
+            image_info = self.images_by_id[image_id]
+            width = int(image_info["width"])
+            height = int(image_info["height"])
+            candidate = _build_negative_candidate_box(
+                image_width=width,
+                image_height=height,
+                crop_width=crop_width,
+                crop_height=crop_height,
+                rng=self._rng,
+            )
+            if candidate is None:
+                continue
+            max_iou = _max_iou_xyxy(candidate, self._boxes_xyxy_by_image_id[image_id])
+            if max_iou > self.negative_iou_threshold:
+                continue
+            crop_area_ratio = _box_area(candidate) / float(width * height)
+            return CropSampleMetadata(
+                split=self.split,
+                file_name=str(image_info["file_name"]),
+                image_id=image_id,
+                label=self.background_class_index,
+                sample_kind="negative",
+                crop_box_xyxy=candidate,
+                source_bbox_xyxy=None,
+                source_area_ratio=crop_area_ratio,
+                crop_area_ratio=crop_area_ratio,
+                image_width=width,
+                image_height=height,
+                category_id=None,
+                category_name="background",
+                is_background=True,
+                model_label_index=self.background_class_index,
+            )
+        return None
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        metadata = self.samples[index]
+        image_path = self.split_dir / metadata.file_name
+        image = np.load(image_path)
+        if image.ndim == 3 and image.shape[-1] == 1:
+            image = image[..., 0]
+        if image.ndim != 2:
+            raise ValueError(f"Expected 2D grayscale image at {image_path}, got shape={image.shape}")
+        x1, y1, x2, y2 = [int(round(v)) for v in metadata.crop_box_xyxy]
+        crop = image[y1:y2, x1:x2]
+        if crop.size == 0:
+            raise ValueError(f"Empty crop for {image_path} at {metadata.crop_box_xyxy}")
+        crop_tensor = torch.from_numpy(crop[None, ...])
+        crop_tensor = resize_and_normalize(
+            crop_tensor,
+            image_size=self.input_size,
+            normalization_mode=self.normalization_mode,
+        )
+        return {
+            "pixel_values": crop_tensor,
+            "label": torch.tensor(int(metadata.model_label_index), dtype=torch.long),
+            "metadata": metadata.to_dict(),
+        }
+
+    def stats(self) -> Dict[str, Any]:
+        return {
+            "split": self.split,
+            "dataset_root": str(self.dataset_root),
+            "split_dir": str(self.split_dir),
+            "annotations_path": str(self.annotations_path),
+            "normalization_mode": self.normalization_mode,
+            "input_size": self.input_size,
+            "context_ratio": self.context_ratio,
+            "negative_iou_threshold": self.negative_iou_threshold,
+            "negative_max_retries": self.negative_max_retries,
+            "num_positive": len(self._positive_entries),
+            "num_negative": len(self._negative_entries),
+            "num_total": len(self.samples),
+            "num_foreground_classes": len(self.category_ids),
+            "background_class_index": int(self.background_class_index),
+            "category_id_to_name": {int(k): str(v) for k, v in self.category_id_to_name.items()},
+            "category_id_to_model_index": {int(k): int(v) for k, v in self.category_id_to_model_index.items()},
+            "model_index_to_category_id": {int(k): int(v) for k, v in self.model_index_to_category_id.items()},
+        }
+
+    def render_context_previews(
+        self,
+        metadata_batch: Sequence[Dict[str, Any]],
+    ) -> torch.Tensor:
+        helper = ForegroundBackgroundCropDataset(
+            split=self.split,
+            dataset_root=self.dataset_root,
+            normalization_mode=self.normalization_mode,
+            input_size=self.input_size,
+            context_ratio=self.context_ratio,
+            negative_iou_threshold=self.negative_iou_threshold,
+            negative_max_retries=self.negative_max_retries,
+            seed=0,
+            max_samples=0,
+            context_preview_size=self.context_preview_size,
+        )
+        return helper.render_context_previews(metadata_batch)
+
+
+def build_balanced_sample_weights(
+    dataset: MultiClassCropDataset,
+) -> torch.Tensor:
+    counts: Dict[int, int] = {}
+    for sample in dataset.samples:
+        key = int(sample.model_label_index)
+        counts[key] = counts.get(key, 0) + 1
+    weights = []
+    for sample in dataset.samples:
+        key = int(sample.model_label_index)
+        weights.append(1.0 / max(1, counts[key]))
+    return torch.tensor(weights, dtype=torch.float32)

@@ -11,7 +11,7 @@ import pytest
 import torch
 from diffusers import UNet2DConditionModel
 
-from src.algorithms.stable_diffusion.config import parse_args
+from src.algorithms.stable_diffusion.config import LEGACY_GENERIC_PROMPT, parse_args
 from src.algorithms.stable_diffusion.data import (
     TextImageDataset,
     ir_npy_to_normalized_rgb,
@@ -73,6 +73,16 @@ class _FakeResumeAccelerator:
 
     def load_state(self, path):
         self.loaded_path = path
+
+
+class _FakeCheckpointAccelerator:
+    def __init__(self):
+        self.is_main_process = True
+        self.saved_paths = []
+
+    def save_state(self, path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        self.saved_paths.append(path)
 
 
 class _FakePipeline:
@@ -168,6 +178,23 @@ def test_sd_config_yaml_parses_training_and_validation_steps(tmp_path: Path):
 
     assert cfg.max_train_steps == 1234
     assert cfg.validation_num_inference_steps == 17
+
+
+def test_sd_config_generic_prompt_overrides_default_prompt_text():
+    cfg = parse_args(
+        [
+            "--baseline_mode",
+            "sd_ir_lora",
+            "--dataset_id",
+            "v18",
+            "--generic_prompt",
+            "--output_dir",
+            "/tmp/sd_ir_generic_prompt",
+        ]
+    )
+
+    assert cfg.prompt_text == "thermal image"
+    assert cfg.resolved_prompt_text() == LEGACY_GENERIC_PROMPT
 
 
 def test_sd_config_yaml_rejects_unknown_keys(tmp_path: Path):
@@ -268,6 +295,74 @@ def test_lora_mode_trains_only_adapter_params():
     assert count_trainable(models.text_encoder) == 0
     assert count_trainable(models.vae) == 0
     assert count_trainable(models.unet) > 0
+
+
+def test_flir_lora_r64_preset_reaches_lora_and_checkpoint_consumers(tmp_path: Path, monkeypatch):
+    cfg = parse_args(["--config", "configs/sd/train/presets/flir_lora_stage1_r64.yaml"])
+    cfg.output_dir = str(tmp_path / "flir_lora_r64")
+
+    models = _build_model_components()
+    configure_trainable_components(models=models, config=cfg)
+
+    peft_cfg = models.unet.peft_config["default"]
+    assert peft_cfg.r == 64
+    assert float(peft_cfg.lora_alpha) == 64.0
+    assert sorted(peft_cfg.target_modules) == sorted(cfg.lora_target_modules)
+
+    monkeypatch.setattr(sd_training, "logger", logging.getLogger("test_sd_checkpointing"))
+    accelerator = _FakeCheckpointAccelerator()
+    trainer = Trainer(
+        config=cfg,
+        models=models,
+        train_dataloader=[],
+        normalization_mode="uint8_linear",
+        adaptation_info={},
+        accelerator=accelerator,
+    )
+
+    trainer.global_step = cfg.checkpointing_steps - 1
+    trainer._maybe_save_checkpoint()
+    assert accelerator.saved_paths == []
+
+    trainer.global_step = cfg.checkpointing_steps
+    trainer._maybe_save_checkpoint()
+
+    expected_dir = Path(cfg.output_dir) / f"checkpoint-{cfg.checkpointing_steps}"
+    assert accelerator.saved_paths == [str(expected_dir)]
+
+    metadata = json.loads((expected_dir / "training_state.json").read_text(encoding="utf-8"))
+    assert metadata["global_step"] == cfg.checkpointing_steps
+    assert metadata["lr_warmup_steps"] == cfg.lr_warmup_steps
+    assert metadata["lr_scheduler"] == cfg.lr_scheduler
+
+
+def test_yaml_lora_overrides_reach_target_modules_and_alpha_scale(tmp_path: Path):
+    config_path = tmp_path / "sd_lora.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "dataset_id: v18",
+                f"output_dir: {tmp_path / 'sd_run'}",
+                "rank: 16",
+                "lora_alpha_scale: 0.5",
+                "lora_target_modules:",
+                "  - to_q",
+                "  - to_v",
+                "checkpointing_steps: 123",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = parse_args(["--config", str(config_path)])
+    models = _build_model_components()
+    configure_trainable_components(models=models, config=cfg)
+
+    peft_cfg = models.unet.peft_config["default"]
+    assert peft_cfg.r == 16
+    assert float(peft_cfg.lora_alpha) == 8.0
+    assert sorted(peft_cfg.target_modules) == ["to_q", "to_v"]
+    assert cfg.checkpointing_steps == 123
 
 
 def test_unet_full_mode_unfreezes_all_unet_params():

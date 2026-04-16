@@ -1,0 +1,8 @@
+generated_dataset_dir: artifacts/generated/rare_layout_20260415_161641
+filter_run_dir: artifacts/checkpoints/foreground_background_filter/runs/fgbg_20260415_134835
+output_dir: artifacts/generated/rare_layout_20260415_161641/filter_binary_fgbg_20260415_134835_cfg_min_valid_0p50
+max_discarded_valid_threshold: 0.7
+score_alpha: 1.0
+score_beta: 1.0
+min_valid_object_fraction_sweep: ""
+batch_size: 64

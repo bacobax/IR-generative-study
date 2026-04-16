@@ -1,0 +1,12 @@
+pipeline_dir: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512
+preset_path: configs/fm/train/presets/stay_layout_latent_flir_sd15_512.yaml
+checkpoint_name: unet_last_ckpt.pt
+split: train
+n_samples: 7000
+min_objects: 1
+selection_mode: rare_first
+rarity_aggregation: sum
+steps: 50
+batch_size: 8
+seed: 0
+device: cuda:0

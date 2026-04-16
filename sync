@@ -1,0 +1,1 @@
+rsync -av . bacobax2@tamia.alliancecan.ca:/home/b/bacobax2/projects
