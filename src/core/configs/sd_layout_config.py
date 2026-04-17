@@ -454,8 +454,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def parse_args(argv: Optional[List[str]] = None) -> SDLayoutTrainConfig:
     """Parse CLI arguments into a validated structured config."""
+    import sys
+
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
 
     config = merge_config_and_cli(
         SDLayoutTrainConfig,
@@ -463,6 +466,7 @@ def parse_args(argv: Optional[List[str]] = None) -> SDLayoutTrainConfig:
         parser,
         args,
         flat_to_nested=_FLAT_TO_NESTED,
+        cli_argv=effective_argv,
     )
 
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -471,4 +475,3 @@ def parse_args(argv: Optional[List[str]] = None) -> SDLayoutTrainConfig:
 
     config.validate()
     return config
-

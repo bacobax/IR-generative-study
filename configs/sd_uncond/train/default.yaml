@@ -1,0 +1,96 @@
+# Unconditional latent Stable Diffusion training - default configuration
+# Matches the built-in CLI defaults exactly.
+#
+# Usage:
+#   python -m src.cli.train_sd_uncond --config configs/sd_uncond/train/default.yaml
+#   python train_sd_uncond.py        --config configs/sd_uncond/train/default.yaml
+
+data:
+  dataset_id: null
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  annotations_path: null
+  image_size: 256
+  batch_size: 8
+  num_workers: 4
+  max_train_samples: null
+  max_val_samples: null
+  subset_strategy: "first_n"
+
+model:
+  unet_config: "configs/models/fm/stable_unet_config.json"
+  vae_config: "configs/models/fm/vae_config.json"
+  vae_weights: "./vae_best.pt"
+  vae_pretrained_model_name_or_path: null
+  vae_pretrained_subfolder: "vae"
+  vae_revision: null
+  vae_variant: null
+  pretrained_unet_path: null
+
+augment:
+  warmup_frac: 0.1
+  ramp_frac: 0.3
+  p_crop_warmup: 0.05
+  p_crop_max: 0.20
+  p_crop_final: 0.05
+  p_rot_warmup: 0.05
+  p_rot_max: 0.30
+  p_rot_final: 0.05
+
+training:
+  epochs: 100
+  lr: 0.0001
+  save_every_n_epochs: 10
+  eval_every: 1
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+  max_grad_norm: 1.0
+
+optimizer:
+  name: "adamw"
+  lr: null
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+scheduler:
+  name: "warmup_cosine"
+  warmup_ratio: 0.05
+  min_lr_ratio: 0.1
+
+ema:
+  enabled: true
+  decay: 0.999
+  start_step: 100
+
+precision:
+  mixed_precision: "auto"
+
+diffusion:
+  num_train_timesteps: 1000
+  beta_schedule: "scaled_linear"
+  beta_start: 0.00085
+  beta_end: 0.012
+  prediction_type: "epsilon"
+  noise_offset: 0.0
+  snr_gamma: null
+
+sampling:
+  sample_every: 1
+  sample_steps: 50
+  sample_batch_size: 4
+  sample_shape: null
+  fixed_validation_examples: 4
+  sample_every_steps: 0
+  save_debug_images: false
+
+output:
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_sd15"
+  log_dir: null
+  debug_dir: null
+  resume: null
+
+trainer_name: "sd_uncond"
+sampler_name: "sd_uncond"
+device: null

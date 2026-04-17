@@ -1295,8 +1295,11 @@ def run_experiment_a(cfg: YOLOExperimentConfig) -> dict[str, Any]:
 
 
 def main(argv: Optional[list[str]] = None) -> None:
+    import sys
+
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
     _validate_config_yaml_keys(args.config)
     cfg = merge_config_and_cli(
         YOLOExperimentConfig,
@@ -1304,6 +1307,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         parser,
         args,
         flat_to_nested=_FLAT_TO_NESTED,
+        cli_argv=effective_argv,
     )
     cfg.device = _localize_device_for_process(cfg.device)
     _activate_torch_device(cfg.device)

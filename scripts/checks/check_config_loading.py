@@ -39,7 +39,7 @@ def check(cond: bool, msg: str):
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== A. Config directory structure ===")
 for d in ("configs/fm/train", "configs/fm/sample",
-          "configs/sd/train", "configs/models/fm", "configs/models/sd"):
+          "configs/sd/train", "configs/sd_uncond/train", "configs/models/fm", "configs/models/sd"):
     check((ROOT / d).is_dir(), f"{d}/ exists")
 
 
@@ -53,6 +53,7 @@ yaml_files = {
     "configs/fm/train/default.yaml": "fm_train",
     "configs/fm/sample/default.yaml": "fm_sample",
     "configs/sd/train/default.yaml": "sd_train",
+    "configs/sd_uncond/train/default.yaml": "sd_uncond_train",
     "configs/models/fm/stable_unet.yaml": "fm_unet",
     "configs/models/fm/vae.yaml": "fm_vae",
     "configs/models/sd/sd15.yaml": "sd_model",

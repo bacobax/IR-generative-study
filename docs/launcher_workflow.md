@@ -76,6 +76,7 @@ For nested dataclass configs (e.g. `FMTrainConfig`), the equivalent is
 | `configs/fm/generate/presets/`         | FM generation experiments       |
 | `configs/vae/train/presets/`           | VAE training                    |
 | `configs/sd/train/presets/`            | SD LoRA training                |
+| `configs/sd_uncond/train/presets/`     | Unconditional latent SD training|
 | `configs/sd/generate/presets/`         | SD generation                   |
 | `configs/controlnet/train/presets/`    | ControlNet training             |
 | `configs/auxiliary/*/presets/`         | Cluster recon, surprise pred, count adapter |
@@ -116,6 +117,9 @@ For nested dataclass configs (e.g. `FMTrainConfig`), the equivalent is
 ```bash
 # Train FM (stable latent)
 bash scripts/train/fm_stable.sh
+
+# Train unconditional latent SD
+bash scripts/train/uncond_latent_flir_sd15_512.sh
 
 # Override a single parameter
 bash scripts/train/fm_stable.sh --training.epochs 50

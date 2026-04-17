@@ -41,6 +41,7 @@ from src.core.paths import (
     vae_runs_dir,
     sd_checkpoints_root,
     sd_lora_runs_dir,
+    sd_uncond_runs_dir,
     sd_unet_runs_dir,
     count_adapter_checkpoints_root,
     count_adapter_runs_dir,
@@ -53,6 +54,7 @@ check("fm_checkpoints_root under checkpoints", str(fm_checkpoints_root()).starts
 check("default_models_dir under fm_checkpoints", str(default_models_dir()).startswith(str(fm_checkpoints_root())))
 check("vae_runs_dir under vae_checkpoints", str(vae_runs_dir()).startswith(str(vae_checkpoints_root())))
 check("sd_lora_runs_dir under sd_checkpoints", str(sd_lora_runs_dir()).startswith(str(sd_checkpoints_root())))
+check("sd_uncond_runs_dir under sd_checkpoints", str(sd_uncond_runs_dir()).startswith(str(sd_checkpoints_root())))
 check("sd_unet_runs_dir under sd_checkpoints", str(sd_unet_runs_dir()).startswith(str(sd_checkpoints_root())))
 check("count_adapter_runs_dir under count_adapter", str(count_adapter_runs_dir()).startswith(str(count_adapter_checkpoints_root())))
 check("legacy_checkpoints_root under checkpoints", str(legacy_checkpoints_root()).startswith(str(checkpoints_root())))
@@ -65,6 +67,7 @@ check("checkpoints_root == artifacts/checkpoints", checkpoints_root() == artifac
 check("fm serious_runs dir", default_models_dir() == fm_checkpoints_root() / "serious_runs")
 check("vae_runs_dir", vae_runs_dir() == vae_checkpoints_root() / "vae_runs")
 check("sd_lora_runs_dir", sd_lora_runs_dir() == sd_checkpoints_root() / "lora_runs")
+check("sd_uncond_runs_dir", sd_uncond_runs_dir() == sd_checkpoints_root() / "uncond_runs")
 check("sd_unet_runs_dir", sd_unet_runs_dir() == sd_checkpoints_root() / "unet_runs")
 check("count_adapter_runs_dir", count_adapter_runs_dir() == count_adapter_checkpoints_root() / "runs")
 check("legacy_checkpoints_root", legacy_checkpoints_root() == checkpoints_root() / "legacy")
@@ -76,6 +79,7 @@ print("\n=== 3. Directories exist ===")
 check("fm serious_runs exists", default_models_dir().is_dir())
 check("vae_runs exists", vae_runs_dir().is_dir())
 check("sd lora_runs exists", sd_lora_runs_dir().is_dir())
+check("sd uncond_runs exists", sd_uncond_runs_dir().is_dir())
 check("sd unet_runs exists", sd_unet_runs_dir().is_dir())
 check("count_adapter runs exists", count_adapter_runs_dir().is_dir())
 check("legacy checkpoints exists", legacy_checkpoints_root().is_dir())

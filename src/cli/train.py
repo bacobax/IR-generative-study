@@ -15,23 +15,22 @@ from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import dataclass
 from typing import Optional
 
-import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 
 from src.core.configs.fm_config import FMTrainConfig
 from src.core.configs.config_loader import merge_config_and_cli
-from src.core.data.dataset_targets import resolve_dataset_target
-from src.core.normalization import (
-    RAW_UINT16_PERCENTILE,
-    norm_to_display as from_norm_to_display,
-)
+from src.core.normalization import norm_to_display as from_norm_to_display
 from src.core.data import collate_layout_batch
-from src.core.data.datasets import AnnotationLayoutDataset, NPYImageDataset
-from src.core.data.annotation_dataset import AnnotationFMDataset
-from src.core.data.transforms import ScheduledAugment256, save_transform_examples
+from src.core.data.datasets import AnnotationLayoutDataset
+from src.core.data.training_data import (
+    ResolvedTrainingData,
+    apply_dataset_subset,
+    build_non_layout_dataloaders,
+    resolve_training_data,
+)
+from src.core.data.transforms import save_transform_examples
 from src.core.registry import REGISTRIES
 
 # Ensure default components are registered
@@ -222,53 +221,14 @@ _FLAT_TO_NESTED = {
 }
 
 
-@dataclass(frozen=True)
-class ResolvedTrainingData:
-    """Resolved dataset paths used by the FM training pipeline."""
-
-    train_dir: str
-    val_dir: str
-    train_annotations_path: Optional[str]
-    val_annotations_path: Optional[str]
-    normalization_mode: str
-
-
 def _resolve_training_data(cfg: FMTrainConfig) -> ResolvedTrainingData:
     """Resolve dataset directories, split annotations, and normalization mode."""
-    train_dir = cfg.data.train_dir
-    val_dir = cfg.data.val_dir
-    train_annotations_path = cfg.data.annotations_path
-    val_annotations_path = cfg.data.annotations_path
-    normalization_mode = RAW_UINT16_PERCENTILE
-
-    if cfg.data.dataset_id is not None:
-        target = resolve_dataset_target(cfg.data.dataset_id)
-        train_dir = str(target.split_dir("train"))
-        val_dir = str(target.split_dir("val"))
-        normalization_mode = target.normalization_mode
-
-        if train_annotations_path is None:
-            train_annotations_path = str(target.annotations_path("train"))
-            val_annotations_path = str(target.annotations_path("val"))
-
-    return ResolvedTrainingData(
-        train_dir=train_dir,
-        val_dir=val_dir,
-        train_annotations_path=train_annotations_path,
-        val_annotations_path=val_annotations_path,
-        normalization_mode=normalization_mode,
-    )
+    return resolve_training_data(cfg.data)
 
 
 def _apply_subset(dataset, max_samples: Optional[int], strategy: str):
     """Apply a deterministic debug subset without disturbing sample order."""
-    if max_samples is None or max_samples <= 0 or max_samples >= len(dataset):
-        return dataset
-    if strategy != "first_n":
-        raise ValueError(
-            f"Unsupported subset_strategy={strategy!r}. Only 'first_n' is supported."
-        )
-    return Subset(dataset, list(range(int(max_samples))))
+    return apply_dataset_subset(dataset, max_samples, strategy)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -345,66 +305,18 @@ def run_training(cfg: FMTrainConfig) -> None:
         )
         use_annotation_ds = True
     else:
-        # ── Augmentation transforms ──
-        aug_kwargs = dict(
+        non_layout = build_non_layout_dataloaders(
+            data_config=cfg.data,
+            augment_config=cfg.augment,
+            curriculum_config=cfg.curriculum,
             total_epochs=total_epochs,
-            warmup_frac=cfg.augment.warmup_frac,
-            ramp_frac=cfg.augment.ramp_frac,
-            p_crop_warmup=cfg.augment.p_crop_warmup,
-            p_crop_max=cfg.augment.p_crop_max,
-            p_crop_final=cfg.augment.p_crop_final,
-            p_rot_warmup=cfg.augment.p_rot_warmup,
-            p_rot_max=cfg.augment.p_rot_max,
-            p_rot_final=cfg.augment.p_rot_final,
-            image_size=cfg.data.image_size,
-            normalization_mode=resolved_data.normalization_mode,
+            resolved_data=resolved_data,
         )
-        train_transform = ScheduledAugment256(**aug_kwargs)
-        eval_transform = ScheduledAugment256(**aug_kwargs)
-
-        # ── Datasets / loaders ──
-        use_annotation_ds = (
-            resolved_data.train_annotations_path is not None
-            and cfg.curriculum.enabled
-        )
-
-        if use_annotation_ds:
-            train_dataset = AnnotationFMDataset(
-                root_dir=resolved_data.train_dir,
-                annotations_path=resolved_data.train_annotations_path,
-                text_mode=False,
-                curriculum=cfg.curriculum,
-                transform=train_transform,
-                resize_target=cfg.data.image_size,
-                normalization_mode=resolved_data.normalization_mode,
-            )
-            eval_dataset = AnnotationFMDataset(
-                root_dir=resolved_data.val_dir,
-                annotations_path=resolved_data.val_annotations_path,
-                text_mode=False,
-                curriculum=None,
-                transform=eval_transform,
-                resize_target=cfg.data.image_size,
-                normalization_mode=resolved_data.normalization_mode,
-            )
-        else:
-            train_dataset = NPYImageDataset(root_dir=resolved_data.train_dir, transform=train_transform)
-            eval_dataset = NPYImageDataset(root_dir=resolved_data.val_dir, transform=eval_transform)
-
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=cfg.data.batch_size,
-            shuffle=True,
-            num_workers=cfg.data.num_workers,
-            pin_memory=True,
-        )
-        eval_loader = DataLoader(
-            eval_dataset,
-            batch_size=cfg.data.batch_size,
-            shuffle=False,
-            num_workers=cfg.data.num_workers,
-            pin_memory=True,
-        )
+        train_dataset = non_layout.train_dataset
+        eval_dataset = non_layout.eval_dataset
+        train_loader = non_layout.train_loader
+        eval_loader = non_layout.eval_loader
+        use_annotation_ds = non_layout.use_annotation_ds
 
     # ── Resolve trainer class through registry ──
     TrainerCls = REGISTRIES.trainer.get(cfg.trainer_name)
@@ -413,7 +325,7 @@ def run_training(cfg: FMTrainConfig) -> None:
     # ── Save transform examples for fresh runs ──
     if cfg.output.resume is None and not use_annotation_ds:
         save_transform_examples(
-            train_dataset,
+            getattr(non_layout, "train_base_dataset", train_dataset),
             os.path.join(cfg.output.model_dir, "transform_examples"),
         )
 
@@ -433,11 +345,15 @@ def main(argv: Optional[list] = None) -> None:
     argv : list[str], optional
         Explicit argument list (for testing). ``None`` → ``sys.argv[1:]``.
     """
+    import sys
+
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
     cfg = merge_config_and_cli(
         FMTrainConfig, args.config, parser, args,
         flat_to_nested=_FLAT_TO_NESTED,
+        cli_argv=effective_argv,
     )
     run_training(cfg)
 

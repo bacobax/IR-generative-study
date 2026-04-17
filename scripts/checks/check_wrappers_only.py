@@ -34,6 +34,7 @@ def check(cond: bool, msg: str):
 WRAPPER_MAP = {
     "train_sfm.py":         ("src.cli.train",            "src/cli/train.py"),
     "train_sd.py":          ("src.cli.train_sd",         "src/cli/train_sd.py"),
+    "train_sd_uncond.py":   ("src.cli.train_sd_uncond",  "src/cli/train_sd_uncond.py"),
     "train_vae.py":         ("src.cli.train_vae",        "src/cli/train_vae.py"),
     "train_controlnet.py":  ("src.cli.train_controlnet", "src/cli/train_controlnet.py"),
     "generate_datasets.py": ("src.cli.generate",         "src/cli/generate.py"),

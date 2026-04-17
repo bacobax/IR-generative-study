@@ -153,6 +153,36 @@ class FlowMatchingTrainer:
             for p in self.vae.parameters():
                 p.requires_grad = False
 
+    def _metric_prefix(self) -> str:
+        return "fm"
+
+    def _checkpoint_stem(self) -> str:
+        return "unet_fm"
+
+    def _progress_label(self) -> str:
+        return "FM"
+
+    def _sample_tensorboard_tag(self) -> str:
+        return f"{self._metric_prefix()}/generated"
+
+    def _save_additional_configs(self) -> None:
+        """Persist algorithm-specific config artifacts."""
+
+    def _checkpoint_metadata(self) -> Dict[str, Any]:
+        return {
+            "t_scale": self.t_scale,
+            "train_target": self.train_target,
+        }
+
+    def _best_weights_path(self) -> str:
+        return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_best.pt")
+
+    def _epoch_weights_path(self, epoch_num: int) -> str:
+        return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_epoch_{epoch_num}.pt")
+
+    def _epoch_checkpoint_path(self, epoch_num: int) -> str:
+        return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_epoch_{epoch_num}_ckpt.pt")
+
     # ------------------------------------------------------------------
     # Config-driven constructor
     # ------------------------------------------------------------------
@@ -281,6 +311,7 @@ class FlowMatchingTrainer:
             path = os.path.join(self._vae_dir(), "config.json")
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.vae_config, f, indent=2, sort_keys=True)
+        self._save_additional_configs()
 
     # ------------------------------------------------------------------
     # Weight I/O
@@ -321,6 +352,23 @@ class FlowMatchingTrainer:
         with torch.no_grad():
             z_mu, z_sigma = self.vae.encode(x)
             return self.vae.sampling(z_mu, z_sigma)
+
+    def _prepare_batch(self, batch) -> tuple[torch.Tensor, Dict[str, Any]]:
+        if torch.is_tensor(batch):
+            return batch.to(self.device), {}
+        if isinstance(batch, dict) and "pixel_values" in batch:
+            return batch["pixel_values"].to(self.device), {}
+        raise TypeError(
+            "Expected a tensor batch or a dict containing 'pixel_values' for "
+            f"{self.__class__.__name__}, got {type(batch)!r}."
+        )
+
+    def _compute_batch_loss(
+        self,
+        x_fm: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> torch.Tensor:
+        return self.flow_matching_step(x_fm, cond_kwargs)
 
     # ------------------------------------------------------------------
     # Flow-matching loss
@@ -477,7 +525,7 @@ class FlowMatchingTrainer:
         start_epoch = 0
 
         if resume_from_checkpoint is not None:
-            print(f"[Resume] Loading checkpoint from {resume_from_checkpoint}")
+            print(f"[{self._progress_label()} Resume] Loading checkpoint from {resume_from_checkpoint}")
             ckpt = torch.load(resume_from_checkpoint, map_location=self.device)
             self.unet.load_state_dict(ckpt["unet_state"])
             optimizer.load_state_dict(ckpt["optimizer_state"])
@@ -512,7 +560,10 @@ class FlowMatchingTrainer:
                         s = s.cpu()
                     cuda_states.append(s)
                 torch.cuda.set_rng_state_all(cuda_states)
-            print(f"[Resume] Resuming from epoch {start_epoch}, global_step={global_step}, best_eval={best_eval:.6f}")
+            print(
+                f"[{self._progress_label()} Resume] Resuming from epoch {start_epoch}, "
+                f"global_step={global_step}, best_eval={best_eval:.6f}"
+            )
 
         writer = SummaryWriter(log_dir)
 
@@ -529,10 +580,9 @@ class FlowMatchingTrainer:
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
                 "bad_epochs": bad_epochs,
-                "t_scale": self.t_scale,
-                "train_target": self.train_target,
                 "rng_state": torch.random.get_rng_state(),
             }
+            ckpt.update(self._checkpoint_metadata())
             if torch.cuda.is_available():
                 ckpt["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
             torch.save(ckpt, path)
@@ -540,11 +590,14 @@ class FlowMatchingTrainer:
         def _set_epoch_for_dataloader(dl: Optional[DataLoader], epoch_idx: int) -> None:
             if dl is None:
                 return
-            ds = getattr(dl, "dataset", None)
-            if ds is not None and hasattr(ds, "set_epoch"):
-                ds.set_epoch(epoch_idx)
-            if ds is not None and hasattr(ds, "transform") and hasattr(ds.transform, "set_epoch"):
-                ds.transform.set_epoch(epoch_idx)
+            current = getattr(dl, "dataset", None)
+            while current is not None:
+                if hasattr(current, "set_epoch"):
+                    current.set_epoch(epoch_idx)
+                transform = getattr(current, "transform", None)
+                if transform is not None and hasattr(transform, "set_epoch"):
+                    transform.set_epoch(epoch_idx)
+                current = getattr(current, "dataset", None)
 
         sampler_obj = self._make_sampler() if sample_every > 0 else None
 
@@ -560,14 +613,15 @@ class FlowMatchingTrainer:
             self.unet.train()
             total_loss = 0.0
 
-            for x in tqdm(dataloader, desc=f"FM Epoch {epoch+1}/{epochs}"):
-                x = x.to(self.device)
+            for batch in tqdm(dataloader, desc=f"{self._progress_label()} Epoch {epoch+1}/{epochs}"):
+                x, cond_kw = self._prepare_batch(batch)
                 with torch.no_grad():
                     x_fm = self.encode_fm_input(x)
-                cond_kw = self.conditioner.prepare_for_training(x, self.device) if self.conditioner is not None else {}
+                if self.conditioner is not None:
+                    cond_kw.update(self.conditioner.prepare_for_training(x, self.device))
                 optimizer.zero_grad(set_to_none=True)
                 with autocast_context(precision):
-                    loss = self.flow_matching_step(x_fm, cond_kw)
+                    loss = self._compute_batch_loss(x_fm, cond_kw)
 
                 if scaler is not None:
                     scaler.scale(loss).backward()
@@ -590,20 +644,21 @@ class FlowMatchingTrainer:
                     ema.update(self.unet)
 
                 total_loss += loss.item()
-                writer.add_scalar("fm/loss_step", loss.item(), global_step)
-                writer.add_scalar("fm/lr", float(optimizer.param_groups[0]["lr"]), global_step)
+                writer.add_scalar(f"{self._metric_prefix()}/loss_step", loss.item(), global_step)
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/lr",
+                    float(optimizer.param_groups[0]["lr"]),
+                    global_step,
+                )
                 global_step += 1
 
             avg_loss = total_loss / max(1, len(dataloader))
-            print(f"[FM Epoch {epoch+1}] loss: {avg_loss:.6f}")
-            writer.add_scalar("fm/loss_epoch", avg_loss, epoch)
+            print(f"[{self._progress_label()} Epoch {epoch+1}] loss: {avg_loss:.6f}")
+            writer.add_scalar(f"{self._metric_prefix()}/loss_epoch", avg_loss, epoch)
 
             if (save_every_n_epochs is not None) and ((epoch + 1) % save_every_n_epochs == 0):
-                self.save_unet_weights(os.path.join(self._unet_dir(), f"unet_fm_epoch_{epoch+1}.pt"))
-                _save_checkpoint(
-                    os.path.join(self._unet_dir(), f"unet_fm_epoch_{epoch+1}_ckpt.pt"),
-                    epoch_idx=epoch,
-                )
+                self.save_unet_weights(self._epoch_weights_path(epoch + 1))
+                _save_checkpoint(self._epoch_checkpoint_path(epoch + 1), epoch_idx=epoch)
 
             # Eval + early stopping + best save
             should_run_eval = (
@@ -619,12 +674,13 @@ class FlowMatchingTrainer:
                 ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
                 with ema_context:
                     with torch.no_grad():
-                        for x in tqdm(eval_dataloader, desc=f"FM Eval  {epoch+1}/{epochs}"):
-                            x = x.to(self.device)
+                        for batch in tqdm(eval_dataloader, desc=f"{self._progress_label()} Eval  {epoch+1}/{epochs}"):
+                            x, cond_kw = self._prepare_batch(batch)
                             x_fm = self.encode_fm_input(x)
-                            cond_kw = self.conditioner.prepare_for_training(x, self.device) if self.conditioner is not None else {}
+                            if self.conditioner is not None:
+                                cond_kw.update(self.conditioner.prepare_for_training(x, self.device))
                             with autocast_context(precision):
-                                loss = self.flow_matching_step(x_fm, cond_kw)
+                                loss = self._compute_batch_loss(x_fm, cond_kw)
 
                             bs = x.size(0)
                             eval_loss += loss.item() * bs
@@ -632,7 +688,7 @@ class FlowMatchingTrainer:
 
                 avg_eval_loss = eval_loss / max(1, n_eval)
                 print(f"  [Eval loss: {avg_eval_loss:.6f}]")
-                writer.add_scalar("fm/eval_loss_epoch", avg_eval_loss, epoch)
+                writer.add_scalar(f"{self._metric_prefix()}/eval_loss_epoch", avg_eval_loss, epoch)
 
                 improved = (best_eval - avg_eval_loss) > min_delta
                 if improved:
@@ -641,10 +697,13 @@ class FlowMatchingTrainer:
                     bad_epochs = 0
                     if ema is not None and global_step >= int(ema_start_step):
                         with ema.average_parameters(self.unet):
-                            self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
+                            self.save_unet_weights(self._best_weights_path())
                     else:
-                        self.save_unet_weights(os.path.join(self._unet_dir(), "unet_fm_best.pt"))
-                    print(f"  ✅ New best eval_loss={best_eval:.6f} at epoch {epoch+1} -> saved UNET/unet_fm_best.pt")
+                        self.save_unet_weights(self._best_weights_path())
+                    print(
+                        f"  ✅ New best eval_loss={best_eval:.6f} at epoch {epoch+1} "
+                        f"-> saved UNET/{os.path.basename(self._best_weights_path())}"
+                    )
                 elif patience is not None:
                     bad_epochs += 1
                     print(f"  ⏳ No improvement (best={best_eval:.6f}), bad_epochs={bad_epochs}/{patience}")
@@ -661,7 +720,7 @@ class FlowMatchingTrainer:
                         epoch=epoch,
                         steps=sample_steps,
                         batch_size=sample_batch_size,
-                        tag="fm/generated",
+                        tag=self._sample_tensorboard_tag(),
                         sample_shape=sample_shape,
                     )
 

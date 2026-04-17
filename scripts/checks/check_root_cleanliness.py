@@ -48,7 +48,7 @@ EXPECTED_DIRS = {
 EXPECTED_FILES = {
     "README.md", "pyproject.toml", ".gitignore",
     # Thin wrappers
-    "train_sfm.py", "train_sd.py", "train_vae.py",
+    "train_sfm.py", "train_sd.py", "train_sd_uncond.py", "train_vae.py",
     "train_controlnet.py", "generate_datasets.py",
 }
 
@@ -78,7 +78,7 @@ for f in ("README.md", "pyproject.toml", ".gitignore"):
     check(f"Required file {f} present", f in actual_files)
 
 # Thin wrappers present
-for f in ("train_sfm.py", "train_sd.py", "train_vae.py", "train_controlnet.py", "generate_datasets.py"):
+for f in ("train_sfm.py", "train_sd.py", "train_sd_uncond.py", "train_vae.py", "train_controlnet.py", "generate_datasets.py"):
     check(f"Thin wrapper {f} present", f in actual_files)
 
 # ═══════════════════════════════════════════════════════════════════════════

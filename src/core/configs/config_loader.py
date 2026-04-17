@@ -122,13 +122,28 @@ def _resolve_field_type(cls: Type, field_name: str):
 # CLI + config-file merge
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _cli_overrides(parser: argparse.ArgumentParser,
-                   args: argparse.Namespace) -> Dict[str, Any]:
+def _cli_overrides(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    *,
+    cli_argv: list[str] | None = None,
+) -> Dict[str, Any]:
     """Return only the CLI arguments that were explicitly provided by the user.
 
     Compares *args* against the parser defaults so config-file values are
     not accidentally clobbered by argparse defaults.
     """
+    if cli_argv is not None:
+        shadow_parser = copy.deepcopy(parser)
+        for action in shadow_parser._actions:
+            if action.dest != "help":
+                action.default = argparse.SUPPRESS
+        shadow_parser._defaults = {}
+        explicit_args, _ = shadow_parser.parse_known_args(list(cli_argv))
+        overrides = vars(explicit_args)
+        overrides.pop("config", None)
+        return overrides
+
     defaults = vars(parser.parse_args([]))       # parse with no args → all defaults
     provided = vars(args)
     overrides = {}
@@ -147,6 +162,7 @@ def merge_config_and_cli(
     args: argparse.Namespace,
     *,
     flat_to_nested: Dict[str, str] | None = None,
+    cli_argv: list[str] | None = None,
 ) -> T:
     """Build a config dataclass from (defaults + YAML + CLI overrides).
 
@@ -177,7 +193,7 @@ def merge_config_and_cli(
         _deep_merge(base, yaml_data)
 
     # 3. Merge explicit CLI overrides on top
-    cli_overrides = _cli_overrides(parser, args)
+    cli_overrides = _cli_overrides(parser, args, cli_argv=cli_argv)
     if flat_to_nested and cli_overrides:
         nested_overrides: Dict[str, Any] = {}
         for flat_key, val in cli_overrides.items():

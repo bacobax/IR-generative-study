@@ -228,6 +228,11 @@ def sd_unet_runs_dir() -> Path:
     return sd_checkpoints_root() / "unet_runs"
 
 
+def sd_uncond_runs_dir() -> Path:
+    """``artifacts/checkpoints/stable_diffusion/uncond_runs/`` — unconditional latent SD runs."""
+    return sd_checkpoints_root() / "uncond_runs"
+
+
 def sd_layout_runs_dir() -> Path:
     """``artifacts/checkpoints/stable_diffusion/layout_runs/`` — layout stage-2 runs."""
     return sd_checkpoints_root() / "layout_runs"

@@ -304,11 +304,15 @@ def run_training(cfg: CNTrainConfig) -> None:
 
 def main(argv: Optional[list] = None) -> None:
     """Parse CLI flags and launch ControlNet training."""
+    import sys
+
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
     cfg = merge_config_and_cli(
         CNTrainConfig, args.config, parser, args,
         flat_to_nested=_FLAT_TO_NESTED,
+        cli_argv=effective_argv,
     )
     run_training(cfg)
 
