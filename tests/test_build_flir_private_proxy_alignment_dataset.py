@@ -13,6 +13,11 @@ from scripts.standalone.build_flir_private_proxy_alignment_dataset import (
     align_eval_split_to_train_categories,
     export_split_to_v18,
 )
+from scripts.standalone.download_and_build_flir_full_thermal_dataset import (
+    build_builder_command,
+    find_flir_root,
+    safe_extract_zip,
+)
 
 
 def _write_jpg(path: Path, value: int) -> None:
@@ -125,3 +130,44 @@ def test_align_eval_split_to_train_categories_removes_empty_images() -> None:
     assert filtered_annotations["category_id"].tolist() == [1, 2]
     assert stats_payload["images_removed"] == 1
     assert stats_payload["annotations_removed"] == 2
+
+
+def test_download_wrapper_finds_nested_flir_root(tmp_path: Path) -> None:
+    flir_root = tmp_path / "extract" / "FLIR_ADAS_v2"
+    for split_dir in ("images_thermal_train", "images_thermal_val", "video_thermal_test"):
+        path = flir_root / split_dir
+        path.mkdir(parents=True)
+        (path / "coco.json").write_text("{}", encoding="utf-8")
+
+    assert find_flir_root(tmp_path / "extract") == flir_root
+
+
+def test_download_wrapper_builds_full_dataset_command(tmp_path: Path) -> None:
+    command = build_builder_command(
+        flir_root=tmp_path / "flir",
+        output_root=tmp_path / "out",
+        splits=["train", "val"],
+        max_images_per_split=5,
+        overwrite=True,
+        no_train_captions=True,
+    )
+
+    assert "build_flir_private_proxy_alignment_dataset.py" in command[1]
+    assert "--use-full-dataset" in command
+    assert "--flir-root" in command
+    assert str(tmp_path / "flir") in command
+    assert "--output-root" in command
+    assert str(tmp_path / "out") in command
+    assert command[command.index("--splits") + 1 : command.index("--max-images-per-split")] == ["train", "val"]
+    assert command[-3:] == ["5", "--overwrite", "--no-train-captions"]
+
+
+def test_safe_extract_zip_rejects_path_traversal(tmp_path: Path) -> None:
+    import zipfile
+
+    zip_path = tmp_path / "bad.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("../escape.txt", "nope")
+
+    with pytest.raises(ValueError, match="unsafe zip member"):
+        safe_extract_zip(zip_path, tmp_path / "extract")
