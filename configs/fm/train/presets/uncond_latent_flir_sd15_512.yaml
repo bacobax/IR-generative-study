@@ -5,7 +5,7 @@
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
   image_size: 512
-  batch_size: 2
+  batch_size: 32
   num_workers: 4
 
 model:
@@ -71,4 +71,4 @@ output:
   debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512"
   resume: null
 
-device: null
+device: cuda:0
