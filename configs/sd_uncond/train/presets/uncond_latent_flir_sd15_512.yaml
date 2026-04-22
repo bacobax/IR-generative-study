@@ -5,7 +5,7 @@
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
   image_size: 512
-  batch_size: 64
+  batch_size: 32
   num_workers: 4
 
 model:
