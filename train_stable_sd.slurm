@@ -3,7 +3,7 @@
 #SBATCH --account=aip-mpederso
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=6
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --gpus=h100:1
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
