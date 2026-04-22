@@ -15,13 +15,12 @@ mkdir -p logs
 
 source /scratch/b/bacobax2/conda-envs/diffusers-dev/bin/activate
 
-CONFIG="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512.yaml"
+CONFIG="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64.yaml"
 JOB_ID="${SLURM_JOB_ID:-manual}"
-export CUDA_VISIBLE_DEVICES=0
 
 echo "Host: $(hostname)"
 echo "Start time: $(date)"
-echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
+echo "CUDA_VISIBLE_DEVICES from Slurm: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
 echo "SLURM_CPUS_PER_TASK: ${SLURM_CPUS_PER_TASK:-<unset>}"
 echo "SLURM_MEM_PER_NODE: ${SLURM_MEM_PER_NODE:-<unset>}"

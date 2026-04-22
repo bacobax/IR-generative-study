@@ -71,4 +71,4 @@ output:
   debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512"
   resume: null
 
-device: cuda:0
+device: null
