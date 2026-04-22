@@ -15,3 +15,4 @@ validation_prompt: "thermal image"
 checkpointing_steps: 1000
 output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8
 seed: 42
+resume_from_checkpoint: latest

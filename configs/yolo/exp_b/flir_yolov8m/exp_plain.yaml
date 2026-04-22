@@ -1,12 +1,13 @@
 data:
-  dataset_yaml: data/derived/yolo-test-ds/balanced.yaml
+  dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
+  full_train_dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
   test_dataset_yaml: data/derived/yolo-test-ds/test.yaml
-  batch_size: 4
+  batch_size: 16
   workers: 4
   image_size: 640
 
 model:
-  weights: yolov8l.pt
+  weights: yolov8m.pt
   task: detect
 
 training:
@@ -40,8 +41,13 @@ evaluation:
   save_json: true
   save_hybrid: false
 
+experiment_b:
+  mode: plain
+  invalid_instance_ratio_threshold: 0.5
+  disable_ultralytics_augmentations: true
+
 output:
-  experiment_name: exp_balanced_yolov8l
-  runs_root: artifacts/runs/yolo/exp_a/flir_yolov8l
-  checkpoints_root: artifacts/checkpoints/yolo/exp_a/flir_yolov8l
-  analysis_root: artifacts/analysis/yolo/exp_a/flir_yolov8l
+  experiment_name: exp_plain
+  runs_root: artifacts/runs/yolo/exp_b/flir_yolov8m
+  checkpoints_root: artifacts/checkpoints/yolo/exp_b/flir_yolov8m
+  analysis_root: artifacts/analysis/yolo/exp_b/flir_yolov8m

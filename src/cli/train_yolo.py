@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
-from dataclasses import fields, is_dataclass
+from dataclasses import asdict, fields, is_dataclass
 from functools import partial
 import json
 import os
@@ -34,6 +34,10 @@ from src.algorithms.training.yolo_slice_baselines import (
     make_slice_aware_yolo_dataset_class,
     prepare_yolo_slice_baseline,
 )
+from src.algorithms.training.yolo_experiment_b import (
+    prepare_experiment_b_dataset,
+    validate_experiment_b_config,
+)
 from src.core.configs.config_loader import load_yaml, merge_config_and_cli
 from src.core.configs.yolo_experiment_config import YOLOExperimentConfig
 from src.core.paths import repo_root, yolo_analysis_root
@@ -53,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=str, default=None,
                         help="YAML config file. CLI overrides config values.")
     parser.add_argument("--action", type=str, default="train",
-                        choices=["train", "eval", "run_exp_a", "run_exp_a_all"])
+                        choices=["train", "eval", "run_exp_a", "run_exp_a_all", "run_exp_b", "run_exp_b_all"])
     parser.add_argument("--dataset_yaml", type=str, default=str(Path("data/derived/yolo-test-ds/balanced.yaml")))
     parser.add_argument("--balanced_dataset_yaml", type=str, default=str(Path("data/derived/yolo-test-ds/balanced.yaml")))
     parser.add_argument("--unbalanced_dataset_yaml", type=str, default=str(Path("data/derived/yolo-test-ds/unbalanced.yaml")))
@@ -104,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoints_root", type=str, default=None)
     parser.add_argument("--analysis_root", type=str, default=None)
     parser.add_argument("--split", type=str, default="test", choices=["val", "test"])
+    parser.add_argument("--eval_dataset_yaml", type=str, default=None)
     parser.add_argument("--save_json", action="store_true", default=False)
     parser.add_argument("--save_hybrid", action="store_true", default=False)
     parser.add_argument("--conf", type=float, default=None)
@@ -153,6 +158,7 @@ _FLAT_TO_NESTED = {
     "crop_max_attempts": "baseline.crop_max_attempts",
     "allow_horizontal_flip": "baseline.allow_horizontal_flip",
     "baseline_seed": "baseline.seed",
+    "eval_dataset_yaml": "evaluation.dataset_yaml",
     "split": "evaluation.split",
     "save_json": "evaluation.save_json",
     "save_hybrid": "evaluation.save_hybrid",
@@ -489,6 +495,7 @@ def _save_resolved_config(cfg: YOLOExperimentConfig, path: Path) -> None:
         "evaluation": vars(cfg.evaluation),
         "output": vars(cfg.output),
         "launcher": vars(cfg.launcher),
+        "experiment_b": asdict(cfg.experiment_b),
         "device": cfg.device,
     }
     _write_json(path, payload)
@@ -940,6 +947,25 @@ def _stage_train_kwargs(
     }
     if stage["freeze"] is not None:
         kwargs["freeze"] = stage["freeze"]
+    if bool(cfg.experiment_b.disable_ultralytics_augmentations):
+        kwargs.update(
+            {
+                "hsv_h": 0.0,
+                "hsv_s": 0.0,
+                "hsv_v": 0.0,
+                "degrees": 0.0,
+                "translate": 0.0,
+                "scale": 0.0,
+                "shear": 0.0,
+                "perspective": 0.0,
+                "flipud": 0.0,
+                "fliplr": 0.0,
+                "mosaic": 0.0,
+                "mixup": 0.0,
+                "copy_paste": 0.0,
+                "erasing": 0.0,
+            }
+        )
     return kwargs
 
 
@@ -1074,7 +1100,11 @@ def run_eval(cfg: YOLOExperimentConfig, *, weights_path: Optional[str] = None) -
     _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
 
     resolved_weights = weights_path or str(checkpoint_dir / "best.pt")
-    data_yaml = _require_dataset_yaml(cfg.data.test_dataset_yaml or cfg.data.dataset_yaml)
+    data_yaml = _require_dataset_yaml(
+        cfg.evaluation.dataset_yaml
+        or cfg.data.test_dataset_yaml
+        or cfg.data.dataset_yaml
+    )
     device = _normalize_ultralytics_device(cfg.resolved_device())
 
     model = YOLO(resolved_weights, task=cfg.model.task)
@@ -1126,16 +1156,31 @@ def _reuse_existing_train_summary(cfg: YOLOExperimentConfig) -> Optional[dict[st
     checkpoint_dir = cfg.output.checkpoint_dir()
     analysis_dir = cfg.output.analysis_dir()
     best_weights = checkpoint_dir / "best.pt"
+    last_weights = checkpoint_dir / "last.pt"
     summary_path = analysis_dir / "train_summary.json"
-    if best_weights.exists() and summary_path.exists():
-        return _read_json(summary_path)
-    return None
-
-
-def _reuse_existing_eval_summary(cfg: YOLOExperimentConfig) -> Optional[dict[str, Any]]:
-    summary_path = cfg.output.analysis_dir() / "eval_summary.json"
+    if not best_weights.exists():
+        return None
     if summary_path.exists():
         return _read_json(summary_path)
+    run_dir = cfg.output.run_dir()
+    return {
+        "experiment_name": cfg.output.experiment_name,
+        "dataset_yaml": str(_resolve_repo_path(cfg.data.dataset_yaml) or cfg.data.dataset_yaml),
+        "baseline_mode": cfg.baseline.mode,
+        "baseline_settings": vars(cfg.baseline),
+        "baseline_artifact_paths": {
+            "slice_counts_csv": None,
+            "slice_summary_json": None,
+            "image_sampling_weights_csv": None,
+            "sampling_weight_summary_json": None,
+        },
+        "run_dir": str(run_dir.resolve()),
+        "tensorboard_log_dir": str(run_dir.resolve()),
+        "best_weights_path": str(best_weights.resolve()),
+        "last_weights_path": str(last_weights.resolve()) if last_weights.exists() else None,
+        "stages": [],
+        "reused_from_checkpoint_without_train_summary": True,
+    }
     return None
 
 
@@ -1196,7 +1241,7 @@ def run_experiment_a_all(
             device=cfg.device,
         )
         train_summary = _reuse_existing_train_summary(child_cfg) or run_train(child_cfg)
-        eval_summary = _reuse_existing_eval_summary(child_cfg) or run_eval(
+        eval_summary = run_eval(
             child_cfg,
             weights_path=train_summary["best_weights_path"],
         )
@@ -1206,6 +1251,8 @@ def run_experiment_a_all(
                 "config_path": str(Path(resolved_config_path).resolve()),
                 "experiment_name": child_cfg.output.experiment_name,
                 "dataset_yaml": child_cfg.data.dataset_yaml,
+                "eval_dataset_yaml": eval_summary["dataset_yaml"],
+                "eval_split": eval_summary["split"],
                 "baseline_mode": child_cfg.baseline.mode,
                 "weights_path": train_summary["best_weights_path"],
                 "tensorboard_log_dir": train_summary["tensorboard_log_dir"],
@@ -1246,13 +1293,13 @@ def run_experiment_a(cfg: YOLOExperimentConfig) -> dict[str, Any]:
     unbalanced_cfg.output.experiment_name = cfg.launcher.unbalanced_experiment_name
 
     balanced_train = _reuse_existing_train_summary(balanced_cfg) or run_train(balanced_cfg)
-    balanced_eval = _reuse_existing_eval_summary(balanced_cfg) or run_eval(
+    balanced_eval = run_eval(
         balanced_cfg,
         weights_path=balanced_train["best_weights_path"],
     )
 
     unbalanced_train = _reuse_existing_train_summary(unbalanced_cfg) or run_train(unbalanced_cfg)
-    unbalanced_eval = _reuse_existing_eval_summary(unbalanced_cfg) or run_eval(
+    unbalanced_eval = run_eval(
         unbalanced_cfg,
         weights_path=unbalanced_train["best_weights_path"],
     )
@@ -1261,6 +1308,8 @@ def run_experiment_a(cfg: YOLOExperimentConfig) -> dict[str, Any]:
         {
             "experiment_name": balanced_cfg.output.experiment_name,
             "dataset_yaml": balanced_cfg.data.dataset_yaml,
+            "eval_dataset_yaml": balanced_eval["dataset_yaml"],
+            "eval_split": balanced_eval["split"],
             "baseline_mode": balanced_cfg.baseline.mode,
             "weights_path": balanced_train["best_weights_path"],
             "tensorboard_log_dir": balanced_train["tensorboard_log_dir"],
@@ -1273,6 +1322,8 @@ def run_experiment_a(cfg: YOLOExperimentConfig) -> dict[str, Any]:
         {
             "experiment_name": unbalanced_cfg.output.experiment_name,
             "dataset_yaml": unbalanced_cfg.data.dataset_yaml,
+            "eval_dataset_yaml": unbalanced_eval["dataset_yaml"],
+            "eval_split": unbalanced_eval["split"],
             "baseline_mode": unbalanced_cfg.baseline.mode,
             "weights_path": unbalanced_train["best_weights_path"],
             "tensorboard_log_dir": unbalanced_train["tensorboard_log_dir"],
@@ -1289,6 +1340,108 @@ def run_experiment_a(cfg: YOLOExperimentConfig) -> dict[str, Any]:
     comparison_df.to_csv(comparison_csv, index=False)
     comparison_json.write_text(comparison_df.to_json(orient="records", indent=2), encoding="utf-8")
     return {
+        "comparison_csv": str(comparison_csv.resolve()),
+        "comparison_json": str(comparison_json.resolve()),
+    }
+
+
+def _torch_generation_device(device: str | None) -> str:
+    if device is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    normalized = str(device).strip()
+    if not normalized:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if normalized.isdigit():
+        return f"cuda:{normalized}" if torch.cuda.is_available() else "cpu"
+    return normalized
+
+
+def run_experiment_b(cfg: YOLOExperimentConfig) -> dict[str, Any]:
+    """Run one full-train Experiment B mode from config."""
+
+    validate_experiment_b_config(cfg)
+    working_cfg = copy.deepcopy(cfg)
+    preparation_summary: dict[str, Any]
+    if str(working_cfg.experiment_b.mode) == "plain":
+        preparation_summary = {"mode": "plain", "dataset_yaml": working_cfg.data.dataset_yaml}
+    else:
+        preparation_summary = prepare_experiment_b_dataset(
+            working_cfg,
+            device=_torch_generation_device(working_cfg.resolved_device()),
+        )
+        working_cfg.data.dataset_yaml = str(preparation_summary["augmented_dataset_yaml"])
+
+    train_summary = run_train(working_cfg)
+    eval_summary = run_eval(
+        working_cfg,
+        weights_path=train_summary["best_weights_path"],
+    )
+
+    analysis_dir = working_cfg.output.analysis_dir()
+    summary = {
+        "experiment_name": working_cfg.output.experiment_name,
+        "mode": working_cfg.experiment_b.mode,
+        "source_dataset_yaml": cfg.data.dataset_yaml,
+        "training_dataset_yaml": working_cfg.data.dataset_yaml,
+        "preparation": preparation_summary,
+        "train": train_summary,
+        "eval": {
+            key: value
+            for key, value in eval_summary.items()
+            if key not in {"raw_results", "confusion_matrix_filtering"}
+        },
+    }
+    _write_json(analysis_dir / "experiment_b_summary.json", summary)
+    return summary
+
+
+def run_experiment_b_all(
+    cfg: YOLOExperimentConfig,
+    *,
+    parser: argparse.ArgumentParser,
+) -> dict[str, Any]:
+    ordered_entries = _ordered_experiment_entries(cfg)
+    comparison_dir = Path(cfg.output.analysis_root) / "experiment_b"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+
+    ordered_runs: list[dict[str, Any]] = []
+    for label, config_path in ordered_entries:
+        resolved_config_path = _require_config_file(config_path, label=f"{label} experiment config")
+        child_cfg = _load_cli_config(
+            config_path=resolved_config_path,
+            parser=parser,
+            device=cfg.device,
+        )
+        summary = run_experiment_b(child_cfg)
+        eval_summary = summary["eval"]
+        train_summary = summary["train"]
+        ordered_runs.append(
+            {
+                "label": label,
+                "config_path": str(Path(resolved_config_path).resolve()),
+                "experiment_name": child_cfg.output.experiment_name,
+                "mode": child_cfg.experiment_b.mode,
+                "source_dataset_yaml": summary["source_dataset_yaml"],
+                "training_dataset_yaml": summary["training_dataset_yaml"],
+                "eval_dataset_yaml": eval_summary["dataset_yaml"],
+                "eval_split": eval_summary["split"],
+                "weights_path": train_summary["best_weights_path"],
+                "tensorboard_log_dir": train_summary["tensorboard_log_dir"],
+                "map": eval_summary["map"],
+                "map50": eval_summary["map50"],
+                "map75": eval_summary["map75"],
+                "precision": eval_summary["precision"],
+                "recall": eval_summary["recall"],
+            }
+        )
+
+    comparison_df = pd.DataFrame(ordered_runs)
+    comparison_csv = comparison_dir / "comparison_summary_all.csv"
+    comparison_json = comparison_dir / "comparison_summary_all.json"
+    comparison_df.to_csv(comparison_csv, index=False)
+    comparison_json.write_text(comparison_df.to_json(orient="records", indent=2), encoding="utf-8")
+    return {
+        "ordered_runs": ordered_runs,
         "comparison_csv": str(comparison_csv.resolve()),
         "comparison_json": str(comparison_json.resolve()),
     }
@@ -1320,6 +1473,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         run_experiment_a(cfg)
     elif args.action == "run_exp_a_all":
         run_experiment_a_all(cfg, parser=parser)
+    elif args.action == "run_exp_b":
+        run_experiment_b(cfg)
+    elif args.action == "run_exp_b_all":
+        run_experiment_b_all(cfg, parser=parser)
     else:
         raise ValueError(f"Unsupported action: {args.action}")
 

@@ -86,6 +86,7 @@ class YOLOBaselineConfig:
 class YOLOEvalConfig:
     """Evaluation-time settings."""
 
+    dataset_yaml: Optional[str] = None
     split: str = "test"
     save_json: bool = True
     save_hybrid: bool = False
@@ -126,6 +127,57 @@ class YOLOLauncherConfig:
 
 
 @dataclass
+class YOLOExperimentBFilterConfig:
+    """Foreground/background filter settings for Experiment B synthetic images."""
+
+    checkpoint_dir: str = (
+        "artifacts/checkpoints/multiclass_foreground_background_filter/"
+        "runs/multiclass_fgbg_20260415_210440/checkpoints"
+    )
+    checkpoint_path: Optional[str] = None
+    batch_size: int = 64
+
+
+@dataclass
+class YOLOExperimentBFMConfig:
+    """Layout-conditioned flow-matching generation settings for Experiment B."""
+
+    checkpoint_path: Optional[str] = None
+    preset_path: str = "configs/fm/train/presets/stay_layout_latent_flir_sd15_512.yaml"
+    steps: int = 50
+    batch_size: int = 8
+
+
+@dataclass
+class YOLOExperimentBSDConfig:
+    """Stage-1 Stable Diffusion generation settings for Experiment B."""
+
+    stage1_dir: Optional[str] = None
+    lora_dir: Optional[str] = None
+    base_model: str = "runwayml/stable-diffusion-v1-5"
+    sd_steps: int = 100
+    guidance: float = 7.5
+    precision: str = "fp16"
+    max_tries: int = 25
+    prompt_mode: str = "constant"
+    negative_prompt: Optional[str] = None
+
+
+@dataclass
+class YOLOExperimentBConfig:
+    """Full-train Experiment B controls."""
+
+    mode: str = "plain"
+    invalid_instance_ratio_threshold: float = 0.5
+    generated_dataset_dir: str = "artifacts/generated/yolo/exp_b/generated_candidates"
+    augmented_yolo_root: str = "artifacts/generated/yolo/exp_b/augmented_yolo"
+    disable_ultralytics_augmentations: bool = False
+    filter: YOLOExperimentBFilterConfig = field(default_factory=YOLOExperimentBFilterConfig)
+    fm: YOLOExperimentBFMConfig = field(default_factory=YOLOExperimentBFMConfig)
+    sd: YOLOExperimentBSDConfig = field(default_factory=YOLOExperimentBSDConfig)
+
+
+@dataclass
 class YOLOExperimentConfig:
     """Complete configuration for YOLO train/eval workflows."""
 
@@ -136,6 +188,7 @@ class YOLOExperimentConfig:
     evaluation: YOLOEvalConfig = field(default_factory=YOLOEvalConfig)
     output: YOLOOutputConfig = field(default_factory=YOLOOutputConfig)
     launcher: YOLOLauncherConfig = field(default_factory=YOLOLauncherConfig)
+    experiment_b: YOLOExperimentBConfig = field(default_factory=YOLOExperimentBConfig)
     device: Optional[str] = None
 
     def resolved_device(self) -> str:

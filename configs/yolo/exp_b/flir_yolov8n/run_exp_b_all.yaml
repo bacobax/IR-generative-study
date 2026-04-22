@@ -1,0 +1,15 @@
+output:
+  analysis_root: artifacts/analysis/yolo/exp_b/flir_yolov8n
+
+launcher:
+  ordered_config_paths:
+    - configs/yolo/exp_b/flir_yolov8n/exp_plain.yaml
+    - configs/yolo/exp_b/flir_yolov8n/exp_fm_aug.yaml
+    - configs/yolo/exp_b/flir_yolov8n/exp_sd_aug_lora.yaml
+    - configs/yolo/exp_b/flir_yolov8n/exp_sd_aug_unet.yaml
+  ordered_labels:
+    - plain
+    - fm_aug
+    - sd_aug_lora
+    - sd_aug_unet
+  notes: "Run with python3 -m src.cli.train_yolo --action run_exp_b_all --config configs/yolo/exp_b/flir_yolov8n/run_exp_b_all.yaml"

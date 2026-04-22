@@ -1,7 +1,7 @@
 output:
   runs_root: artifacts/runs/yolo/exp_a/flir
   checkpoints_root: artifacts/checkpoints/yolo/exp_a/flir
-  analysis_root: artifacts/analysis/yolo/exp_a/flir
+  analysis_root: artifacts/analysis/yolo/exp_a/flir/valset
 
 launcher:
   ordered_config_paths:

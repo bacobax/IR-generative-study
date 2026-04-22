@@ -37,7 +37,8 @@ training:
     - model.9.
 
 evaluation:
-  split: test
+  dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
+  split: val
   save_json: true
 
 output:
