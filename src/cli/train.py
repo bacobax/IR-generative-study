@@ -44,6 +44,21 @@ import src.algorithms.inference.flow_matching_sampler  # noqa: F401 — register
 # Argument parsing
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _str2bool(value):
+    if isinstance(value, bool):
+        return value
+    lowered = str(value).strip().lower()
+    if lowered in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
+
+
+def _csv_ints(value: str) -> list[int]:
+    return [int(item.strip()) for item in str(value).split(",") if item.strip()]
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser for FM training.
 
@@ -79,6 +94,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="VAE config JSON")
     parser.add_argument("--vae_weights", type=str, default="./vae_best.pt",
                         help="Pretrained VAE weights")
+    parser.add_argument("--vae_pretrained_model_name_or_path", type=str, default=None,
+                        help="Optional diffusers model id/path used to load a pretrained VAE.")
+    parser.add_argument("--vae_pretrained_subfolder", type=str, default="vae",
+                        help="Subfolder containing the pretrained diffusers VAE.")
+    parser.add_argument("--vae_revision", type=str, default=None,
+                        help="Optional pretrained VAE revision.")
+    parser.add_argument("--vae_variant", type=str, default=None,
+                        help="Optional pretrained VAE variant.")
 
     # Output
     parser.add_argument("--model_dir", type=str,
@@ -131,6 +154,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--condition_weight", type=float, default=1.0,
                         help="Weight of conditioning cost in conditional OT.")
 
+    # RegionDiff layout conditioning (opt-in; defaults preserve unconditional FM)
+    parser.add_argument("--layout_conditioning_enabled", action="store_true",
+                        help="Enable layout-conditioned FM data/model path.")
+    parser.add_argument("--layout_conditioning_variant", type=str, default=None,
+                        help="Layout conditioning variant, e.g. regiondiff_v1.")
+    parser.add_argument("--active_region_resolutions", type=_csv_ints, default=None,
+                        help="Comma-separated RegionDiff latent resolutions, e.g. 64,32,16.")
+    parser.add_argument("--layout_token_dim", type=int, default=None)
+    parser.add_argument("--bbox_fourier_dim", type=int, default=None)
+    parser.add_argument("--same_class_position_slots", type=int, default=None)
+    parser.add_argument("--use_background_token", type=_str2bool, default=None)
+    parser.add_argument("--layout_train_mode", type=str, default=None)
+    parser.add_argument("--partial_backbone_modules", nargs="+", default=None)
+    parser.add_argument("--adapter_learning_rate", type=float, default=None)
+    parser.add_argument("--backbone_learning_rate", type=float, default=None)
+
     # Augmentation schedule
     parser.add_argument("--warmup_frac", type=float, default=0.1)
     parser.add_argument("--ramp_frac", type=float, default=0.3)
@@ -180,6 +219,10 @@ _FLAT_TO_NESTED = {
     "unet_config":         "model.unet_config",
     "vae_config":          "model.vae_config",
     "vae_weights":         "model.vae_weights",
+    "vae_pretrained_model_name_or_path": "model.vae_pretrained_model_name_or_path",
+    "vae_pretrained_subfolder": "model.vae_pretrained_subfolder",
+    "vae_revision":        "model.vae_revision",
+    "vae_variant":         "model.vae_variant",
     # Output
     "model_dir":           "output.model_dir",
     "resume":              "output.resume",
@@ -205,6 +248,17 @@ _FLAT_TO_NESTED = {
     "path_solver":         "path.solver",
     "layout_cost_resolution": "path.layout_cost_resolution",
     "condition_weight":    "path.condition_weight",
+    "layout_conditioning_enabled": "layout_conditioning.enabled",
+    "layout_conditioning_variant": "layout_conditioning.variant",
+    "active_region_resolutions": "layout_conditioning.active_region_resolutions",
+    "layout_token_dim": "layout_conditioning.layout_token_dim",
+    "bbox_fourier_dim": "layout_conditioning.bbox_fourier_dim",
+    "same_class_position_slots": "layout_conditioning.same_class_position_slots",
+    "use_background_token": "layout_conditioning.use_background_token",
+    "layout_train_mode": "layout_conditioning.train_mode",
+    "partial_backbone_modules": "layout_conditioning.partial_backbone_modules",
+    "adapter_learning_rate": "layout_conditioning.adapter_learning_rate",
+    "backbone_learning_rate": "layout_conditioning.backbone_learning_rate",
     # Augmentation
     "warmup_frac":         "augment.warmup_frac",
     "ramp_frac":           "augment.ramp_frac",
@@ -245,6 +299,7 @@ def run_training(cfg: FMTrainConfig) -> None:
     total_epochs = cfg.training.epochs
     resolved_data = _resolve_training_data(cfg)
     layout_enabled = bool(cfg.layout_conditioning.enabled)
+    layout_variant = str(getattr(cfg.layout_conditioning, "variant", "raster_v1"))
 
     # Propagate total_epochs into curriculum config
     if cfg.curriculum.enabled:
@@ -273,8 +328,10 @@ def run_training(cfg: FMTrainConfig) -> None:
 
         cfg.layout_conditioning.num_classes = train_base_dataset.num_categories
         cfg.layout_conditioning.category_id_to_name = dict(train_base_dataset.category_id_to_name)
-        if cfg.trainer_name is None:
+        if cfg.trainer_name is None and layout_variant != "regiondiff_v1":
             cfg.trainer_name = "layout_fm"
+        elif cfg.trainer_name is None:
+            cfg.trainer_name = "default_fm"
 
         train_dataset = _apply_subset(
             train_base_dataset,

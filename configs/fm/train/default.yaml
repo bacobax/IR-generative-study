@@ -35,6 +35,7 @@ augment:
 
 training:
   epochs: 1
+  lr: 0.0001
   t_scale: 1000.0
   train_target: "v"
   save_every_n_epochs: 10
@@ -48,6 +49,10 @@ sampling:
   sample_steps: 100
   sample_batch_size: 4
   sample_shape: null
+
+layout_conditioning:
+  enabled: false
+  variant: "raster_v1"
 
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled_test"

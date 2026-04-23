@@ -89,6 +89,21 @@ class TrainingConfig:
         default_factory=lambda: list(DEFAULT_LORA_TARGET_MODULES)
     )
 
+    # RegionDiff layout conditioning (opt-in)
+    layout_conditioning_enabled: bool = False
+    layout_conditioning_variant: str = "regiondiff_v1"
+    layout_annotations_path: Optional[str] = None
+    active_region_resolutions: List[int] = field(default_factory=lambda: [64, 32, 16])
+    layout_token_dim: int = 256
+    bbox_fourier_dim: int = 64
+    same_class_position_slots: int = 128
+    use_background_token: bool = True
+    layout_train_mode: str = "adapters_only"
+    partial_backbone_modules: List[str] = field(default_factory=lambda: list(DEFAULT_PARTIAL_UNET_MODULES))
+    adapter_learning_rate: float = 1e-4
+    backbone_learning_rate: float = 1e-5
+    layout_category_id_to_name: Optional[dict] = None
+
     # Optimizer configuration
     use_8bit_adam: bool = False
     adam_beta1: float = 0.9
@@ -179,6 +194,27 @@ class TrainingConfig:
             if self.unet_train_mode == "partial" and not self.unet_trainable_modules:
                 raise ValueError(
                     "Partial U-Net baseline requires unet_trainable_modules to be non-empty."
+                )
+
+        if self.layout_conditioning_enabled:
+            if self.layout_conditioning_variant != "regiondiff_v1":
+                raise ValueError(
+                    "Only layout_conditioning_variant='regiondiff_v1' is supported for SD1.5."
+                )
+            if not self.active_region_resolutions:
+                raise ValueError("active_region_resolutions must be non-empty when layout conditioning is enabled.")
+            if self.layout_train_mode not in {"adapters_only", "adapters_plus_partial_unet"}:
+                raise ValueError(
+                    "layout_train_mode must be 'adapters_only' or 'adapters_plus_partial_unet'."
+                )
+            if self.layout_train_mode == "adapters_plus_partial_unet" and not self.partial_backbone_modules:
+                raise ValueError(
+                    "partial_backbone_modules must be non-empty for adapters_plus_partial_unet."
+                )
+            if self.dataset_id is None and self.layout_annotations_path is None:
+                raise ValueError(
+                    "layout_annotations_path is required for SD1.5 layout conditioning "
+                    "when dataset_id is not set."
                 )
 
         if self.report_to == "wandb" and self.hub_token is not None:
@@ -369,6 +405,33 @@ def build_parser() -> argparse.ArgumentParser:
         default=list(DEFAULT_LORA_TARGET_MODULES),
         help="Target U-Net module names for LoRA injection.",
     )
+
+    layout_group = parser.add_argument_group("RegionDiff Layout Conditioning")
+    layout_group.add_argument("--layout_conditioning_enabled", type=_str2bool, default=False)
+    layout_group.add_argument("--layout_conditioning_variant", type=str, default="regiondiff_v1")
+    layout_group.add_argument("--layout_annotations_path", type=str, default=None)
+    layout_group.add_argument(
+        "--active_region_resolutions",
+        type=lambda value: [int(item.strip()) for item in str(value).split(",") if item.strip()],
+        default=[64, 32, 16],
+    )
+    layout_group.add_argument("--layout_token_dim", type=int, default=256)
+    layout_group.add_argument("--bbox_fourier_dim", type=int, default=64)
+    layout_group.add_argument("--same_class_position_slots", type=int, default=128)
+    layout_group.add_argument("--use_background_token", type=_str2bool, default=True)
+    layout_group.add_argument(
+        "--layout_train_mode",
+        type=str,
+        default="adapters_only",
+        choices=["adapters_only", "adapters_plus_partial_unet"],
+    )
+    layout_group.add_argument(
+        "--partial_backbone_modules",
+        nargs="+",
+        default=list(DEFAULT_PARTIAL_UNET_MODULES),
+    )
+    layout_group.add_argument("--adapter_learning_rate", type=float, default=1e-4)
+    layout_group.add_argument("--backbone_learning_rate", type=float, default=1e-5)
 
     optim_group = parser.add_argument_group("Optimizer Configuration")
     optim_group.add_argument("--use_8bit_adam", action="store_true")

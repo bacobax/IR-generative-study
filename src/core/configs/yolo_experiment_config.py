@@ -130,6 +130,7 @@ class YOLOLauncherConfig:
 class YOLOExperimentBFilterConfig:
     """Foreground/background filter settings for Experiment B synthetic images."""
 
+    enabled: bool = True
     checkpoint_dir: str = (
         "artifacts/checkpoints/multiclass_foreground_background_filter/"
         "runs/multiclass_fgbg_20260415_210440/checkpoints"
@@ -170,6 +171,7 @@ class YOLOExperimentBConfig:
     mode: str = "plain"
     invalid_instance_ratio_threshold: float = 0.5
     generated_dataset_dir: str = "artifacts/generated/yolo/exp_b/generated_candidates"
+    precomputed_dataset_dir: Optional[str] = None
     augmented_yolo_root: str = "artifacts/generated/yolo/exp_b/augmented_yolo"
     disable_ultralytics_augmentations: bool = False
     filter: YOLOExperimentBFilterConfig = field(default_factory=YOLOExperimentBFilterConfig)

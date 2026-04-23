@@ -25,6 +25,14 @@ from diffusers.utils.torch_utils import is_compiled_module
 
 from src.core.normalization import RAW_UINT16_PERCENTILE
 from src.core.paths import sd_lora_runs_dir, sd_unet_runs_dir
+from src.models.regiondiffusion import iter_regiondiff_adapter_parameters, load_regiondiff_config
+from src.models.regiondiffusion_factory import (
+    build_regiondiff_wrapper,
+    build_text_class_features,
+    regiondiff_state_dict,
+    save_regiondiff_metadata,
+    set_requires_grad_for_prefixes,
+)
 
 from .config import TrainingConfig
 
@@ -35,6 +43,29 @@ STAGE1_MANIFEST_NAME = "stage1_manifest.json"
 UNET_EXPORT_DIRNAME = "unet"
 TEXT_ENCODER_EXPORT_DIRNAME = "text_encoder"
 VAE_EXPORT_DIRNAME = "vae"
+REGIONDIFF_ADAPTER_WEIGHTS = "regiondiff_adapters.safetensors"
+REGIONDIFF_CHECKPOINT_WEIGHTS = "regiondiff_adapters_checkpoint.safetensors"
+
+try:
+    from safetensors.torch import load_file as safe_load_file
+    from safetensors.torch import save_file as safe_save_file
+except ImportError:  # pragma: no cover
+    safe_load_file = None
+    safe_save_file = None
+
+
+def _save_state_dict(path: str, state_dict: Dict[str, torch.Tensor]) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    if path.endswith(".safetensors") and safe_save_file is not None:
+        safe_save_file(state_dict, path)
+        return
+    torch.save(state_dict, path)
+
+
+def _load_state_dict(path: str) -> Dict[str, torch.Tensor]:
+    if path.endswith(".safetensors") and safe_load_file is not None:
+        return safe_load_file(path)
+    return torch.load(path, map_location="cpu")
 
 
 @dataclass
@@ -204,11 +235,16 @@ def configure_trainable_components(
         "freeze_vae": config.freeze_vae,
         "freeze_text_encoder": config.freeze_text_encoder,
         "lora_active": config.baseline_mode == "sd_ir_lora",
+        "layout_conditioning_enabled": bool(config.layout_conditioning_enabled),
+        "layout_conditioning_variant": config.layout_conditioning_variant if config.layout_conditioning_enabled else None,
         "unet_train_mode": config.unet_train_mode if config.baseline_mode == "sd_ir_unet" else None,
         "lora_target_modules": list(config.lora_target_modules),
         "unet_trainable_modules": [],
         "trainable_parameter_names": {},
     }
+
+    if config.layout_conditioning_enabled:
+        models.unet.requires_grad_(False)
 
     if config.baseline_mode == "sd_ir_lora":
         models.unet.add_adapter(
@@ -237,6 +273,55 @@ def configure_trainable_components(
                 )
             info["unet_trainable_modules"] = list(config.unet_trainable_modules)
 
+    if config.layout_conditioning_enabled:
+        category_id_to_name = {
+            int(key): str(value)
+            for key, value in (config.layout_category_id_to_name or {}).items()
+        }
+        class_text_features = build_text_class_features(
+            tokenizer=models.tokenizer,
+            text_encoder=models.text_encoder,
+            category_id_to_name=category_id_to_name,
+            device=next(models.text_encoder.parameters()).device,
+        )
+        models.unet = build_regiondiff_wrapper(
+            base_model=models.unet,
+            region_config=config,
+            class_text_features=class_text_features,
+            category_id_to_name=category_id_to_name,
+            backbone_kind="sd_conditional_unet",
+            attachment_kind="transformer",
+        )
+        models.unet.to(next(models.text_encoder.parameters()).device)
+
+        if config.baseline_mode != "sd_ir_lora":
+            models.unet.base_unet.requires_grad_(False)
+
+        for parameter in iter_regiondiff_adapter_parameters(models.unet):
+            parameter.requires_grad_(True)
+
+        layout_backbone_matches: List[str] = []
+        if config.baseline_mode != "sd_ir_lora" and config.layout_train_mode == "adapters_plus_partial_unet":
+            layout_backbone_matches = set_requires_grad_for_prefixes(
+                models.unet.base_unet,
+                config.partial_backbone_modules,
+            )
+            if not layout_backbone_matches:
+                raise ValueError(
+                    "RegionDiff partial U-Net mode resolved to zero trainable backbone parameters. "
+                    f"Provided prefixes: {config.partial_backbone_modules!r}"
+                )
+        info["layout_conditioning"] = {
+            "train_mode": config.layout_train_mode,
+            "active_region_resolutions": list(config.active_region_resolutions),
+            "adapter_learning_rate": config.adapter_learning_rate,
+            "backbone_learning_rate": config.backbone_learning_rate,
+            "backbone_matches": layout_backbone_matches,
+            "num_region_blocks": int(models.unet.num_region_blocks),
+        }
+        if config.mixed_precision == "fp16":
+            cast_training_params(models.unet, dtype=torch.float32)
+
     if config.freeze_text_encoder:
         models.text_encoder.requires_grad_(False)
     else:
@@ -248,9 +333,10 @@ def configure_trainable_components(
         models.vae.requires_grad_(True)
 
     if config.enable_xformers_memory_efficient_attention:
-        _enable_xformers(models.unet)
+        _enable_xformers(models.unet.base_unet if hasattr(models.unet, "base_unet") else models.unet)
     if config.gradient_checkpointing:
-        models.unet.enable_gradient_checkpointing()
+        target_unet = models.unet.base_unet if hasattr(models.unet, "base_unet") else models.unet
+        target_unet.enable_gradient_checkpointing()
         logger.info("Gradient checkpointing enabled")
 
     info["trainable_parameter_names"] = {
@@ -305,10 +391,21 @@ def create_save_model_hook(unet, accelerator):
     def save_model_hook(models, weights, output_dir):
         if accelerator.is_main_process:
             unet_lora_layers_to_save = None
+            regiondiff_layers_to_save = None
 
             for model in models:
                 if isinstance(model, type(unwrap_model(unet, accelerator))):
-                    unet_lora_layers_to_save = get_peft_model_state_dict(model)
+                    unwrapped = accelerator.unwrap_model(model)
+                    lora_source = unwrapped.base_unet if hasattr(unwrapped, "base_unet") else unwrapped
+                    unet_lora_layers_to_save = get_peft_model_state_dict(lora_source)
+                    if hasattr(unwrapped, "layout_tokenizer"):
+                        regiondiff_layers_to_save = {
+                            key: value.detach().cpu().to(torch.float32)
+                            for key, value in regiondiff_state_dict(
+                                unwrapped,
+                                adapters_only=True,
+                            ).items()
+                        }
                 else:
                     raise ValueError(f"Unexpected save model: {model.__class__}")
 
@@ -319,6 +416,11 @@ def create_save_model_hook(unet, accelerator):
                 unet_lora_layers=unet_lora_layers_to_save,
                 safe_serialization=True,
             )
+            if regiondiff_layers_to_save is not None:
+                _save_state_dict(
+                    os.path.join(output_dir, REGIONDIFF_CHECKPOINT_WEIGHTS),
+                    regiondiff_layers_to_save,
+                )
 
     return save_model_hook
 
@@ -344,7 +446,21 @@ def create_load_model_hook(unet, accelerator, mixed_precision: Optional[str] = N
             if key.startswith("unet.")
         }
         unet_state_dict = convert_unet_state_dict_to_peft(unet_state_dict)
-        incompatible_keys = set_peft_model_state_dict(unet_, unet_state_dict, adapter_name="default")
+        lora_target = unet_.base_unet if hasattr(unet_, "base_unet") else unet_
+        incompatible_keys = set_peft_model_state_dict(lora_target, unet_state_dict, adapter_name="default")
+
+        regiondiff_path = os.path.join(input_dir, REGIONDIFF_CHECKPOINT_WEIGHTS)
+        if hasattr(unet_, "layout_tokenizer") and os.path.isfile(regiondiff_path):
+            region_state = _load_state_dict(regiondiff_path)
+            missing, unexpected = unet_.load_state_dict(region_state, strict=False)
+            unexpected = [
+                key for key in unexpected
+                if key.startswith("layout_tokenizer.") or ".region_adapter." in key
+            ]
+            if unexpected:
+                logger.warning("Unexpected RegionDiff checkpoint keys: %s", unexpected[:10])
+            if missing:
+                logger.debug("RegionDiff checkpoint load missing non-adapter keys: %s", missing[:10])
 
         if incompatible_keys is not None:
             unexpected_keys = getattr(incompatible_keys, "unexpected_keys", None)
@@ -398,6 +514,12 @@ def build_stage1_manifest(
         "rank": config.rank,
         "lora_alpha_scale": config.lora_alpha_scale,
         "lora_target_modules": list(config.lora_target_modules),
+        "layout_conditioning_enabled": bool(config.layout_conditioning_enabled),
+        "layout_conditioning_variant": config.layout_conditioning_variant if config.layout_conditioning_enabled else None,
+        "layout_train_mode": config.layout_train_mode if config.layout_conditioning_enabled else None,
+        "active_region_resolutions": list(config.active_region_resolutions),
+        "adapter_learning_rate": config.adapter_learning_rate,
+        "backbone_learning_rate": config.backbone_learning_rate,
         "unet_train_mode": config.unet_train_mode,
         "unet_trainable_modules": list(config.unet_trainable_modules),
         "validation_prompt": config.validation_prompt,
@@ -459,5 +581,40 @@ def load_stage1_pipeline(
         vae_dir = Path(stage1_dir) / VAE_EXPORT_DIRNAME
         if vae_dir.is_dir():
             pipeline.vae = AutoencoderKL.from_pretrained(vae_dir, torch_dtype=torch_dtype)
+
+    region_config_path = Path(stage1_dir) / "regiondiff_config.json"
+    region_weights_path = Path(stage1_dir) / REGIONDIFF_ADAPTER_WEIGHTS
+    if region_config_path.is_file() and region_weights_path.is_file():
+        region_config = load_regiondiff_config(str(region_config_path))
+        category_id_to_name = {
+            int(key): str(value)
+            for key, value in region_config.get("category_id_to_name", {}).items()
+        }
+        class_text_features = build_text_class_features(
+            tokenizer=pipeline.tokenizer,
+            text_encoder=pipeline.text_encoder,
+            category_id_to_name=category_id_to_name,
+            device=next(pipeline.text_encoder.parameters()).device,
+        )
+        pipeline.unet = build_regiondiff_wrapper(
+            base_model=pipeline.unet,
+            region_config=region_config,
+            class_text_features=class_text_features,
+            category_id_to_name=category_id_to_name,
+            backbone_kind="sd_conditional_unet",
+            attachment_kind="transformer",
+        )
+        missing, unexpected = pipeline.unet.load_state_dict(
+            _load_state_dict(str(region_weights_path)),
+            strict=False,
+        )
+        unexpected = [
+            key for key in unexpected
+            if key.startswith("layout_tokenizer.") or ".region_adapter." in key
+        ]
+        if unexpected:
+            raise RuntimeError(f"Unexpected RegionDiff keys while loading stage-1 artifact: {unexpected[:10]}")
+        if torch_dtype is not None:
+            pipeline.unet.base_unet.to(dtype=torch_dtype)
 
     return pipeline, manifest

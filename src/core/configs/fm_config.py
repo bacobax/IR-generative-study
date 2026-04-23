@@ -204,6 +204,15 @@ class LayoutConditioningConfig:
     mask_sharpness_loss_weight: float = 0.01
     mask_activation_loss_weight: float = 0.01
     log_internal_maps: bool = True
+    active_region_resolutions: List[int] = field(default_factory=lambda: [64, 32, 16])
+    layout_token_dim: int = 256
+    bbox_fourier_dim: int = 64
+    same_class_position_slots: int = 128
+    use_background_token: bool = True
+    train_mode: str = "adapters_only"
+    partial_backbone_modules: List[str] = field(default_factory=lambda: ["mid_block", "up_blocks"])
+    adapter_learning_rate: float = 1e-4
+    backbone_learning_rate: float = 1e-5
 
 
 @dataclass
@@ -311,6 +320,10 @@ class FMTrainConfig:
                 unet_config=args.unet_config,
                 vae_config=args.vae_config,
                 vae_weights=args.vae_weights,
+                vae_pretrained_model_name_or_path=getattr(args, "vae_pretrained_model_name_or_path", None),
+                vae_pretrained_subfolder=getattr(args, "vae_pretrained_subfolder", "vae"),
+                vae_revision=getattr(args, "vae_revision", None),
+                vae_variant=getattr(args, "vae_variant", None),
             ),
             augment=AugmentConfig(
                 warmup_frac=args.warmup_frac,

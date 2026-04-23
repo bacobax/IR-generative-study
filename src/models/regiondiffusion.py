@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import math
 import os
+from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Optional
 
 import torch
 import torch.nn as nn
 
 from diffusers.models.attention import BasicTransformerBlock
+from diffusers.models.attention_processor import Attention
 
 
 def compute_same_class_positions(
@@ -479,6 +482,89 @@ class RegionDiffTransformerBlock(nn.Module):
         return hidden_states
 
 
+class RegionDiffAttentionBlock(nn.Module):
+    """Wrap a diffusers spatial Attention module and add RegionDiff attention."""
+
+    def __init__(
+        self,
+        base_attention: Attention,
+        *,
+        layout_token_dim: int,
+        active_region_resolutions: Iterable[int],
+    ) -> None:
+        super().__init__()
+        self.base_attention = base_attention
+        self.active_region_resolutions = frozenset(int(value) for value in active_region_resolutions)
+        hidden_dim = int(getattr(base_attention, "query_dim", 0) or getattr(base_attention, "out_dim", 0))
+        if hidden_dim <= 0:
+            raise ValueError("Could not infer hidden_dim from diffusers Attention module.")
+        num_heads = int(getattr(base_attention, "heads", 1))
+        self.region_adapter = RegionSelfAttentionAdapter(
+            hidden_dim=hidden_dim,
+            layout_token_dim=layout_token_dim,
+            num_heads=num_heads,
+        )
+        self.regiondiff_context: Optional[Dict[str, Any]] = None
+
+    @staticmethod
+    def _flatten_spatial(hidden_states: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+        if hidden_states.ndim != 4:
+            raise ValueError(
+                "RegionDiffAttentionBlock expects 4D spatial hidden states, "
+                f"got shape={tuple(hidden_states.shape)}"
+            )
+        batch_size, channels, height, width = hidden_states.shape
+        tokens = hidden_states.permute(0, 2, 3, 1).reshape(batch_size, height * width, channels)
+        return tokens, height, width
+
+    @staticmethod
+    def _unflatten_spatial(tokens: torch.Tensor, *, height: int, width: int) -> torch.Tensor:
+        batch_size, _, channels = tokens.shape
+        return tokens.reshape(batch_size, height, width, channels).permute(0, 3, 1, 2)
+
+    def _maybe_apply_region_attention(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        regiondiff_context = self.regiondiff_context
+        if regiondiff_context is None or hidden_states.ndim != 4:
+            return hidden_states
+
+        tokens, height, width = self._flatten_spatial(hidden_states)
+        if height != width or height not in self.active_region_resolutions:
+            return hidden_states
+
+        mask_cache = regiondiff_context.setdefault("region_token_masks", {})
+        region_token_mask = mask_cache.get(height)
+        if region_token_mask is None:
+            region_token_mask = build_region_token_mask(
+                boxes_xyxy_norm=regiondiff_context["boxes_xyxy_norm"],
+                object_mask=regiondiff_context["object_mask"],
+                resolution=height,
+                use_background_token=bool(regiondiff_context["use_background_token"]),
+            )
+            mask_cache[height] = region_token_mask
+
+        delta = self.region_adapter(
+            tokens,
+            layout_tokens=regiondiff_context["layout_tokens"].to(dtype=tokens.dtype),
+            region_token_mask=region_token_mask,
+        )
+        return hidden_states + self._unflatten_spatial(delta, height=height, width=width)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        **cross_attention_kwargs,
+    ) -> torch.Tensor:
+        hidden_states = self.base_attention(
+            hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
+            attention_mask=attention_mask,
+            **cross_attention_kwargs,
+        )
+        return self._maybe_apply_region_attention(hidden_states)
+
+
 def patch_unet_regiondiff_blocks(
     base_unet: nn.Module,
     *,
@@ -510,6 +596,41 @@ def patch_unet_regiondiff_blocks(
     return wrapped
 
 
+def patch_attention_regiondiff_blocks(
+    base_model: nn.Module,
+    *,
+    layout_token_dim: int,
+    active_region_resolutions: Iterable[int],
+) -> int:
+    """Recursively wrap diffusers spatial Attention modules in-place."""
+    wrapped = 0
+    for child_name, child in list(base_model.named_children()):
+        if isinstance(child, RegionDiffAttentionBlock):
+            continue
+        if isinstance(child, RegionDiffTransformerBlock):
+            continue
+        if isinstance(child, BasicTransformerBlock):
+            continue
+        if isinstance(child, Attention):
+            setattr(
+                base_model,
+                child_name,
+                RegionDiffAttentionBlock(
+                    child,
+                    layout_token_dim=layout_token_dim,
+                    active_region_resolutions=active_region_resolutions,
+                ),
+            )
+            wrapped += 1
+            continue
+        wrapped += patch_attention_regiondiff_blocks(
+            child,
+            layout_token_dim=layout_token_dim,
+            active_region_resolutions=active_region_resolutions,
+        )
+    return wrapped
+
+
 def iter_regiondiff_transformer_blocks(module: nn.Module) -> Iterable[RegionDiffTransformerBlock]:
     """Yield every wrapped RegionDiff transformer block under *module*."""
     for child in module.modules():
@@ -517,17 +638,28 @@ def iter_regiondiff_transformer_blocks(module: nn.Module) -> Iterable[RegionDiff
             yield child
 
 
+def iter_regiondiff_attention_blocks(module: nn.Module) -> Iterable[RegionDiffAttentionBlock]:
+    """Yield every wrapped RegionDiff attention block under *module*."""
+    for child in module.modules():
+        if isinstance(child, RegionDiffAttentionBlock):
+            yield child
+
+
 def iter_regiondiff_adapter_parameters(module: nn.Module) -> Iterable[nn.Parameter]:
     """Yield trainable RegionDiff parameters only."""
-    if isinstance(module, RegionDiffusionUNetWrapper):
+    if isinstance(module, (RegionDiffusionUNetWrapper, RegionDiffusionModelWrapper)):
         yield from module.layout_tokenizer.parameters()
     for block in iter_regiondiff_transformer_blocks(module):
+        yield from block.region_adapter.parameters()
+    for block in iter_regiondiff_attention_blocks(module):
         yield from block.region_adapter.parameters()
 
 
 def regiondiff_config_dict(wrapper: "RegionDiffusionUNetWrapper") -> Dict[str, Any]:
     """Serialize the RegionDiff wrapper hyperparameters."""
     return {
+        "backbone_kind": str(getattr(wrapper, "backbone_kind", "sd_conditional_unet")),
+        "attachment_kind": str(getattr(wrapper, "attachment_kind", "transformer")),
         "layout_token_dim": int(wrapper.layout_tokenizer.layout_token_dim),
         "bbox_fourier_dim": int(wrapper.layout_tokenizer.bbox_fourier_dim),
         "same_class_position_slots": int(wrapper.layout_tokenizer.same_class_position_slots),
@@ -570,6 +702,8 @@ class RegionDiffusionUNetWrapper(nn.Module):
     ) -> None:
         super().__init__()
         self.base_unet = base_unet
+        self.backbone_kind = "sd_conditional_unet"
+        self.attachment_kind = "transformer"
         self.category_id_to_name = dict(category_id_to_name)
         self.active_region_resolutions = tuple(sorted(int(value) for value in active_region_resolutions))
         self.layout_tokenizer = LayoutTokenizer(
@@ -701,3 +835,133 @@ class RegionDiffusionUNetWrapper(nn.Module):
             return_dict=return_dict,
         )
 
+
+class RegionDiffusionModelWrapper(nn.Module):
+    """RegionDiff wrapper for denoisers without SD cross-attention kwargs."""
+
+    def __init__(
+        self,
+        *,
+        base_model: nn.Module,
+        class_text_features: torch.Tensor,
+        category_id_to_name: Dict[int, str],
+        layout_token_dim: int,
+        bbox_fourier_dim: int,
+        same_class_position_slots: int,
+        use_background_token: bool,
+        active_region_resolutions: Iterable[int],
+        backbone_kind: str = "unet2d",
+        attachment_kind: str = "attention",
+    ) -> None:
+        super().__init__()
+        self.base_model = base_model
+        object.__setattr__(self, "base_unet", base_model)
+        self.backbone_kind = str(backbone_kind)
+        self.attachment_kind = str(attachment_kind)
+        self.category_id_to_name = dict(category_id_to_name)
+        self.active_region_resolutions = tuple(sorted(int(value) for value in active_region_resolutions))
+        self.layout_tokenizer = LayoutTokenizer(
+            class_text_features=class_text_features,
+            layout_token_dim=layout_token_dim,
+            bbox_fourier_dim=bbox_fourier_dim,
+            same_class_position_slots=same_class_position_slots,
+            use_background_token=use_background_token,
+        )
+        if self.attachment_kind == "attention":
+            self.num_region_blocks = patch_attention_regiondiff_blocks(
+                self.base_model,
+                layout_token_dim=layout_token_dim,
+                active_region_resolutions=self.active_region_resolutions,
+            )
+        elif self.attachment_kind == "transformer":
+            self.num_region_blocks = patch_unet_regiondiff_blocks(
+                self.base_model,
+                layout_token_dim=layout_token_dim,
+                active_region_resolutions=self.active_region_resolutions,
+            )
+        else:
+            raise ValueError(f"Unknown RegionDiff attachment_kind={attachment_kind!r}")
+        self.config = getattr(
+            self.base_model,
+            "config",
+            SimpleNamespace(in_channels=None, out_channels=None, sample_size=None),
+        )
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
+    def _broadcast_layout_inputs(
+        self,
+        sample_batch_size: int,
+        *,
+        boxes_xyxy_norm: torch.Tensor,
+        labels: torch.Tensor,
+        object_mask: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        return RegionDiffusionUNetWrapper._broadcast_layout_inputs(
+            self,
+            sample_batch_size,
+            boxes_xyxy_norm=boxes_xyxy_norm,
+            labels=labels,
+            object_mask=object_mask,
+        )
+
+    def _build_regiondiff_context(
+        self,
+        sample_batch_size: int,
+        *,
+        boxes_xyxy_norm: torch.Tensor,
+        labels: torch.Tensor,
+        object_mask: torch.Tensor,
+    ) -> Dict[str, Any]:
+        return RegionDiffusionUNetWrapper._build_regiondiff_context(
+            self,
+            sample_batch_size,
+            boxes_xyxy_norm=boxes_xyxy_norm,
+            labels=labels,
+            object_mask=object_mask,
+        )
+
+    @contextmanager
+    def _regiondiff_context_scope(self, context: Optional[Dict[str, Any]]):
+        blocks = list(iter_regiondiff_attention_blocks(self.base_model))
+        try:
+            for block in blocks:
+                block.regiondiff_context = context
+            yield
+        finally:
+            for block in blocks:
+                block.regiondiff_context = None
+
+    def forward(
+        self,
+        sample: torch.Tensor,
+        timestep: torch.Tensor,
+        *args,
+        boxes_xyxy_norm: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        object_mask: Optional[torch.Tensor] = None,
+        layout_inputs: Optional[Dict[str, torch.Tensor]] = None,
+        **kwargs,
+    ):
+        if layout_inputs is not None:
+            boxes_xyxy_norm = boxes_xyxy_norm if boxes_xyxy_norm is not None else layout_inputs.get("boxes_xyxy_norm")
+            labels = labels if labels is not None else layout_inputs.get("labels")
+            object_mask = object_mask if object_mask is not None else layout_inputs.get("object_mask")
+
+        context = None
+        if boxes_xyxy_norm is not None and labels is not None and object_mask is not None:
+            context = self._build_regiondiff_context(
+                int(sample.shape[0]),
+                boxes_xyxy_norm=boxes_xyxy_norm.to(device=sample.device, dtype=sample.dtype),
+                labels=labels.to(device=sample.device),
+                object_mask=object_mask.to(device=sample.device),
+            )
+
+        with self._regiondiff_context_scope(context):
+            return self.base_model(sample, timestep, *args, **kwargs)

@@ -34,6 +34,12 @@ from src.core.training_utils import (
     resolve_precision_settings,
 )
 from src.models.fm_unet import save_unet_config, load_unet_config, build_fm_unet_from_config
+from src.models.regiondiffusion_factory import (
+    build_regiondiff_wrapper,
+    configure_regiondiff_trainability,
+    regiondiff_optimizer_param_groups,
+    save_regiondiff_metadata,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +134,8 @@ class FlowMatchingTrainer:
         path_solver: str = "hungarian",
         layout_cost_resolution: int = 16,
         condition_weight: float = 1.0,
+        layout_config=None,
+        regiondiff_trainability_info: Optional[Dict[str, Any]] = None,
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -146,6 +154,8 @@ class FlowMatchingTrainer:
         self.path_solver = str(path_solver)
         self.layout_cost_resolution = int(layout_cost_resolution)
         self.condition_weight = float(condition_weight)
+        self.layout_config = layout_config
+        self.regiondiff_trainability_info = dict(regiondiff_trainability_info or {})
 
         # Freeze VAE if present
         if self.vae is not None:
@@ -167,12 +177,31 @@ class FlowMatchingTrainer:
 
     def _save_additional_configs(self) -> None:
         """Persist algorithm-specific config artifacts."""
+        if self._uses_regiondiff_layout():
+            save_regiondiff_metadata(
+                self.unet,
+                self.model_dir,
+                extra={"trainability": self.regiondiff_trainability_info},
+            )
 
     def _checkpoint_metadata(self) -> Dict[str, Any]:
-        return {
+        metadata = {
             "t_scale": self.t_scale,
             "train_target": self.train_target,
         }
+        if self._uses_regiondiff_layout():
+            metadata["layout_conditioning"] = {
+                "variant": "regiondiff_v1",
+                "trainability": self.regiondiff_trainability_info,
+            }
+        return metadata
+
+    def _uses_regiondiff_layout(self) -> bool:
+        return (
+            self.layout_config is not None
+            and bool(getattr(self.layout_config, "enabled", False))
+            and str(getattr(self.layout_config, "variant", "")) == "regiondiff_v1"
+        )
 
     def _best_weights_path(self) -> str:
         return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_best.pt")
@@ -229,6 +258,28 @@ class FlowMatchingTrainer:
         if vae_cfg is not None:
             vae = build_vae_from_config(vae_cfg, device=device)
 
+        layout_config = getattr(config, "layout_conditioning", None)
+        regiondiff_trainability_info = None
+        if (
+            layout_config is not None
+            and bool(getattr(layout_config, "enabled", False))
+            and str(getattr(layout_config, "variant", "")) == "regiondiff_v1"
+        ):
+            unet = build_regiondiff_wrapper(
+                base_model=unet,
+                region_config=layout_config,
+                category_id_to_name=getattr(layout_config, "category_id_to_name", {}),
+                num_classes=getattr(layout_config, "num_classes", None),
+                backbone_kind="fm_unet2d",
+                attachment_kind="attention",
+            ).to(device)
+            regiondiff_trainability_info = configure_regiondiff_trainability(
+                wrapper=unet,
+                train_mode=str(getattr(layout_config, "train_mode", "adapters_only")),
+                partial_backbone_modules=getattr(layout_config, "partial_backbone_modules", []),
+                mixed_precision=getattr(getattr(config, "precision", None), "mixed_precision", None),
+            )
+
         return cls(
             unet,
             device=device,
@@ -243,6 +294,8 @@ class FlowMatchingTrainer:
             path_solver=getattr(config.path, "solver", "hungarian"),
             layout_cost_resolution=getattr(config.path, "layout_cost_resolution", 16),
             condition_weight=getattr(config.path, "condition_weight", 1.0),
+            layout_config=layout_config,
+            regiondiff_trainability_info=regiondiff_trainability_info,
         )
 
     def train_from_config(
@@ -320,9 +373,34 @@ class FlowMatchingTrainer:
         state = torch.load(path, map_location=self.device)
         if isinstance(state, dict) and "unet_state" in state:
             state = state["unet_state"]
-        missing, unexpected = self.unet.load_state_dict(state, strict=strict)
+        load_target = self.unet
+        load_label = "unet"
+        if isinstance(state, dict) and hasattr(self.unet, "base_model"):
+            state_keys = [str(key) for key in state.keys()]
+            is_wrapped_state = any(
+                key.startswith(("base_model.", "base_unet.", "layout_tokenizer."))
+                or ".region_adapter." in key
+                for key in state_keys
+            )
+            if not is_wrapped_state:
+                load_target = getattr(self.unet, "base_model")
+                load_label = "unet.base_model"
+                target_keys = set(load_target.state_dict().keys())
+                remapped_state = {}
+                for key, value in state.items():
+                    key_str = str(key)
+                    mapped_key = key_str
+                    if key_str not in target_keys and ".attentions." in key_str:
+                        prefix, suffix = key_str.split(".attentions.", 1)
+                        parts = suffix.split(".", 1)
+                        if len(parts) == 2:
+                            mapped_key = f"{prefix}.attentions.{parts[0]}.base_attention.{parts[1]}"
+                    remapped_state[mapped_key if mapped_key in target_keys else key_str] = value
+                state = remapped_state
+
+        missing, unexpected = load_target.load_state_dict(state, strict=strict)
         if (not strict) or missing or unexpected:
-            print(f"[load_unet_weights] strict={strict}")
+            print(f"[load_unet_weights] target={load_label} strict={strict}")
             if missing:
                 print("  Missing keys:", missing)
             if unexpected:
@@ -357,7 +435,18 @@ class FlowMatchingTrainer:
         if torch.is_tensor(batch):
             return batch.to(self.device), {}
         if isinstance(batch, dict) and "pixel_values" in batch:
-            return batch["pixel_values"].to(self.device), {}
+            cond_kwargs: Dict[str, Any] = {}
+            if self._uses_regiondiff_layout():
+                required = ("boxes_xyxy_norm", "labels", "object_mask")
+                missing = [key for key in required if key not in batch]
+                if missing:
+                    raise KeyError(f"RegionDiff layout batch is missing keys: {missing}")
+                cond_kwargs = {
+                    "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(self.device),
+                    "labels": batch["labels"].to(self.device),
+                    "object_mask": batch["object_mask"].to(self.device),
+                }
+            return batch["pixel_values"].to(self.device), cond_kwargs
         raise TypeError(
             "Expected a tensor batch or a dict containing 'pixel_values' for "
             f"{self.__class__.__name__}, got {type(batch)!r}."
@@ -502,8 +591,15 @@ class FlowMatchingTrainer:
         total_steps = max(1, epochs * len(dataloader))
         precision = resolve_precision_settings(self.device, mixed_precision)
         scaler = build_grad_scaler(precision)
+        optimizer_params = self.unet.parameters()
+        if self._uses_regiondiff_layout():
+            optimizer_params = regiondiff_optimizer_param_groups(
+                wrapper=self.unet,
+                adapter_learning_rate=getattr(self.layout_config, "adapter_learning_rate", lr),
+                backbone_learning_rate=getattr(self.layout_config, "backbone_learning_rate", lr),
+            )
         optimizer = AdamW(
-            self.unet.parameters(),
+            optimizer_params,
             lr=lr,
             betas=(float(beta1), float(beta2)),
             weight_decay=float(weight_decay),

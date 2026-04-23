@@ -10,6 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from src.algorithms.inference.flow_matching_sampler import (
     _default_from_norm_to_display,
+    _maybe_wrap_regiondiff_unet,
     _pick_latest,
     get_unet_sample_shape,
 )
@@ -92,6 +93,11 @@ class UnconditionalStableDiffusionSampler:
 
         unet_cfg = load_unet_config(os.path.join(unet_dir, "config.json"))
         unet = build_fm_unet_from_config(unet_cfg, device=device)
+        unet = _maybe_wrap_regiondiff_unet(
+            unet,
+            pipeline_dir=pipeline_dir,
+            backbone_kind="sd_uncond_unet2d",
+        ).to(device)
         unet_w = os.path.join(unet_dir, "unet_sd_uncond_best.pt")
         if not os.path.isfile(unet_w):
             unet_w = _pick_latest(unet_dir, "unet_sd_uncond_epoch_")
@@ -151,6 +157,44 @@ class UnconditionalStableDiffusionSampler:
             model_pred = self.unet(
                 latents,
                 timestep.expand(batch_size),
+            ).sample
+            latents = self.noise_scheduler.step(model_pred, timestep, latents).prev_sample
+        return latents
+
+    @torch.no_grad()
+    def sample_layout(
+        self,
+        batch: dict[str, torch.Tensor],
+        *,
+        steps: int = 50,
+        sample_shape: Optional[Tuple[int, int, int]] = None,
+        seed: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Draw latent samples with RegionDiff layout kwargs."""
+        self.unet.eval()
+        batch_size = int(batch["pixel_values"].shape[0])
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=self.device)
+            generator.manual_seed(int(seed))
+        latents = torch.randn(
+            batch_size,
+            *self._shape(sample_shape),
+            generator=generator,
+            device=self.device,
+        )
+        self.noise_scheduler.set_timesteps(steps, device=self.device)
+        cond_kw = {
+            "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(self.device),
+            "labels": batch["labels"].to(self.device),
+            "object_mask": batch["object_mask"].to(self.device),
+        }
+
+        for timestep in self.noise_scheduler.timesteps:
+            model_pred = self.unet(
+                latents,
+                timestep.expand(batch_size),
+                **cond_kw,
             ).sample
             latents = self.noise_scheduler.step(model_pred, timestep, latents).prev_sample
         return latents

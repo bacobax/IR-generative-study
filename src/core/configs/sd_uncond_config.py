@@ -13,6 +13,7 @@ from src.core.configs.fm_config import (
     AugmentConfig,
     DataConfig,
     EMAConfig,
+    LayoutConditioningConfig,
     ModelConfig,
     OptimizerConfig,
     PrecisionConfig,
@@ -21,6 +22,21 @@ from src.core.configs.fm_config import (
 )
 from src.core.data.dataset_targets import supported_dataset_ids
 from src.core.paths import sd_uncond_runs_dir
+
+
+def _str2bool(value):
+    if isinstance(value, bool):
+        return value
+    lowered = str(value).strip().lower()
+    if lowered in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
+
+
+def _csv_ints(value: str) -> list[int]:
+    return [int(item.strip()) for item in str(value).split(",") if item.strip()]
 
 
 @dataclass
@@ -83,6 +99,7 @@ class SDUncondTrainConfig:
     ema: EMAConfig = field(default_factory=EMAConfig)
     precision: PrecisionConfig = field(default_factory=PrecisionConfig)
     diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)
+    layout_conditioning: LayoutConditioningConfig = field(default_factory=LayoutConditioningConfig)
     sampling: SampleConfig = field(default_factory=SampleConfig)
     output: SDUncondOutputConfig = field(default_factory=SDUncondOutputConfig)
     trainer_name: Optional[str] = "sd_uncond"
@@ -202,6 +219,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--snr_gamma", type=float, default=None,
                         help="Optional SNR loss reweighting gamma.")
 
+    parser.add_argument("--layout_conditioning_enabled", action="store_true",
+                        help="Enable RegionDiff layout conditioning.")
+    parser.add_argument("--layout_conditioning_variant", type=str, default=None,
+                        help="Layout conditioning variant, e.g. regiondiff_v1.")
+    parser.add_argument("--active_region_resolutions", type=_csv_ints, default=None,
+                        help="Comma-separated RegionDiff latent resolutions, e.g. 64,32,16.")
+    parser.add_argument("--layout_token_dim", type=int, default=None)
+    parser.add_argument("--bbox_fourier_dim", type=int, default=None)
+    parser.add_argument("--same_class_position_slots", type=int, default=None)
+    parser.add_argument("--use_background_token", type=_str2bool, default=None)
+    parser.add_argument("--layout_train_mode", type=str, default=None)
+    parser.add_argument("--partial_backbone_modules", nargs="+", default=None)
+    parser.add_argument("--adapter_learning_rate", type=float, default=None)
+    parser.add_argument("--backbone_learning_rate", type=float, default=None)
+
     parser.add_argument("--warmup_frac", type=float, default=0.1)
     parser.add_argument("--ramp_frac", type=float, default=0.3)
     parser.add_argument("--p_crop_warmup", type=float, default=0.05)
@@ -259,6 +291,17 @@ _FLAT_TO_NESTED = {
     "prediction_type": "diffusion.prediction_type",
     "noise_offset": "diffusion.noise_offset",
     "snr_gamma": "diffusion.snr_gamma",
+    "layout_conditioning_enabled": "layout_conditioning.enabled",
+    "layout_conditioning_variant": "layout_conditioning.variant",
+    "active_region_resolutions": "layout_conditioning.active_region_resolutions",
+    "layout_token_dim": "layout_conditioning.layout_token_dim",
+    "bbox_fourier_dim": "layout_conditioning.bbox_fourier_dim",
+    "same_class_position_slots": "layout_conditioning.same_class_position_slots",
+    "use_background_token": "layout_conditioning.use_background_token",
+    "layout_train_mode": "layout_conditioning.train_mode",
+    "partial_backbone_modules": "layout_conditioning.partial_backbone_modules",
+    "adapter_learning_rate": "layout_conditioning.adapter_learning_rate",
+    "backbone_learning_rate": "layout_conditioning.backbone_learning_rate",
     "warmup_frac": "augment.warmup_frac",
     "ramp_frac": "augment.ramp_frac",
     "p_crop_warmup": "augment.p_crop_warmup",

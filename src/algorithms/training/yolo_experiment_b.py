@@ -188,8 +188,8 @@ def validate_experiment_b_config(cfg: YOLOExperimentConfig) -> None:
     """Fail loudly on invalid Experiment B combinations."""
 
     mode = str(cfg.experiment_b.mode)
-    if mode not in {"plain", "fm_aug", "sd_aug"}:
-        raise ValueError("experiment_b.mode must be one of: plain, fm_aug, sd_aug.")
+    if mode not in {"plain", "fm_aug", "sd_aug", "precomputed_aug"}:
+        raise ValueError("experiment_b.mode must be one of: plain, fm_aug, sd_aug, precomputed_aug.")
     threshold = float(cfg.experiment_b.invalid_instance_ratio_threshold)
     if not 0.0 <= threshold <= 1.0:
         raise ValueError("experiment_b.invalid_instance_ratio_threshold must be in [0, 1].")
@@ -205,12 +205,17 @@ def validate_experiment_b_config(cfg: YOLOExperimentConfig) -> None:
     has_fm = bool(cfg.experiment_b.fm.checkpoint_path)
     has_sd_stage1 = bool(cfg.experiment_b.sd.stage1_dir)
     has_sd_lora = bool(cfg.experiment_b.sd.lora_dir)
-    if mode == "plain" and (has_fm or has_sd_stage1 or has_sd_lora):
-        raise ValueError("experiment_b.mode=plain must not configure FM or SD generation sources.")
+    has_precomputed = bool(cfg.experiment_b.precomputed_dataset_dir)
+    if mode == "plain" and (has_fm or has_sd_stage1 or has_sd_lora or has_precomputed):
+        raise ValueError("experiment_b.mode=plain must not configure generation sources.")
     if mode == "fm_aug" and not has_fm:
         raise ValueError("experiment_b.mode=fm_aug requires experiment_b.fm.checkpoint_path.")
     if mode == "sd_aug" and int(has_sd_stage1) + int(has_sd_lora) != 1:
         raise ValueError("experiment_b.mode=sd_aug requires exactly one of experiment_b.sd.stage1_dir or sd.lora_dir.")
+    if mode == "precomputed_aug" and not has_precomputed:
+        raise ValueError("experiment_b.mode=precomputed_aug requires experiment_b.precomputed_dataset_dir.")
+    if mode != "precomputed_aug" and has_precomputed:
+        raise ValueError("precomputed_dataset_dir is only valid when experiment_b.mode=precomputed_aug.")
     if mode != "sd_aug" and (has_sd_stage1 or has_sd_lora):
         raise ValueError("SD source paths are only valid when experiment_b.mode=sd_aug.")
     if mode != "fm_aug" and has_fm:
@@ -657,6 +662,38 @@ def classify_generated_image_rows(
     return classified
 
 
+def load_precomputed_generated_image_rows(generated_dataset_dir: Path) -> list[dict[str, Any]]:
+    """Load precomputed generated image rows in Experiment-B candidate format."""
+
+    annotations_path = generated_dataset_dir / "annotations.json"
+    if not annotations_path.is_file():
+        raise FileNotFoundError(f"Precomputed generated dataset is missing annotations.json: {generated_dataset_dir}")
+    payload = _load_json(annotations_path)
+    images = payload.get("images", [])
+    if not isinstance(images, list) or not images:
+        raise ValueError(f"Precomputed generated dataset has no images: {annotations_path}")
+
+    rows: list[dict[str, Any]] = []
+    for image in images:
+        image_id = int(image["id"])
+        file_name = str(image["file_name"])
+        image_path = generated_dataset_dir / "images" / file_name
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Generated image listed in annotations.json is missing: {image_path}")
+        rows.append(
+            {
+                "generated_image_id": image_id,
+                "generated_file_name": file_name,
+                "n_instances": 0,
+                "n_negative_instances": 0,
+                "invalid_instance_ratio": 0.0,
+                "discarded_by_invalid_instance_ratio": False,
+            }
+        )
+    rows.sort(key=lambda row: int(row["generated_image_id"]))
+    return rows
+
+
 def _empty_discard_bucket(group_value: str) -> dict[str, Any]:
     return {
         "group": str(group_value),
@@ -752,6 +789,34 @@ def _source_sample_by_generated_id(samples: Sequence[YOLOTrainSample]) -> dict[i
     return {idx: sample for idx, sample in enumerate(samples, start=1)}
 
 
+def _source_sample_by_generated_rows(
+    samples: Sequence[YOLOTrainSample],
+    generated_dataset_dir: Path,
+) -> dict[int, YOLOTrainSample]:
+    """Resolve source samples for generated rows, using provenance when present."""
+
+    mapping = _source_sample_by_generated_id(samples)
+    provenance_path = generated_dataset_dir / "metadata" / "provenance.jsonl"
+    if not provenance_path.is_file():
+        return mapping
+
+    by_source_index = {int(sample.index): sample for sample in samples}
+    with provenance_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            generated_id = int(row.get("generated_image_id", 0))
+            source_index = row.get("source_index")
+            if generated_id <= 0 or source_index is None:
+                continue
+            sample = by_source_index.get(int(source_index))
+            if sample is not None:
+                mapping[generated_id] = sample
+    return mapping
+
+
 def export_augmented_yolo_dataset(
     *,
     cfg: YOLOExperimentConfig,
@@ -780,7 +845,7 @@ def export_augmented_yolo_dataset(
         shutil.copy2(sample.image_path, image_dst)
         shutil.copy2(sample.label_path, label_dst)
 
-    source_by_generated_id = _source_sample_by_generated_id(source_samples)
+    source_by_generated_id = _source_sample_by_generated_rows(source_samples, generated_dataset_dir)
     kept_rows = [row for row in classified_rows if not bool(row["discarded_by_invalid_instance_ratio"])]
     for row in kept_rows:
         generated_id = int(row["generated_image_id"])
@@ -839,15 +904,21 @@ def prepare_experiment_b_dataset(cfg: YOLOExperimentConfig, *, device: str) -> d
     torch.manual_seed(int(cfg.training.seed))
     source_samples, dataset_payload = load_full_train_samples(cfg.data.dataset_yaml)
 
-    generated_root = _repo_path(cfg.experiment_b.generated_dataset_dir)
-    if generated_root is None:
-        raise ValueError("experiment_b.generated_dataset_dir must be set.")
-    generated_dataset_dir = generated_root / cfg.output.experiment_name / str(cfg.experiment_b.mode)
-    if generated_dataset_dir.exists():
-        shutil.rmtree(generated_dataset_dir)
-    generated_dataset_dir.mkdir(parents=True, exist_ok=True)
+    mode = str(cfg.experiment_b.mode)
+    if mode == "precomputed_aug":
+        generated_dataset_dir = _repo_path(cfg.experiment_b.precomputed_dataset_dir)
+        if generated_dataset_dir is None or not generated_dataset_dir.is_dir():
+            raise FileNotFoundError(f"Precomputed generated dataset not found: {cfg.experiment_b.precomputed_dataset_dir}")
+    else:
+        generated_root = _repo_path(cfg.experiment_b.generated_dataset_dir)
+        if generated_root is None:
+            raise ValueError("experiment_b.generated_dataset_dir must be set.")
+        generated_dataset_dir = generated_root / cfg.output.experiment_name / mode
+        if generated_dataset_dir.exists():
+            shutil.rmtree(generated_dataset_dir)
+        generated_dataset_dir.mkdir(parents=True, exist_ok=True)
 
-    if str(cfg.experiment_b.mode) == "fm_aug":
+    if mode == "fm_aug":
         generate_fm_candidates(
             cfg=cfg,
             samples=source_samples,
@@ -855,7 +926,7 @@ def prepare_experiment_b_dataset(cfg: YOLOExperimentConfig, *, device: str) -> d
             output_dir=generated_dataset_dir,
             device=device,
         )
-    elif str(cfg.experiment_b.mode) == "sd_aug":
+    elif mode == "sd_aug":
         generate_sd_candidates(
             cfg=cfg,
             samples=source_samples,
@@ -863,14 +934,28 @@ def prepare_experiment_b_dataset(cfg: YOLOExperimentConfig, *, device: str) -> d
             output_dir=generated_dataset_dir,
             device=device,
         )
+    elif mode == "precomputed_aug":
+        pass
     else:
         raise ValueError(f"Unsupported Experiment B mode: {cfg.experiment_b.mode}")
 
-    classified_rows, audit_dir, discard_summary = audit_generated_candidates(
-        cfg=cfg,
-        generated_dataset_dir=generated_dataset_dir,
-        device=device,
-    )
+    if bool(cfg.experiment_b.filter.enabled):
+        classified_rows, audit_dir, discard_summary = audit_generated_candidates(
+            cfg=cfg,
+            generated_dataset_dir=generated_dataset_dir,
+            device=device,
+        )
+    else:
+        classified_rows = load_precomputed_generated_image_rows(generated_dataset_dir)
+        audit_dir = generated_dataset_dir / "filter_audit_disabled"
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        discard_summary = {
+            "filter_enabled": False,
+            "discarded_image_count": 0,
+            "total_image_count": len(classified_rows),
+            "image_discard_ratio": 0.0,
+        }
+        _write_json(audit_dir / "experiment_b_discard_summary.json", discard_summary)
     augmented_yaml = export_augmented_yolo_dataset(
         cfg=cfg,
         source_samples=source_samples,

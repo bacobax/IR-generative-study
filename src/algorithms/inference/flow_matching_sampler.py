@@ -15,6 +15,9 @@ import torch.nn.functional as F
 from diffusers import UNet2DModel
 from torch.utils.tensorboard import SummaryWriter
 
+from src.models.regiondiffusion import load_regiondiff_config
+from src.models.regiondiffusion_factory import build_regiondiff_wrapper
+
 
 # ---------------------------------------------------------------------------
 # Default display helper
@@ -63,6 +66,30 @@ def get_unet_sample_shape(
     else:
         h = w = sample_size
     return (in_channels, h, w)
+
+
+def _maybe_wrap_regiondiff_unet(
+    unet,
+    *,
+    pipeline_dir: str,
+    backbone_kind: str,
+    attachment_kind: str = "attention",
+):
+    config_path = os.path.join(pipeline_dir, "regiondiff_config.json")
+    if not os.path.isfile(config_path):
+        return unet
+    region_config = load_regiondiff_config(config_path)
+    category_id_to_name = {
+        int(key): str(value)
+        for key, value in region_config.get("category_id_to_name", {}).items()
+    }
+    return build_regiondiff_wrapper(
+        base_model=unet,
+        region_config=region_config,
+        category_id_to_name=category_id_to_name,
+        backbone_kind=str(region_config.get("backbone_kind") or backbone_kind),
+        attachment_kind=str(region_config.get("attachment_kind") or attachment_kind),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -200,12 +227,20 @@ class FlowMatchingSampler:
         # UNet
         unet_cfg = _load_unet_config(_os.path.join(unet_dir, "config.json"))
         unet = _build_unet(unet_cfg, device=device)
+        unet = _maybe_wrap_regiondiff_unet(
+            unet,
+            pipeline_dir=pipeline_dir,
+            backbone_kind="fm_unet2d",
+        ).to(device)
         unet_w = _os.path.join(unet_dir, "unet_fm_best.pt")
         if not _os.path.isfile(unet_w):
             unet_w = _pick_latest(unet_dir, "unet_fm_epoch_")
         if unet_w is None or not _os.path.isfile(unet_w):
             raise FileNotFoundError(f"No UNET weights in {unet_dir}")
-        unet.load_state_dict(torch.load(unet_w, map_location=device))
+        state = torch.load(unet_w, map_location=device)
+        if isinstance(state, dict) and "unet_state" in state:
+            state = state["unet_state"]
+        unet.load_state_dict(state)
         unet.eval()
 
         # VAE
@@ -277,6 +312,44 @@ class FlowMatchingSampler:
             else:
                 v = unet_out
 
+            z = z + v * dt
+        return z
+
+    @torch.no_grad()
+    def sample_euler_layout(
+        self,
+        batch: Dict[str, torch.Tensor],
+        *,
+        steps: int = 50,
+        sample_shape: Optional[Tuple[int, int, int]] = None,
+        seed: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Euler sample with RegionDiff layout kwargs."""
+        self.unet.eval()
+        batch_size = int(batch["pixel_values"].shape[0])
+        shape = self._shape(sample_shape)
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=self.device)
+            generator.manual_seed(int(seed))
+        z = torch.randn(batch_size, *shape, generator=generator, device=self.device)
+        dt = 1.0 / steps
+        cond_kw = {
+            "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(self.device),
+            "labels": batch["labels"].to(self.device),
+            "object_mask": batch["object_mask"].to(self.device),
+        }
+
+        for i in range(steps):
+            t_val = i / steps
+            t = torch.full((batch_size,), t_val, device=self.device)
+            unet_out = self.unet(z, t * self.t_scale, **cond_kw).sample
+
+            if self.train_target == "x0":
+                t_exp = t[:, None, None, None]
+                v = (unet_out - z) / (1 - t_exp).clamp(min=1e-5)
+            else:
+                v = unet_out
             z = z + v * dt
         return z
 

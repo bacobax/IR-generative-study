@@ -16,6 +16,11 @@ from src.algorithms.training.flow_matching_trainer import (
     _resolve_unet_sample_size,
 )
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
+from src.models.regiondiffusion_factory import (
+    build_regiondiff_wrapper,
+    configure_regiondiff_trainability,
+    save_regiondiff_metadata,
+)
 
 
 class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
@@ -33,6 +38,8 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         unet_config: Optional[Dict[str, Any]] = None,
         vae=None,
         vae_config: Optional[Dict[str, Any]] = None,
+        layout_config=None,
+        regiondiff_trainability_info: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__(
             unet,
@@ -45,6 +52,8 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
             vae=vae,
             vae_config=vae_config,
             conditioner=None,
+            layout_config=layout_config,
+            regiondiff_trainability_info=regiondiff_trainability_info,
         )
         self.noise_scheduler = noise_scheduler
         self.diffusion_config = diffusion_config
@@ -64,6 +73,12 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
     def _save_additional_configs(self) -> None:
         os.makedirs(self._scheduler_dir(), exist_ok=True)
         self.noise_scheduler.save_pretrained(self._scheduler_dir())
+        if self._uses_regiondiff_layout():
+            save_regiondiff_metadata(
+                self.unet,
+                self.model_dir,
+                extra={"trainability": self.regiondiff_trainability_info},
+            )
 
     def _checkpoint_metadata(self) -> Dict[str, Any]:
         return {
@@ -97,6 +112,27 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         unet = build_fm_unet_from_config(unet_cfg, device=device)
         vae = build_vae_from_config(vae_cfg, device=device)
         noise_scheduler = cls.build_noise_scheduler(config.diffusion)
+        layout_config = getattr(config, "layout_conditioning", None)
+        regiondiff_trainability_info = None
+        if (
+            layout_config is not None
+            and bool(getattr(layout_config, "enabled", False))
+            and str(getattr(layout_config, "variant", "")) == "regiondiff_v1"
+        ):
+            unet = build_regiondiff_wrapper(
+                base_model=unet,
+                region_config=layout_config,
+                category_id_to_name=getattr(layout_config, "category_id_to_name", {}),
+                num_classes=getattr(layout_config, "num_classes", None),
+                backbone_kind="sd_uncond_unet2d",
+                attachment_kind="attention",
+            ).to(device)
+            regiondiff_trainability_info = configure_regiondiff_trainability(
+                wrapper=unet,
+                train_mode=str(getattr(layout_config, "train_mode", "adapters_only")),
+                partial_backbone_modules=getattr(layout_config, "partial_backbone_modules", []),
+                mixed_precision=getattr(getattr(config, "precision", None), "mixed_precision", None),
+            )
 
         return cls(
             unet,
@@ -108,6 +144,8 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
             unet_config=unet_cfg,
             vae=vae,
             vae_config=vae_cfg,
+            layout_config=layout_config,
+            regiondiff_trainability_info=regiondiff_trainability_info,
         )
 
     @staticmethod
@@ -212,8 +250,14 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
         return loss.mean()
 
-    def diffusion_step(self, latents: torch.Tensor) -> torch.Tensor:
+    def diffusion_step(
+        self,
+        latents: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> torch.Tensor:
         """Compute one unconditional diffusion training loss in latent space."""
+        if cond_kwargs is None:
+            cond_kwargs = {}
         noise = torch.randn_like(latents)
         noise_offset = float(getattr(self.diffusion_config, "noise_offset", 0.0) or 0.0)
         if noise_offset:
@@ -231,7 +275,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         ).long()
         noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
         target = self._get_prediction_target(latents, noise, timesteps)
-        model_pred = self.unet(noisy_latents, timesteps).sample
+        model_pred = self.unet(noisy_latents, timesteps, **cond_kwargs).sample
         return self._compute_loss(model_pred, target, timesteps)
 
     def _compute_batch_loss(
@@ -239,8 +283,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         x_fm: torch.Tensor,
         cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
-        del cond_kwargs
-        return self.diffusion_step(x_fm)
+        return self.diffusion_step(x_fm, cond_kwargs)
 
 
 from src.core.registry import REGISTRIES  # noqa: E402

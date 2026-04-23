@@ -36,6 +36,10 @@ from src.models.regiondiffusion import (
     regiondiff_config_dict,
     save_regiondiff_config,
 )
+from src.models.regiondiffusion_factory import (
+    configure_regiondiff_trainability,
+    regiondiff_optimizer_param_groups,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -73,10 +77,20 @@ def _load_json(path: str | Path) -> Dict[str, object]:
         return json.load(handle)
 
 
+def _json_safe(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _save_json(path: str | Path, payload: Dict[str, object]) -> None:
     os.makedirs(os.path.dirname(str(path)) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
+        json.dump(_json_safe(payload), handle, indent=2, sort_keys=True)
 
 
 def _config_to_dict(config) -> Dict[str, object]:
@@ -409,24 +423,8 @@ def configure_layout_trainability(
     config: SDLayoutTrainConfig,
 ) -> Dict[str, object]:
     """Freeze the base model and unfreeze RegionDiff adapters plus optional U-Net blocks."""
-    models.unet.requires_grad_(False)
     models.vae.requires_grad_(False)
     models.text_encoder.requires_grad_(False)
-
-    for parameter in iter_regiondiff_adapter_parameters(models.unet):
-        parameter.requires_grad_(True)
-
-    backbone_matches: List[str] = []
-    if config.training.train_mode == "adapters_plus_partial_unet":
-        backbone_matches = _set_requires_grad_for_prefixes(
-            models.unet.base_unet,
-            list(config.training.partial_unet_modules),
-        )
-        if not backbone_matches:
-            raise ValueError(
-                "Partial U-Net stage-2 mode resolved to zero trainable backbone parameters. "
-                f"Provided prefixes: {config.training.partial_unet_modules!r}"
-            )
 
     if config.training.enable_xformers_memory_efficient_attention:
         if not is_xformers_available():
@@ -438,32 +436,15 @@ def configure_layout_trainability(
         models.unet.base_unet.enable_gradient_checkpointing()
         logger.info("Gradient checkpointing enabled for stage-2 layout training")
 
-    if config.training.mixed_precision == "fp16":
-        # AMP expects trainable parameters to stay in fp32 so gradients can be safely unscaled.
-        cast_training_params(models.unet, dtype=torch.float32)
-
-    adapter_param_ids = {id(param) for param in iter_regiondiff_adapter_parameters(models.unet)}
-    trainable_groups = {"adapters": [], "backbone": []}
-    for name, param in models.unet.named_parameters():
-        if not param.requires_grad:
-            continue
-        group_name = "adapters" if id(param) in adapter_param_ids else "backbone"
-        trainable_groups[group_name].append(name)
-
-    return {
-        "train_mode": config.training.train_mode,
-        "active_region_resolutions": list(config.region.active_region_resolutions),
-        "prompt_mode": config.prompt.prompt_mode,
-        "adapter_parameter_count": sum(
-            param.numel() for param in models.unet.parameters() if param.requires_grad and id(param) in adapter_param_ids
-        ),
-        "backbone_parameter_count": sum(
-            param.numel() for param in models.unet.parameters() if param.requires_grad and id(param) not in adapter_param_ids
-        ),
-        "trainable_parameter_groups": trainable_groups,
-        "backbone_matches": backbone_matches,
-        "num_region_blocks": models.unet.num_region_blocks,
-    }
+    info = configure_regiondiff_trainability(
+        wrapper=models.unet,
+        train_mode=config.training.train_mode,
+        partial_backbone_modules=config.training.partial_unet_modules,
+        mixed_precision=config.training.mixed_precision,
+    )
+    info["active_region_resolutions"] = list(config.region.active_region_resolutions)
+    info["prompt_mode"] = config.prompt.prompt_mode
+    return info
 
 
 def build_optimizer_param_groups(
@@ -473,17 +454,6 @@ def build_optimizer_param_groups(
     accelerator_processes: int,
 ) -> List[Dict[str, object]]:
     """Build optimizer param groups for adapters and optional backbone blocks."""
-    adapter_param_ids = {id(param) for param in iter_regiondiff_adapter_parameters(models.unet)}
-    adapter_params = []
-    backbone_params = []
-    for param in models.unet.parameters():
-        if not param.requires_grad:
-            continue
-        if id(param) in adapter_param_ids:
-            adapter_params.append(param)
-        else:
-            backbone_params.append(param)
-
     adapter_lr = config.training.adapter_learning_rate
     backbone_lr = config.training.backbone_learning_rate
     if config.training.scale_lr:
@@ -491,14 +461,11 @@ def build_optimizer_param_groups(
         adapter_lr *= scale
         backbone_lr *= scale
 
-    groups: List[Dict[str, object]] = []
-    if adapter_params:
-        groups.append({"params": adapter_params, "lr": adapter_lr, "name": "adapters"})
-    if backbone_params:
-        groups.append({"params": backbone_params, "lr": backbone_lr, "name": "backbone"})
-    if not groups:
-        raise ValueError("No trainable parameters were configured for stage-2 layout training.")
-    return groups
+    return regiondiff_optimizer_param_groups(
+        wrapper=models.unet,
+        adapter_learning_rate=adapter_lr,
+        backbone_learning_rate=backbone_lr,
+    )
 
 
 def build_stage2_manifest(

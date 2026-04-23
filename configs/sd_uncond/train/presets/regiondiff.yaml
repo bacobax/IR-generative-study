@@ -1,0 +1,43 @@
+# Unconditional latent SD with opt-in RegionDiff layout conditioning.
+
+data:
+  dataset_id: flir_private_proxy_alignment_v18
+  image_size: 256
+  batch_size: 2
+  num_workers: 0
+  max_train_samples: 8
+  max_val_samples: 4
+  subset_strategy: first_n
+
+model:
+  unet_config: "configs/models/fm/stable_unet_config.json"
+  vae_config: "configs/models/fm/vae_config.json"
+  vae_weights: "./vae_best.pt"
+
+layout_conditioning:
+  enabled: true
+  variant: regiondiff_v1
+  active_region_resolutions: [64, 32, 16]
+  layout_token_dim: 128
+  bbox_fourier_dim: 32
+  same_class_position_slots: 64
+  use_background_token: true
+  train_mode: adapters_only
+  adapter_learning_rate: 1.0e-4
+  backbone_learning_rate: 1.0e-5
+
+training:
+  epochs: 1
+  lr: 1.0e-4
+  save_every_n_epochs: 1
+  eval_every: 1
+  max_grad_norm: 1.0
+
+sampling:
+  sample_every: 0
+
+output:
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_smoke"
+
+trainer_name: sd_uncond
+sampler_name: sd_uncond

@@ -84,3 +84,4 @@ events.out.tfevents.*
 /archive/legacy_outputs/*
 !/archive/legacy_outputs/.gitkeep
 # archive/legacy_code/ is tracked (source code)
+**/*smoked*/

@@ -30,10 +30,12 @@ from diffusers.utils import convert_state_dict_to_diffusers, is_wandb_available
 from .config import TrainingConfig
 from .models import (
     ModelComponents,
+    REGIONDIFF_ADAPTER_WEIGHTS,
     build_stage1_manifest,
     UNET_EXPORT_DIRNAME,
     VAE_EXPORT_DIRNAME,
     TEXT_ENCODER_EXPORT_DIRNAME,
+    _save_state_dict,
     create_load_model_hook,
     create_save_model_hook,
     get_trainable_models,
@@ -42,6 +44,8 @@ from .models import (
     trainable_component_names,
     unwrap_model,
 )
+from src.models.regiondiffusion import iter_regiondiff_adapter_parameters
+from src.models.regiondiffusion_factory import regiondiff_state_dict, save_regiondiff_metadata
 
 
 if is_wandb_available():
@@ -169,6 +173,43 @@ class Trainer:
         if not params:
             raise ValueError("No trainable parameters were configured for SD adaptation.")
 
+        optimizer_params = params
+        if self.config.layout_conditioning_enabled:
+            region_adapter_ids = {
+                id(param) for param in iter_regiondiff_adapter_parameters(self.models.unet)
+            }
+            region_params = [
+                param
+                for param in self.models.unet.parameters()
+                if param.requires_grad and id(param) in region_adapter_ids
+            ]
+            other_params = [
+                param
+                for param in params
+                if id(param) not in region_adapter_ids
+            ]
+            optimizer_params = []
+            if region_params:
+                optimizer_params.append(
+                    {
+                        "params": region_params,
+                        "lr": self.config.adapter_learning_rate,
+                        "name": "regiondiff_adapters",
+                    }
+                )
+            if other_params:
+                optimizer_params.append(
+                    {
+                        "params": other_params,
+                        "lr": (
+                            self.config.backbone_learning_rate
+                            if self.config.baseline_mode != "sd_ir_lora"
+                            else learning_rate
+                        ),
+                        "name": "backbone_or_lora",
+                    }
+                )
+
         if self.config.use_8bit_adam:
             try:
                 import bitsandbytes as bnb
@@ -179,7 +220,7 @@ class Trainer:
             optimizer_cls = torch.optim.AdamW
 
         return optimizer_cls(
-            params,
+            optimizer_params,
             lr=learning_rate,
             betas=(self.config.adam_beta1, self.config.adam_beta2),
             weight_decay=self.config.adam_weight_decay,
@@ -464,10 +505,18 @@ class Trainer:
             )[0]
 
             target = self._get_prediction_target(latents, noise, timesteps)
+            cross_attention_kwargs = None
+            if self.config.layout_conditioning_enabled:
+                cross_attention_kwargs = {
+                    "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(device=latents.device, dtype=latents.dtype),
+                    "labels": batch["labels"].to(device=latents.device),
+                    "object_mask": batch["object_mask"].to(device=latents.device),
+                }
             model_pred = self.models.unet(
                 noisy_latents,
                 timesteps,
                 encoder_hidden_states,
+                cross_attention_kwargs=cross_attention_kwargs,
                 return_dict=False,
             )[0]
 
@@ -553,9 +602,7 @@ class Trainer:
 
     def _run_validation(self, epoch: int, is_final: bool = False) -> List:
         logger.info("Running validation with prompt: %s", self.config.validation_prompt)
-        pipeline = DiffusionPipeline.from_pretrained(
-            self.config.pretrained_model_name_or_path,
-            unet=unwrap_model(self.models.unet, self.accelerator),
+        pipeline_kwargs = dict(
             vae=unwrap_model(self.models.vae, self.accelerator)
             if any(param.requires_grad for param in self.models.vae.parameters())
             else self.models.vae,
@@ -569,6 +616,14 @@ class Trainer:
             safety_checker=None,
             requires_safety_checker=False,
         )
+        if not self.config.layout_conditioning_enabled:
+            pipeline_kwargs["unet"] = unwrap_model(self.models.unet, self.accelerator)
+        pipeline = DiffusionPipeline.from_pretrained(
+            self.config.pretrained_model_name_or_path,
+            **pipeline_kwargs,
+        )
+        if self.config.layout_conditioning_enabled:
+            pipeline.unet = unwrap_model(self.models.unet, self.accelerator)
 
         images = log_validation(
             pipeline=pipeline,
@@ -606,9 +661,7 @@ class Trainer:
                 self._finalize_unet_export()
 
             if self.config.validation_prompt is not None:
-                pipeline = DiffusionPipeline.from_pretrained(
-                    self.config.pretrained_model_name_or_path,
-                    unet=unwrap_model(self.models.unet, self.accelerator),
+                pipeline_kwargs = dict(
                     vae=unwrap_model(self.models.vae, self.accelerator)
                     if any(param.requires_grad for param in self.models.vae.parameters())
                     else self.models.vae,
@@ -622,6 +675,14 @@ class Trainer:
                     safety_checker=None,
                     requires_safety_checker=False,
                 )
+                if not self.config.layout_conditioning_enabled:
+                    pipeline_kwargs["unet"] = unwrap_model(self.models.unet, self.accelerator)
+                pipeline = DiffusionPipeline.from_pretrained(
+                    self.config.pretrained_model_name_or_path,
+                    **pipeline_kwargs,
+                )
+                if self.config.layout_conditioning_enabled:
+                    pipeline.unet = unwrap_model(self.models.unet, self.accelerator)
                 log_validation(
                     pipeline=pipeline,
                     validation_prompt=self.config.validation_prompt,
@@ -639,20 +700,60 @@ class Trainer:
     def _finalize_lora_export(self) -> None:
         self.models.unet = self.models.unet.to(torch.float32)
         unwrapped_unet = unwrap_model(self.models.unet, self.accelerator)
+        lora_source = unwrapped_unet.base_unet if hasattr(unwrapped_unet, "base_unet") else unwrapped_unet
         unet_lora_state_dict = convert_state_dict_to_diffusers(
-            get_peft_model_state_dict(unwrapped_unet)
+            get_peft_model_state_dict(lora_source)
         )
         StableDiffusionPipeline.save_lora_weights(
             save_directory=self.config.output_dir,
             unet_lora_layers=unet_lora_state_dict,
             safe_serialization=True,
         )
+        if self.config.layout_conditioning_enabled:
+            save_regiondiff_metadata(
+                unwrapped_unet,
+                self.config.output_dir,
+                extra={
+                    "coexists_with": "sd_ir_lora",
+                    "saved_weights": REGIONDIFF_ADAPTER_WEIGHTS,
+                },
+            )
+            _save_state_dict(
+                os.path.join(self.config.output_dir, REGIONDIFF_ADAPTER_WEIGHTS),
+                {
+                    key: value.detach().cpu().to(torch.float32)
+                    for key, value in regiondiff_state_dict(
+                        unwrapped_unet,
+                        adapters_only=True,
+                    ).items()
+                },
+            )
         logger.info("Saved final LoRA weights to %s", self.config.output_dir)
 
     def _finalize_unet_export(self) -> None:
         unwrapped_unet = unwrap_model(self.models.unet, self.accelerator).to(torch.float32)
         unet_dir = os.path.join(self.config.output_dir, UNET_EXPORT_DIRNAME)
-        unwrapped_unet.save_pretrained(unet_dir, safe_serialization=True)
+        unet_to_save = unwrapped_unet.base_unet if self.config.layout_conditioning_enabled else unwrapped_unet
+        unet_to_save.save_pretrained(unet_dir, safe_serialization=True)
+        if self.config.layout_conditioning_enabled:
+            save_regiondiff_metadata(
+                unwrapped_unet,
+                self.config.output_dir,
+                extra={
+                    "coexists_with": "sd_ir_unet",
+                    "saved_weights": REGIONDIFF_ADAPTER_WEIGHTS,
+                },
+            )
+            _save_state_dict(
+                os.path.join(self.config.output_dir, REGIONDIFF_ADAPTER_WEIGHTS),
+                {
+                    key: value.detach().cpu().to(torch.float32)
+                    for key, value in regiondiff_state_dict(
+                        unwrapped_unet,
+                        adapters_only=True,
+                    ).items()
+                },
+            )
         logger.info("Saved adapted U-Net to %s", unet_dir)
 
         if any(param.requires_grad for param in self.models.text_encoder.parameters()):

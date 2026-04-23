@@ -113,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save_hybrid", action="store_true", default=False)
     parser.add_argument("--conf", type=float, default=None)
     parser.add_argument("--iou", type=float, default=None)
+    parser.add_argument("--experiment_b_mode", type=str, default=None,
+                        choices=["plain", "fm_aug", "sd_aug", "precomputed_aug"])
+    parser.add_argument("--experiment_b_generated_dataset_dir", type=str, default=None)
+    parser.add_argument("--experiment_b_precomputed_dataset_dir", type=str, default=None)
+    parser.add_argument("--experiment_b_augmented_yolo_root", type=str, default=None)
+    parser.add_argument("--experiment_b_filter_enabled", type=_parse_bool_arg, default=None)
     parser.add_argument("--device", type=str, default=None)
     return parser
 
@@ -172,6 +178,11 @@ _FLAT_TO_NESTED = {
     "unbalanced_experiment_name": "launcher.unbalanced_experiment_name",
     "full_train_experiment_name": "launcher.full_train_experiment_name",
     "comparison_filename": "launcher.comparison_filename",
+    "experiment_b_mode": "experiment_b.mode",
+    "experiment_b_generated_dataset_dir": "experiment_b.generated_dataset_dir",
+    "experiment_b_precomputed_dataset_dir": "experiment_b.precomputed_dataset_dir",
+    "experiment_b_augmented_yolo_root": "experiment_b.augmented_yolo_root",
+    "experiment_b_filter_enabled": "experiment_b.filter.enabled",
     "device": "device",
 }
 
