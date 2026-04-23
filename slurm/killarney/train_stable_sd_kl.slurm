@@ -10,9 +10,9 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study"
+PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
 ENV_NAME="diffusers-dev"
-CONFIG_REL="configs/fm/train/presets/uncond_latent_flir_sd15_512_b64.yaml"
+CONFIG_REL="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64.yaml"
 CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 
 cd "${PROJECT_ROOT}"
@@ -29,7 +29,7 @@ JOB_ID="${SLURM_JOB_ID:-manual}"
 
 echo "Host: $(hostname)"
 echo "Start time: $(date)"
-echo "Project root: ${PROJECT_ROOT}"
+echo "Submit dir / project root: ${PROJECT_ROOT}"
 echo "Conda env: ${ENV_NAME}"
 echo "CUDA_VISIBLE_DEVICES from Slurm: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"

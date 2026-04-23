@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import json
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -210,6 +212,45 @@ def test_sd_uncond_sampler_runs_without_text_conditioning() -> None:
 
     assert latents.shape == (2, 4, 8, 8)
     assert decoded.shape == (2, 1, 64, 64)
+
+
+def test_sd_uncond_trainer_resolves_latest_resume_checkpoint() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = UnconditionalStableDiffusionTrainer(
+            _tiny_unet(),
+            noise_scheduler=UnconditionalStableDiffusionTrainer.build_noise_scheduler(
+                SimpleNamespace(
+                    num_train_timesteps=16,
+                    beta_schedule="scaled_linear",
+                    beta_start=0.00085,
+                    beta_end=0.012,
+                    prediction_type="epsilon",
+                )
+            ),
+            diffusion_config=SimpleNamespace(
+                num_train_timesteps=16,
+                beta_schedule="scaled_linear",
+                beta_start=0.00085,
+                beta_end=0.012,
+                prediction_type="epsilon",
+                noise_offset=0.0,
+                snr_gamma=None,
+            ),
+            device="cpu",
+            model_dir=tmpdir,
+            vae=_FakeLatentVAE(),
+        )
+        os.makedirs(trainer._unet_dir(), exist_ok=True)
+        Path(trainer._unet_dir(), "unet_fm_epoch_0090_ckpt.pt").touch()
+        Path(trainer._unet_dir(), "unet_sd_uncond_epoch_0002_ckpt.pt").touch()
+        Path(trainer._unet_dir(), "unet_sd_uncond_epoch_0005_ckpt.pt").touch()
+
+        resolved_from_bool = trainer._resolve_resume_path(True)
+        resolved_from_latest = trainer._resolve_resume_path("latest")
+
+        assert resolved_from_bool is not None
+        assert resolved_from_bool.endswith("unet_sd_uncond_epoch_0005_ckpt.pt")
+        assert resolved_from_latest == resolved_from_bool
 
 
 def test_sd_uncond_preset_uses_shared_unet_and_sd15_vae() -> None:

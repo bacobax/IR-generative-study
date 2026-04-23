@@ -76,7 +76,7 @@ output:
   model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512"
   log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_flir_sd15_512"
   debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512"
-  resume: null
+  resume: "latest"
 
 trainer_name: "sd_uncond"
 sampler_name: "sd_uncond"

@@ -13,6 +13,7 @@ Two modes are supported:
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
@@ -211,6 +212,40 @@ class FlowMatchingTrainer:
 
     def _epoch_checkpoint_path(self, epoch_num: int) -> str:
         return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_epoch_{epoch_num}_ckpt.pt")
+
+    def _resolve_resume_path(
+        self,
+        resume_from_checkpoint: Optional[Union[str, bool]],
+    ) -> Optional[str]:
+        if resume_from_checkpoint in (None, False, ""):
+            return None
+
+        if resume_from_checkpoint is True or resume_from_checkpoint == "latest":
+            latest_epoch = -1
+            latest_path = None
+            pattern = re.compile(
+                rf"^{re.escape(self._checkpoint_stem())}_epoch_(\d+)_ckpt\.pt$"
+            )
+            unet_dir = self._unet_dir()
+            if os.path.isdir(unet_dir):
+                for filename in os.listdir(unet_dir):
+                    match = pattern.match(filename)
+                    if match is None:
+                        continue
+                    epoch = int(match.group(1))
+                    if epoch > latest_epoch:
+                        latest_epoch = epoch
+                        latest_path = os.path.join(unet_dir, filename)
+            if latest_path is None:
+                raise FileNotFoundError(
+                    f"No {self._progress_label()} checkpoint found in {unet_dir} to resume from."
+                )
+            return latest_path
+
+        path = str(resume_from_checkpoint)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Checkpoint not found: {path}")
+        return path
 
     # ------------------------------------------------------------------
     # Config-driven constructor
@@ -620,9 +655,10 @@ class FlowMatchingTrainer:
         bad_epochs = 0
         start_epoch = 0
 
-        if resume_from_checkpoint is not None:
-            print(f"[{self._progress_label()} Resume] Loading checkpoint from {resume_from_checkpoint}")
-            ckpt = torch.load(resume_from_checkpoint, map_location=self.device)
+        resume_path = self._resolve_resume_path(resume_from_checkpoint)
+        if resume_path is not None:
+            print(f"[{self._progress_label()} Resume] Loading checkpoint from {resume_path}")
+            ckpt = torch.load(resume_path, map_location=self.device)
             self.unet.load_state_dict(ckpt["unet_state"])
             optimizer.load_state_dict(ckpt["optimizer_state"])
             move_optimizer_state_to_device(optimizer, self.device)
