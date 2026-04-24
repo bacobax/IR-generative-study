@@ -1,6 +1,6 @@
 # Unconditional latent Stable Diffusion on FLIR using the Stable Diffusion 1.5 VAE.
 # The single-channel IR input is replicated to RGB before SD-VAE encoding.
-# Launcher: python -m src.cli.train_sd_uncond --config configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512.yaml
+# Horizontal flip augmentation is enabled with a constant 50% probability.
 
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
@@ -25,9 +25,9 @@ augment:
   p_rot_warmup: 0.0
   p_rot_max: 0.0
   p_rot_final: 0.0
-  p_hflip_warmup: 0.0
-  p_hflip_max: 0.0
-  p_hflip_final: 0.0
+  p_hflip_warmup: 0.5
+  p_hflip_max: 0.5
+  p_hflip_final: 0.5
 
 training:
   epochs: 300
@@ -76,9 +76,9 @@ sampling:
   save_debug_images: true
 
 output:
-  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512"
-  log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_flir_sd15_512"
-  debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512"
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip"
+  log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_flir_sd15_512_hflip"
+  debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512_hflip"
   resume: null
 
 trainer_name: "sd_uncond"

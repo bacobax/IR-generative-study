@@ -143,6 +143,7 @@ check(cfg_d1.data.dataset_id is None, "no-config: dataset_id default")
 check(cfg_d1.data.image_size == 256, "no-config: image_size default")
 check(cfg_d1.training.epochs == 100, "no-config: epochs default")
 check(cfg_d1.augment.p_rot_max == 0.30, "no-config: p_rot_max default")
+check(cfg_d1.augment.p_hflip_max == 0.0, "no-config: p_hflip_max default")
 
 # D2: YAML only → values from YAML
 yaml_path = ROOT / "configs/fm/train/default.yaml"

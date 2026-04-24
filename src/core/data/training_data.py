@@ -96,6 +96,9 @@ def build_non_layout_dataloaders(
         p_rot_warmup=augment_config.p_rot_warmup,
         p_rot_max=augment_config.p_rot_max,
         p_rot_final=augment_config.p_rot_final,
+        p_hflip_warmup=getattr(augment_config, "p_hflip_warmup", 0.0),
+        p_hflip_max=getattr(augment_config, "p_hflip_max", 0.0),
+        p_hflip_final=getattr(augment_config, "p_hflip_final", 0.0),
         image_size=data_config.image_size,
         normalization_mode=resolved_data.normalization_mode,
     )

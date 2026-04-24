@@ -1,5 +1,6 @@
 # RegionDiff stage-2 latent Stable Diffusion on FLIR, initialized from the
 # completed unconditional latent SD SD1.5-VAE run.
+# Horizontal flip augmentation is enabled with a constant 50% probability.
 
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
@@ -16,17 +17,19 @@ model:
   pretrained_unet_path: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512/UNET/unet_sd_uncond_best.pt"
 
 augment:
-  warmup_frac: 0.0
-  ramp_frac: 0.0
+  warmup_frac: 0.10
+  ramp_frac: 0.30
+
   p_crop_warmup: 0.0
   p_crop_max: 0.0
   p_crop_final: 0.0
   p_rot_warmup: 0.0
   p_rot_max: 0.0
   p_rot_final: 0.0
+
   p_hflip_warmup: 0.0
-  p_hflip_max: 0.0
-  p_hflip_final: 0.0
+  p_hflip_max: 0.6
+  p_hflip_final: 0.3
 
 layout_conditioning:
   enabled: true
@@ -88,9 +91,9 @@ sampling:
   save_debug_images: true
 
 output:
-  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond"
-  log_dir: "./artifacts/runs/main/stable_diffusion/regiondiff_latent_flir_sd15_512_from_uncond"
-  debug_dir: "./artifacts/debug/regiondiff_latent_flir_sd15_512_from_uncond"
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip"
+  log_dir: "./artifacts/runs/main/stable_diffusion/regiondiff_latent_flir_sd15_512_from_uncond_hflip"
+  debug_dir: "./artifacts/debug/regiondiff_latent_flir_sd15_512_from_uncond_hflip"
   resume: null
 
 trainer_name: "sd_uncond"

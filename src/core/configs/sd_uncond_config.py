@@ -242,6 +242,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p_rot_warmup", type=float, default=0.05)
     parser.add_argument("--p_rot_max", type=float, default=0.30)
     parser.add_argument("--p_rot_final", type=float, default=0.05)
+    parser.add_argument("--p_hflip_warmup", type=float, default=0.0)
+    parser.add_argument("--p_hflip_max", type=float, default=0.0)
+    parser.add_argument("--p_hflip_final", type=float, default=0.0)
 
     parser.add_argument("--device", type=str, default=None,
                         help="Device: cpu, cuda, cuda:0, cuda:1, etc.")
@@ -310,6 +313,9 @@ _FLAT_TO_NESTED = {
     "p_rot_warmup": "augment.p_rot_warmup",
     "p_rot_max": "augment.p_rot_max",
     "p_rot_final": "augment.p_rot_final",
+    "p_hflip_warmup": "augment.p_hflip_warmup",
+    "p_hflip_max": "augment.p_hflip_max",
+    "p_hflip_final": "augment.p_hflip_final",
     "sample_every": "sampling.sample_every",
     "sample_steps": "sampling.sample_steps",
     "sample_batch_size": "sampling.sample_batch_size",

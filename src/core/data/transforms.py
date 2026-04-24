@@ -40,6 +40,11 @@ def random_rotate_90(x: torch.Tensor) -> torch.Tensor:
     return rotate_90(x, k)
 
 
+def horizontal_flip(x: torch.Tensor) -> torch.Tensor:
+    """Flip an image tensor along the width dimension."""
+    return torch.flip(x, dims=(2,))
+
+
 # ── I/O helper ────────────────────────────────────────────────────────────────
 
 def save_tensor_image(x: torch.Tensor, out_base: str) -> None:
@@ -94,6 +99,9 @@ class ScheduledAugment256:
         p_rot_warmup: float = 0.05,
         p_rot_max: float = 0.30,
         p_rot_final: float = 0.05,
+        p_hflip_warmup: float = 0.0,
+        p_hflip_max: float = 0.0,
+        p_hflip_final: float = 0.0,
         image_size: int = DEFAULT_IMAGE_SIZE,
         normalization_mode: str = RAW_UINT16_PERCENTILE,
     ):
@@ -109,16 +117,19 @@ class ScheduledAugment256:
         self.p_rot_warmup = float(p_rot_warmup)
         self.p_rot_max = float(p_rot_max)
         self.p_rot_final = float(p_rot_final)
+        self.p_hflip_warmup = float(p_hflip_warmup)
+        self.p_hflip_max = float(p_hflip_max)
+        self.p_hflip_final = float(p_hflip_final)
         self.epoch = 0
         self._last_phase = None
 
         self._log_probs(phase="start")
 
     def _log_probs(self, *, phase: str) -> None:
-        p_crop, p_rot = self._get_probs()
+        p_crop, p_rot, p_hflip = self._get_probs()
         print(
             f"[AugmentSchedule] {phase}: epoch={self.epoch} "
-            f"p_crop={p_crop:.3f} p_rot={p_rot:.3f}"
+            f"p_crop={p_crop:.3f} p_rot={p_rot:.3f} p_hflip={p_hflip:.3f}"
         )
 
     def set_epoch(self, epoch: int) -> None:
@@ -137,28 +148,32 @@ class ScheduledAugment256:
             return "ramp"
         return "decay"
 
-    def _get_probs(self) -> tuple[float, float]:
+    def _get_probs(self) -> tuple[float, float, float]:
         warmup_end = int(self.total_epochs * self.warmup_frac)
         ramp_end = int(self.total_epochs * (self.warmup_frac + self.ramp_frac))
 
         if self.epoch < warmup_end:
-            return self.p_crop_warmup, self.p_rot_warmup
+            return self.p_crop_warmup, self.p_rot_warmup, self.p_hflip_warmup
 
         if self.epoch < ramp_end:
             denom = max(1, ramp_end - warmup_end)
             alpha = (self.epoch - warmup_end) / denom
             p_crop = self.p_crop_warmup + alpha * (self.p_crop_max - self.p_crop_warmup)
             p_rot = self.p_rot_warmup + alpha * (self.p_rot_max - self.p_rot_warmup)
-            return p_crop, p_rot
+            p_hflip = self.p_hflip_warmup + alpha * (self.p_hflip_max - self.p_hflip_warmup)
+            return p_crop, p_rot, p_hflip
 
         denom = max(1, self.total_epochs - ramp_end)
         alpha = (self.epoch - ramp_end) / denom
         p_crop = self.p_crop_max + alpha * (self.p_crop_final - self.p_crop_max)
         p_rot = self.p_rot_max + alpha * (self.p_rot_final - self.p_rot_max)
-        return p_crop, p_rot
+        p_hflip = self.p_hflip_max + alpha * (self.p_hflip_final - self.p_hflip_max)
+        return p_crop, p_rot, p_hflip
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        p_crop, p_rot = self._get_probs()
+        p_crop, p_rot, p_hflip = self._get_probs()
+        if torch.rand(()) < p_hflip:
+            x = horizontal_flip(x)
         if torch.rand(()) < p_crop:
             x = center_crop_square(x)
         if torch.rand(()) < p_rot:
@@ -168,6 +183,71 @@ class ScheduledAugment256:
             image_size=self.image_size,
             normalization_mode=self.normalization_mode,
         )
+
+
+class ScheduledHorizontalFlip:
+    """Epoch-aware horizontal flip schedule for bbox-aligned layout datasets."""
+
+    def __init__(
+        self,
+        *,
+        total_epochs: int,
+        warmup_frac: float = 0.15,
+        ramp_frac: float = 0.4,
+        p_hflip_warmup: float = 0.0,
+        p_hflip_max: float = 0.0,
+        p_hflip_final: float = 0.0,
+    ):
+        self.total_epochs = int(total_epochs)
+        self.warmup_frac = float(warmup_frac)
+        self.ramp_frac = float(ramp_frac)
+        self.p_hflip_warmup = float(p_hflip_warmup)
+        self.p_hflip_max = float(p_hflip_max)
+        self.p_hflip_final = float(p_hflip_final)
+        self.epoch = 0
+        self._last_phase = None
+        self._log_prob(phase="start")
+
+    def _log_prob(self, *, phase: str) -> None:
+        print(
+            f"[HorizontalFlipSchedule] {phase}: epoch={self.epoch} "
+            f"p_hflip={self._get_prob():.3f}"
+        )
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+        phase = self._get_phase()
+        if phase != self._last_phase:
+            self._log_prob(phase=phase)
+            self._last_phase = phase
+
+    def _get_phase(self) -> str:
+        warmup_end = int(self.total_epochs * self.warmup_frac)
+        ramp_end = int(self.total_epochs * (self.warmup_frac + self.ramp_frac))
+        if self.epoch < warmup_end:
+            return "warmup"
+        if self.epoch < ramp_end:
+            return "ramp"
+        return "decay"
+
+    def _get_prob(self) -> float:
+        warmup_end = int(self.total_epochs * self.warmup_frac)
+        ramp_end = int(self.total_epochs * (self.warmup_frac + self.ramp_frac))
+
+        if self.epoch < warmup_end:
+            return self.p_hflip_warmup
+
+        if self.epoch < ramp_end:
+            denom = max(1, ramp_end - warmup_end)
+            alpha = (self.epoch - warmup_end) / denom
+            return self.p_hflip_warmup + alpha * (self.p_hflip_max - self.p_hflip_warmup)
+
+        denom = max(1, self.total_epochs - ramp_end)
+        alpha = (self.epoch - ramp_end) / denom
+        return self.p_hflip_max + alpha * (self.p_hflip_final - self.p_hflip_max)
+
+    def should_flip(self) -> bool:
+        return bool(torch.rand(()) < self._get_prob())
 
 
 # ── Debug / visualisation helper ──────────────────────────────────────────────

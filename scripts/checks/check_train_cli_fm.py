@@ -94,6 +94,9 @@ expected_defaults = {
     "p_rot_warmup": 0.05,
     "p_rot_max": 0.30,
     "p_rot_final": 0.05,
+    "p_hflip_warmup": 0.0,
+    "p_hflip_max": 0.0,
+    "p_hflip_final": 0.0,
     "resume": None,
     "train_target": "v",
 }

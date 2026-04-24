@@ -87,6 +87,9 @@ check("AugmentConfig.p_crop_final", a.p_crop_final == 0.05)
 check("AugmentConfig.p_rot_warmup", a.p_rot_warmup == 0.05)
 check("AugmentConfig.p_rot_max", a.p_rot_max == 0.30)
 check("AugmentConfig.p_rot_final", a.p_rot_final == 0.05)
+check("AugmentConfig.p_hflip_warmup", a.p_hflip_warmup == 0.0)
+check("AugmentConfig.p_hflip_max", a.p_hflip_max == 0.0)
+check("AugmentConfig.p_hflip_final", a.p_hflip_final == 0.0)
 
 t = TrainHyperConfig()
 check("TrainHyperConfig.epochs", t.epochs == 100)
@@ -156,6 +159,9 @@ fake_args = SimpleNamespace(
     p_rot_warmup=0.1,
     p_rot_max=0.4,
     p_rot_final=0.1,
+    p_hflip_warmup=0.2,
+    p_hflip_max=0.5,
+    p_hflip_final=0.2,
     epochs=50,
     t_scale=500.0,
     train_target="x0",
@@ -188,6 +194,7 @@ check("model.unet_config mapped", cfg.model.unet_config == "my_unet.json")
 check("model.vae_weights mapped", cfg.model.vae_weights == "my_vae.pt")
 check("augment.warmup_frac mapped", cfg.augment.warmup_frac == 0.2)
 check("augment.p_rot_max mapped", cfg.augment.p_rot_max == 0.4)
+check("augment.p_hflip_max mapped", cfg.augment.p_hflip_max == 0.5)
 check("training.epochs mapped", cfg.training.epochs == 50)
 check("training.t_scale mapped", cfg.training.t_scale == 500.0)
 check("training.train_target mapped", cfg.training.train_target == "x0")

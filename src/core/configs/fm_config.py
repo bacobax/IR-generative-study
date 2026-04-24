@@ -114,6 +114,9 @@ class AugmentConfig:
     p_rot_warmup: float = 0.05
     p_rot_max: float = 0.30
     p_rot_final: float = 0.05
+    p_hflip_warmup: float = 0.0
+    p_hflip_max: float = 0.0
+    p_hflip_final: float = 0.0
 
 
 @dataclass
@@ -334,6 +337,9 @@ class FMTrainConfig:
                 p_rot_warmup=args.p_rot_warmup,
                 p_rot_max=args.p_rot_max,
                 p_rot_final=args.p_rot_final,
+                p_hflip_warmup=getattr(args, "p_hflip_warmup", 0.0),
+                p_hflip_max=getattr(args, "p_hflip_max", 0.0),
+                p_hflip_final=getattr(args, "p_hflip_final", 0.0),
             ),
             training=TrainHyperConfig(
                 epochs=args.epochs,

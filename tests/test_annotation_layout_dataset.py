@@ -15,6 +15,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from src.core.data.datasets import AnnotationLayoutDataset
+from src.core.data.transforms import ScheduledHorizontalFlip
 from src.core.normalization import UINT8_LINEAR
 
 
@@ -126,3 +127,29 @@ def test_annotation_layout_dataset_handles_empty_annotations() -> None:
         assert sample["boxes_xyxy_original"].shape == (0, 4)
         assert sample["labels"].shape == (0,)
         assert sample["label_names"] == []
+
+
+def test_annotation_layout_dataset_horizontal_flip_mirrors_boxes() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        img_dir, annotations_path = _make_layout_test_data(tmpdir)
+        flip_schedule = ScheduledHorizontalFlip(
+            total_epochs=1,
+            p_hflip_warmup=1.0,
+            p_hflip_max=1.0,
+            p_hflip_final=1.0,
+        )
+        ds = AnnotationLayoutDataset(
+            root_dir=img_dir,
+            annotations_path=annotations_path,
+            image_size=200,
+            normalization_mode=UINT8_LINEAR,
+            include_label_names=True,
+            horizontal_flip_schedule=flip_schedule,
+        )
+
+        sample = ds[0]
+        assert sample["horizontal_flipped"] is True
+        assert sample["boxes_xyxy"].tolist() == [
+            [140.0, 20.0, 180.0, 60.0],
+            [50.0, 40.0, 100.0, 120.0],
+        ]

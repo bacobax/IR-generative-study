@@ -16,6 +16,7 @@ from src.core.data.annotations import (
     index_annotations,
     load_coco_annotations,
 )
+from src.core.data.transforms import horizontal_flip
 from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
 
 
@@ -220,11 +221,9 @@ class BBoxConditioningDataset(Dataset):
 class AnnotationLayoutDataset(Dataset):
     """Load images together with aligned COCO bbox annotations.
 
-    This dataset is intended for bbox-driven inspection or future layout-aware
-    training paths. In v1 it only supports deterministic resize + normalize
-    performed inside the dataset so that bbox coordinates remain aligned with
-    the returned ``pixel_values`` tensor. Geometry-changing augmentations are
-    intentionally not supported here.
+    This dataset is intended for bbox-driven inspection or layout-aware
+    training paths. It supports deterministic resize + normalize, plus an
+    optional horizontal flip schedule that mirrors both image and boxes.
     """
 
     def __init__(
@@ -235,11 +234,13 @@ class AnnotationLayoutDataset(Dataset):
         image_size: int = 256,
         normalization_mode: str = RAW_UINT16_PERCENTILE,
         include_label_names: bool = True,
+        horizontal_flip_schedule=None,
     ):
         self.root_dir = root_dir
         self.image_size = int(image_size)
         self.normalization_mode = normalization_mode
         self.include_label_names = include_label_names
+        self.horizontal_flip_schedule = horizontal_flip_schedule
 
         self.files = sorted(
             f for f in os.listdir(root_dir) if f.endswith(".npy")
@@ -260,6 +261,10 @@ class AnnotationLayoutDataset(Dataset):
     def __len__(self) -> int:
         return len(self.files)
 
+    def set_epoch(self, epoch: int) -> None:
+        if self.horizontal_flip_schedule is not None and hasattr(self.horizontal_flip_schedule, "set_epoch"):
+            self.horizontal_flip_schedule.set_epoch(epoch)
+
     @staticmethod
     def _scale_boxes_xyxy(
         boxes_xyxy: torch.Tensor,
@@ -275,6 +280,19 @@ class AnnotationLayoutDataset(Dataset):
         scaled[:, [1, 3]] *= float(dst_size) / max(float(src_height), 1.0)
         return scaled
 
+    @staticmethod
+    def _horizontal_flip_boxes_xyxy(
+        boxes_xyxy: torch.Tensor,
+        *,
+        image_width: float,
+    ) -> torch.Tensor:
+        if boxes_xyxy.numel() == 0:
+            return boxes_xyxy
+        flipped = boxes_xyxy.clone()
+        flipped[:, 0] = float(image_width) - boxes_xyxy[:, 2]
+        flipped[:, 2] = float(image_width) - boxes_xyxy[:, 0]
+        return flipped
+
     def __getitem__(self, idx: int) -> dict:
         fname = self.files[idx]
         path = os.path.join(self.root_dir, fname)
@@ -283,6 +301,11 @@ class AnnotationLayoutDataset(Dataset):
         if arr.ndim == 2:
             arr = arr[None, ...]
         raw_tensor = torch.from_numpy(arr.copy()).float()
+
+        horizontal_flipped = False
+        if self.horizontal_flip_schedule is not None and self.horizontal_flip_schedule.should_flip():
+            raw_tensor = horizontal_flip(raw_tensor)
+            horizontal_flipped = True
 
         pixel_values = resize_and_normalize(
             raw_tensor,
@@ -315,6 +338,11 @@ class AnnotationLayoutDataset(Dataset):
             src_height=height,
             dst_size=self.image_size,
         )
+        if horizontal_flipped:
+            boxes_xyxy = self._horizontal_flip_boxes_xyxy(
+                boxes_xyxy,
+                image_width=self.image_size,
+            )
         labels_tensor = torch.tensor(labels, dtype=torch.long)
         if labels_tensor.numel() == 0:
             labels_tensor = labels_tensor.reshape(0)
@@ -327,6 +355,7 @@ class AnnotationLayoutDataset(Dataset):
             "file_name": fname,
             "n_objects": int(labels_tensor.numel()),
             "boxes_xyxy_original": boxes_xyxy_original,
+            "horizontal_flipped": horizontal_flipped,
         }
         if self.include_label_names:
             sample["label_names"] = label_names or []

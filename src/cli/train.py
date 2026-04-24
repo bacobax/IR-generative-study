@@ -30,7 +30,7 @@ from src.core.data.training_data import (
     build_non_layout_dataloaders,
     resolve_training_data,
 )
-from src.core.data.transforms import save_transform_examples
+from src.core.data.transforms import ScheduledHorizontalFlip, save_transform_examples
 from src.core.registry import REGISTRIES
 
 # Ensure default components are registered
@@ -179,6 +179,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p_rot_warmup", type=float, default=0.05)
     parser.add_argument("--p_rot_max", type=float, default=0.30)
     parser.add_argument("--p_rot_final", type=float, default=0.05)
+    parser.add_argument("--p_hflip_warmup", type=float, default=0.0)
+    parser.add_argument("--p_hflip_max", type=float, default=0.0)
+    parser.add_argument("--p_hflip_final", type=float, default=0.0)
 
     # Resume
     parser.add_argument("--resume", type=str, default=None,
@@ -268,6 +271,9 @@ _FLAT_TO_NESTED = {
     "p_rot_warmup":        "augment.p_rot_warmup",
     "p_rot_max":           "augment.p_rot_max",
     "p_rot_final":         "augment.p_rot_final",
+    "p_hflip_warmup":      "augment.p_hflip_warmup",
+    "p_hflip_max":         "augment.p_hflip_max",
+    "p_hflip_final":       "augment.p_hflip_final",
     # Sampling
     "sample_batch_size":   "sampling.sample_batch_size",
     # Device
@@ -311,12 +317,28 @@ def run_training(cfg: FMTrainConfig) -> None:
                 "Layout-conditioned FM requires split-specific COCO annotations."
             )
 
+        train_horizontal_flip = None
+        if max(
+            float(getattr(cfg.augment, "p_hflip_warmup", 0.0)),
+            float(getattr(cfg.augment, "p_hflip_max", 0.0)),
+            float(getattr(cfg.augment, "p_hflip_final", 0.0)),
+        ) > 0.0:
+            train_horizontal_flip = ScheduledHorizontalFlip(
+                total_epochs=total_epochs,
+                warmup_frac=cfg.augment.warmup_frac,
+                ramp_frac=cfg.augment.ramp_frac,
+                p_hflip_warmup=cfg.augment.p_hflip_warmup,
+                p_hflip_max=cfg.augment.p_hflip_max,
+                p_hflip_final=cfg.augment.p_hflip_final,
+            )
+
         train_base_dataset = AnnotationLayoutDataset(
             root_dir=resolved_data.train_dir,
             annotations_path=resolved_data.train_annotations_path,
             image_size=cfg.data.image_size,
             normalization_mode=resolved_data.normalization_mode,
             include_label_names=True,
+            horizontal_flip_schedule=train_horizontal_flip,
         )
         eval_base_dataset = AnnotationLayoutDataset(
             root_dir=resolved_data.val_dir,
