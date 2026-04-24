@@ -1,11 +1,10 @@
-# Unconditional latent Stable Diffusion on FLIR using the Stable Diffusion 1.5 VAE.
-# The single-channel IR input is replicated to RGB before SD-VAE encoding.
-# Launcher: python -m src.cli.train_sd_uncond --config configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512.yaml
+# RegionDiff stage-2 latent Stable Diffusion on FLIR, initialized from the
+# completed unconditional latent SD SD1.5-VAE run.
 
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
   image_size: 512
-  batch_size: 64
+  batch_size: 8
   num_workers: 4
 
 model:
@@ -14,7 +13,7 @@ model:
   vae_weights: null
   vae_pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
   vae_pretrained_subfolder: "vae"
-  pretrained_unet_path: null
+  pretrained_unet_path: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512/UNET/unet_sd_uncond_best.pt"
 
 augment:
   warmup_frac: 0.0
@@ -26,11 +25,24 @@ augment:
   p_rot_max: 0.0
   p_rot_final: 0.0
 
+layout_conditioning:
+  enabled: true
+  variant: "regiondiff_v1"
+  active_region_resolutions: [64, 32, 16]
+  layout_token_dim: 256
+  bbox_fourier_dim: 64
+  same_class_position_slots: 128
+  use_background_token: true
+  train_mode: "adapters_only"
+  partial_backbone_modules: [mid_block, up_blocks]
+  adapter_learning_rate: 1.0e-4
+  backbone_learning_rate: 1.0e-5
+
 training:
-  epochs: 300
-  lr: 0.0001
-  save_every_n_epochs: 30
-  eval_every: 3
+  epochs: 80
+  lr: 1.0e-4
+  save_every_n_epochs: 10
+  eval_every: 1
   patience: null
   min_delta: 0.0
   strict_load: true
@@ -43,9 +55,9 @@ optimizer:
   beta2: 0.999
 
 scheduler:
-  name: "warmup_cosine"
+  name: "constant_with_warmup"
   warmup_ratio: 0.05
-  min_lr_ratio: 0.1
+  min_lr_ratio: 1.0
 
 ema:
   enabled: true
@@ -73,9 +85,9 @@ sampling:
   save_debug_images: true
 
 output:
-  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512"
-  log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_flir_sd15_512"
-  debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512"
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond"
+  log_dir: "./artifacts/runs/main/stable_diffusion/regiondiff_latent_flir_sd15_512_from_uncond"
+  debug_dir: "./artifacts/debug/regiondiff_latent_flir_sd15_512_from_uncond"
   resume: null
 
 trainer_name: "sd_uncond"

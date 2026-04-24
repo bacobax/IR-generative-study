@@ -1,0 +1,1 @@
+rsync -av --exclude "*.pt" bacobax2@killarney.alliancecan.ca:/project/6109890/bacobax2/ir-generative-study/ .

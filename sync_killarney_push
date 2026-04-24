@@ -1,0 +1,10 @@
+rsync -av \
+  --exclude 'runs/' \
+  --exclude '**/runs/' \
+  --exclude '*.tfevents.*' \
+  --exclude '*.pt' \
+  --exclude '*.pth' \
+  --exclude '*.ckpt' \
+  --exclude '*.safetensors' \
+  --exclude '*smoked*/' \
+  . bacobax2@killarney.alliancecan.ca:/project/6109890/bacobax2/ir-generative-study
