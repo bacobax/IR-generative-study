@@ -410,7 +410,13 @@ class FlowMatchingTrainer:
             state = state["unet_state"]
         load_target = self.unet
         load_label = "unet"
-        if isinstance(state, dict) and hasattr(self.unet, "base_model"):
+        allow_missing_regiondiff_adapters = False
+        base_attr = None
+        if hasattr(self.unet, "base_model"):
+            base_attr = "base_model"
+        elif hasattr(self.unet, "base_unet"):
+            base_attr = "base_unet"
+        if isinstance(state, dict) and base_attr is not None:
             state_keys = [str(key) for key in state.keys()]
             is_wrapped_state = any(
                 key.startswith(("base_model.", "base_unet.", "layout_tokenizer."))
@@ -418,8 +424,9 @@ class FlowMatchingTrainer:
                 for key in state_keys
             )
             if not is_wrapped_state:
-                load_target = getattr(self.unet, "base_model")
-                load_label = "unet.base_model"
+                load_target = getattr(self.unet, base_attr)
+                load_label = f"unet.{base_attr}"
+                allow_missing_regiondiff_adapters = True
                 target_keys = set(load_target.state_dict().keys())
                 remapped_state = {}
                 for key, value in state.items():
@@ -433,10 +440,30 @@ class FlowMatchingTrainer:
                     remapped_state[mapped_key if mapped_key in target_keys else key_str] = value
                 state = remapped_state
 
-        missing, unexpected = load_target.load_state_dict(state, strict=strict)
+        effective_strict = strict and not allow_missing_regiondiff_adapters
+        missing, unexpected = load_target.load_state_dict(state, strict=effective_strict)
+        if strict and allow_missing_regiondiff_adapters:
+            disallowed_missing = [
+                key for key in missing if ".region_adapter." not in str(key)
+            ]
+            if disallowed_missing or unexpected:
+                details = []
+                if disallowed_missing:
+                    details.append(f"Missing non-RegionDiff keys: {disallowed_missing}")
+                if unexpected:
+                    details.append(f"Unexpected keys: {unexpected}")
+                raise RuntimeError(
+                    "Error(s) in loading base UNet checkpoint into RegionDiff model: "
+                    + "; ".join(details)
+                )
         if (not strict) or missing or unexpected:
             print(f"[load_unet_weights] target={load_label} strict={strict}")
-            if missing:
+            if strict and allow_missing_regiondiff_adapters and missing and not unexpected:
+                print(
+                    "  Missing RegionDiff adapter keys were initialized from scratch "
+                    f"({len(missing)} keys)."
+                )
+            elif missing:
                 print("  Missing keys:", missing)
             if unexpected:
                 print("  Unexpected keys:", unexpected)

@@ -31,7 +31,10 @@ from src.core.data.training_data import (
     resolve_training_data,
 )
 from src.core.data.transforms import ScheduledHorizontalFlip, save_transform_examples
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
 from src.core.registry import REGISTRIES
+
+disable_diffusers_optional_scipy()
 
 # Ensure default components are registered
 import src.models.fm_unet  # noqa: F401 — registers model_builder

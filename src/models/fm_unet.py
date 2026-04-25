@@ -14,12 +14,15 @@ Usage::
 
 import json
 import os
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import torch
-from diffusers import UNet2DModel
 
+from src.core.diffusers_compat import import_diffusers_attr
 from src.core.paths import stable_unet_config_path, non_stable_unet_config_path
+
+if TYPE_CHECKING:
+    from diffusers import UNet2DModel
 
 
 # ── Known built-in config paths (resolved via src.core.paths) ────────────────
@@ -77,7 +80,7 @@ def build_fm_unet_from_config(
     config: Dict[str, Any],
     *,
     device: Optional[Union[str, torch.device]] = None,
-) -> UNet2DModel:
+) -> "UNet2DModel":
     """Instantiate a ``UNet2DModel`` from a config dict.
 
     Parameters
@@ -94,6 +97,7 @@ def build_fm_unet_from_config(
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+    UNet2DModel = import_diffusers_attr("diffusers", "UNet2DModel")
     return UNet2DModel(**config).to(device)
 
 

@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from generative.networks.nets import AutoencoderKL
 
+from src.core.diffusers_compat import import_diffusers_attr
 from src.core.paths import vae_config_path, vae_config_x4_path, vae_config_x8_path
 
 
@@ -260,15 +261,7 @@ def _read_json(path: str) -> Dict[str, Any]:
 
 
 def _import_diffusers_autoencoder_kl():
-    try:
-        from diffusers import AutoencoderKL as DiffusersAutoencoderKL
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "Diffusers is required to use a pretrained Stable Diffusion VAE. "
-            "Install it in the active environment or switch to the repo's "
-            "`diffusers-dev` environment."
-        ) from exc
-    return DiffusersAutoencoderKL
+    return import_diffusers_attr("diffusers", "AutoencoderKL")
 
 
 def _match_channel_count(x: torch.Tensor, expected_channels: int) -> torch.Tensor:

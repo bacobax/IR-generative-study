@@ -1,0 +1,80 @@
+experiment:
+  name: "sd15_lora_rank_arena_flir"
+  seed: 42
+  device: null
+  mixed_precision: "auto"
+
+data:
+  dataset_id: "flir_private_proxy_alignment_v18"
+  reference_split: "val"
+  image_size: 512
+  num_workers: 4
+  max_real_images: null
+  real_image_mode: "rgb"
+
+model:
+  base_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+  vae_subfolder: "vae"
+  scheduler: "ddim"
+  prediction_type: "epsilon"
+
+lora_arena:
+  ranks:
+    - rank: 8
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8/checkpoint-62000"
+      label: "lora_r8"
+    - rank: 16
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r16/checkpoint-10000"
+      label: "lora_r16"
+    - rank: 32
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r32"
+      label: "lora_r32"
+    - rank: 64
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r64/checkpoint-19000"
+      label: "lora_r64"
+    - rank: 128
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r128"
+      label: "lora_r128"
+
+generation:
+  n_samples: 1000
+  batch_size: 8
+  num_inference_steps: 40
+  guidance_scale: 1.0
+  prompt: "thermal image"
+  negative_prompt: ""
+  height: 512
+  width: 512
+  save_images: true
+  resume_existing_images: true
+
+metrics:
+  feature_extractor: "dinov2"
+
+  dinov2:
+    model_name: "facebook/dinov2-base"
+    pooling: "mean"
+
+  inception:
+    resize_to: 299
+    normalize: true
+
+  compute_fid: true
+  compute_kid: true
+  compute_mmd: true
+
+  kid:
+    subsets: 100
+    subset_size: 1000
+
+  mmd:
+    kernel: "rbf"
+    bandwidths: [0.1, 1.0, 10.0]
+
+ranking:
+  primary: "kid"
+  secondary: "fid"
+  tertiary: "mmd"
+
+output:
+  root_dir: "./artifacts/evaluations/lora_rank_arena/flir_sd15"
