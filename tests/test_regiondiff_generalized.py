@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 from diffusers import DDPMScheduler, UNet2DModel
 
+from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
 from src.algorithms.training.unconditional_sd_trainer import UnconditionalStableDiffusionTrainer
 from src.core.configs.fm_config import LayoutConditioningConfig
 from src.core.configs.sd_uncond_config import parse_args as parse_sd_uncond_args
@@ -75,6 +76,28 @@ def test_unet2d_regiondiff_wrapper_smoke_forward() -> None:
     sample = torch.randn(1, 4, 16, 16)
     output = wrapper(sample, torch.tensor([10]), **_layout_kwargs()).sample
     assert output.shape == sample.shape
+
+
+def test_regiondiff_strict_load_accepts_plain_base_checkpoint(tmp_path) -> None:
+    base_state = _tiny_unet2d().state_dict()
+    checkpoint_path = tmp_path / "unet.pt"
+    torch.save(base_state, checkpoint_path)
+
+    wrapper = build_regiondiff_wrapper(
+        base_model=_tiny_unet2d(),
+        region_config=_region_config(),
+        category_id_to_name={0: "person", 1: "car", 2: "dog"},
+        backbone_kind="fm_unet2d",
+        attachment_kind="attention",
+    )
+    trainer = FlowMatchingTrainer(wrapper, device="cpu")
+
+    trainer.load_unet_weights(str(checkpoint_path), strict=True)
+
+    assert torch.allclose(
+        wrapper.base_model.conv_in.weight,
+        base_state["conv_in.weight"],
+    )
 
 
 def test_regiondiff_trainability_adapters_only_freezes_unet2d_backbone() -> None:

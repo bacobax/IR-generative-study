@@ -106,10 +106,16 @@ for key, val in expected_defaults.items():
 
 # Custom flag values
 custom_args = parser.parse_args(["--epochs", "42", "--batch_size", "16",
-                                  "--train-target", "x0"])
+                                  "--train-target", "x0",
+                                  "--p_hflip_warmup", "0.1",
+                                  "--p_hflip_max", "0.6",
+                                  "--p_hflip_final", "0.3"])
 check("--epochs override", custom_args.epochs == 42)
 check("--batch_size override", custom_args.batch_size == 16)
 check("--train-target override", custom_args.train_target == "x0")
+check("--p_hflip_warmup override", custom_args.p_hflip_warmup == 0.1)
+check("--p_hflip_max override", custom_args.p_hflip_max == 0.6)
+check("--p_hflip_final override", custom_args.p_hflip_final == 0.3)
 
 # ======================================================================
 # 3. Config construction from args
@@ -128,6 +134,11 @@ check("cfg.optimizer.name default", cfg.optimizer.name == "adamw")
 check("cfg.scheduler.name default", cfg.scheduler.name == "warmup_cosine")
 check("cfg.precision.mixed_precision default", cfg.precision.mixed_precision == "auto")
 check("cfg.path.mode default", cfg.path.mode == "independent")
+
+hflip_cfg = FMTrainConfig.from_args(custom_args)
+check("cfg.augment.p_hflip_warmup maps from CLI", hflip_cfg.augment.p_hflip_warmup == 0.1)
+check("cfg.augment.p_hflip_max maps from CLI", hflip_cfg.augment.p_hflip_max == 0.6)
+check("cfg.augment.p_hflip_final maps from CLI", hflip_cfg.augment.p_hflip_final == 0.3)
 
 from src.core.configs.fm_config import DataConfig
 
