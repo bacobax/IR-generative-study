@@ -9,8 +9,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import torch
 import torch.nn as nn
-from diffusers.training_utils import cast_training_params
 
+from src.core.training_utils import cast_training_params
 from src.models.regiondiffusion import (
     RegionDiffusionModelWrapper,
     RegionDiffusionUNetWrapper,

@@ -217,3 +217,25 @@ def grad_norm(parameters: Iterable[torch.nn.Parameter]) -> float:
             continue
         total += float(param.grad.detach().pow(2).sum().item())
     return float(total ** 0.5)
+
+
+def cast_training_params(
+    model: Union[torch.nn.Module, Iterable[torch.nn.Module]],
+    *,
+    dtype: torch.dtype = torch.float32,
+) -> None:
+    """Cast trainable parameters to ``dtype`` without importing diffusers pipelines."""
+    if isinstance(model, torch.nn.Module):
+        modules = [model]
+    else:
+        modules = list(model)
+
+    for module in modules:
+        if not isinstance(module, torch.nn.Module):
+            raise TypeError(
+                "cast_training_params expects a torch.nn.Module or an iterable "
+                f"of modules, got {type(module).__name__}."
+            )
+        for param in module.parameters():
+            if param.requires_grad:
+                param.data = param.data.to(dtype=dtype)
