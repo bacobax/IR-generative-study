@@ -65,8 +65,6 @@ precision:
 path:
   mode: "minibatch_ot"
   solver: "hungarian"
-  layout_cost_resolution: 16
-  condition_weight: 1.0
 
 sampling:
   sample_every: 10

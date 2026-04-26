@@ -66,7 +66,7 @@ precision:
 path:
   mode: "conditional_ot"
   solver: "hungarian"
-  layout_cost_resolution: 16
+  layout_cost_resolution: 32
   condition_weight: 1.0
 
 layout_conditioning:
