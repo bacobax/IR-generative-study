@@ -60,6 +60,41 @@ def _layout_kwargs(batch_size: int = 1):
     }
 
 
+def _layout_batch(batch_size: int = 1):
+    boxes = torch.tensor([[[2.0, 2.0, 10.0, 10.0]]] * batch_size, dtype=torch.float32)
+    return {
+        "pixel_values": torch.zeros(batch_size, 1, 16, 16),
+        "boxes_xyxy": boxes,
+        "boxes_xyxy_norm": boxes / 16.0,
+        "labels": torch.zeros(batch_size, 1, dtype=torch.long),
+        "object_mask": torch.ones(batch_size, 1, dtype=torch.bool),
+    }
+
+
+class _RecordingWriter:
+    def __init__(self) -> None:
+        self.tags: list[str] = []
+        self.shapes: dict[str, torch.Size] = {}
+
+    def add_images(self, tag, images, step, *args, **kwargs) -> None:
+        tag = str(tag)
+        self.tags.append(tag)
+        self.shapes[tag] = images.shape
+        assert images.shape[0] == 1
+
+
+class _FakeRegionDiffSampler:
+    def __init__(self) -> None:
+        self.saw_layout_batch = False
+
+    def sample_euler_layout(self, batch, *, steps, sample_shape):
+        self.saw_layout_batch = "boxes_xyxy_norm" in batch
+        return torch.zeros(batch["pixel_values"].shape[0], 1, 16, 16)
+
+    def decode(self, latents):
+        return latents
+
+
 def test_unet2d_regiondiff_wrapper_smoke_forward() -> None:
     wrapper = build_regiondiff_wrapper(
         base_model=_tiny_unet2d(),
@@ -179,6 +214,34 @@ def test_sd_uncond_regiondiff_config_parses_preset_fields() -> None:
     assert cfg.layout_conditioning.enabled is True
     assert cfg.layout_conditioning.variant == "regiondiff_v1"
     assert cfg.layout_conditioning.active_region_resolutions == [64, 32, 16]
+
+
+def test_regiondiff_validation_logging_adds_generated_bbox_overlay() -> None:
+    writer = _RecordingWriter()
+    sampler = _FakeRegionDiffSampler()
+    trainer = FlowMatchingTrainer(
+        _tiny_unet2d(),
+        device="cpu",
+        layout_config=_region_config(),
+    )
+
+    trainer._log_regiondiff_validation_samples(
+        writer,
+        sampler=sampler,
+        fixed_batch=_layout_batch(),
+        epoch=0,
+        steps=2,
+        sample_shape=None,
+        max_logged_images=1,
+        save_debug_images=False,
+        debug_dir="/tmp/unused-regiondiff-debug",
+    )
+
+    assert sampler.saw_layout_batch is True
+    assert "fm/generated" in writer.tags
+    assert "fm/generated_boxes" in writer.tags
+    assert "fm/generated_layout" in writer.tags
+    assert writer.shapes["fm/generated_boxes"][1] == 3
 
 
 def test_identity_class_features_are_deterministic() -> None:

@@ -34,6 +34,11 @@ from src.core.training_utils import (
     move_optimizer_state_to_device,
     resolve_precision_settings,
 )
+from src.core.visualization.layout_debug import (
+    draw_bbox_overlays,
+    render_class_layout,
+    save_image_batch,
+)
 from src.models.fm_unet import save_unet_config, load_unet_config, build_fm_unet_from_config
 from src.models.regiondiffusion_factory import (
     build_regiondiff_wrapper,
@@ -374,6 +379,9 @@ class FlowMatchingTrainer:
             ema_start_step=getattr(config.ema, "start_step", 100),
             mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
             max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
+            fixed_validation_examples=getattr(config.sampling, "fixed_validation_examples", 0),
+            save_debug_images=getattr(config.sampling, "save_debug_images", False),
+            debug_dir=config.output.resolved_debug_dir(),
         )
 
     # ------------------------------------------------------------------
@@ -514,6 +522,93 @@ class FlowMatchingTrainer:
             f"{self.__class__.__name__}, got {type(batch)!r}."
         )
 
+    @staticmethod
+    def _slice_batch(batch: Dict[str, Any], max_items: int) -> Dict[str, Any]:
+        sliced: Dict[str, Any] = {}
+        for key, value in batch.items():
+            if torch.is_tensor(value):
+                sliced[key] = value[:max_items]
+            elif isinstance(value, list):
+                sliced[key] = value[:max_items]
+            else:
+                sliced[key] = value
+        return sliced
+
+    @staticmethod
+    def _build_fixed_validation_batch(
+        dataloader: Optional[DataLoader],
+        num_examples: int,
+    ) -> Optional[Dict[str, Any]]:
+        if dataloader is None or num_examples <= 0:
+            return None
+        dataset = dataloader.dataset
+        num_items = min(num_examples, len(dataset))
+        if num_items == 0:
+            return None
+        samples = [dataset[idx] for idx in range(num_items)]
+        collate_fn = getattr(dataloader, "collate_fn", None)
+        if collate_fn is None:
+            raise ValueError("RegionDiff validation batching requires an explicit collate_fn")
+        return collate_fn(samples)
+
+    @torch.no_grad()
+    def _log_regiondiff_validation_samples(
+        self,
+        writer: SummaryWriter,
+        *,
+        sampler,
+        fixed_batch: Dict[str, Any],
+        epoch: int,
+        steps: int,
+        sample_shape: Optional[Tuple[int, int, int]],
+        max_logged_images: int,
+        save_debug_images: bool,
+        debug_dir: str,
+    ) -> None:
+        vis_batch = self._slice_batch(fixed_batch, max_logged_images)
+        if hasattr(sampler, "sample_euler_layout"):
+            generated_latents = sampler.sample_euler_layout(
+                vis_batch,
+                steps=steps,
+                sample_shape=sample_shape,
+            )
+        elif hasattr(sampler, "sample_layout"):
+            generated_latents = sampler.sample_layout(
+                vis_batch,
+                steps=steps,
+                sample_shape=sample_shape,
+            )
+        else:
+            raise TypeError(
+                f"{sampler.__class__.__name__} does not support RegionDiff layout sampling."
+            )
+
+        generated_images = sampler.decode(generated_latents)
+        generated_display = self.from_norm_to_display(generated_images).clamp(0.0, 1.0)
+        generated_overlay = draw_bbox_overlays(
+            generated_display,
+            boxes_xyxy=vis_batch["boxes_xyxy"],
+            labels=vis_batch["labels"],
+            object_mask=vis_batch["object_mask"],
+        )
+        layout_canvas = render_class_layout(
+            boxes_xyxy=vis_batch["boxes_xyxy"],
+            labels=vis_batch["labels"],
+            object_mask=vis_batch["object_mask"],
+            image_size=int(vis_batch["pixel_values"].shape[-1]),
+        )
+
+        prefix = self._sample_tensorboard_tag()
+        writer.add_images(prefix, generated_display, epoch)
+        writer.add_images(f"{prefix}_boxes", generated_overlay, epoch)
+        writer.add_images(f"{prefix}_layout", layout_canvas, epoch)
+
+        if save_debug_images:
+            step_dir = os.path.join(debug_dir, f"epoch_{epoch + 1:04d}")
+            save_image_batch(generated_display, output_dir=step_dir, prefix="generated")
+            save_image_batch(generated_overlay, output_dir=step_dir, prefix="generated_boxes")
+            save_image_batch(layout_canvas, output_dir=step_dir, prefix="layout")
+
     def _compute_batch_loss(
         self,
         x_fm: torch.Tensor,
@@ -627,6 +722,9 @@ class FlowMatchingTrainer:
         ema_start_step: int = 100,
         mixed_precision: str = "auto",
         max_grad_norm: float = 1.0,
+        fixed_validation_examples: int = 0,
+        save_debug_images: bool = False,
+        debug_dir: str = "./artifacts/debug/flow_matching",
     ) -> None:
         eval_every = int(eval_every)
         if patience is not None and eval_dataloader is None:
@@ -759,6 +857,14 @@ class FlowMatchingTrainer:
                 current = getattr(current, "dataset", None)
 
         sampler_obj = self._make_sampler() if sample_every > 0 else None
+        fixed_batch = None
+        if sampler_obj is not None and self._uses_regiondiff_layout():
+            fixed_batch = self._build_fixed_validation_batch(
+                eval_dataloader or dataloader,
+                min(int(fixed_validation_examples), int(sample_batch_size)),
+            )
+            if save_debug_images:
+                os.makedirs(debug_dir, exist_ok=True)
 
         if precision.requested != precision.mode:
             print(
@@ -874,14 +980,33 @@ class FlowMatchingTrainer:
             if sampler_obj is not None and (epoch + 1) % sample_every == 0:
                 ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
                 with ema_context:
-                    sampler_obj.log_samples_to_tensorboard(
-                        writer=writer,
-                        epoch=epoch,
-                        steps=sample_steps,
-                        batch_size=sample_batch_size,
-                        tag=self._sample_tensorboard_tag(),
-                        sample_shape=sample_shape,
-                    )
+                    if self._uses_regiondiff_layout():
+                        if fixed_batch is None:
+                            print(
+                                "[RegionDiff Sampling] Skipping layout sample logging because "
+                                "sampling.fixed_validation_examples <= 0 or no validation samples are available."
+                            )
+                        else:
+                            self._log_regiondiff_validation_samples(
+                                writer,
+                                sampler=sampler_obj,
+                                fixed_batch=fixed_batch,
+                                epoch=epoch,
+                                steps=sample_steps,
+                                sample_shape=sample_shape,
+                                max_logged_images=sample_batch_size,
+                                save_debug_images=save_debug_images,
+                                debug_dir=debug_dir,
+                            )
+                    else:
+                        sampler_obj.log_samples_to_tensorboard(
+                            writer=writer,
+                            epoch=epoch,
+                            steps=sample_steps,
+                            batch_size=sample_batch_size,
+                            tag=self._sample_tensorboard_tag(),
+                            sample_shape=sample_shape,
+                        )
 
         writer.close()
 

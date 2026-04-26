@@ -200,6 +200,9 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
             ema_start_step=getattr(config.ema, "start_step", 100),
             mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
             max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
+            fixed_validation_examples=getattr(config.sampling, "fixed_validation_examples", 0),
+            save_debug_images=getattr(config.sampling, "save_debug_images", False),
+            debug_dir=config.output.resolved_debug_dir(),
         )
 
     def _make_sampler(self) -> UnconditionalStableDiffusionSampler:
