@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from src.algorithms.training.layout_flow_matching_trainer import LayoutFMTrainer
@@ -93,6 +94,27 @@ def _small_stay_layout_latent_unet():
         category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
         device="cpu",
     )
+
+
+class _FakeLatentVAE:
+    def eval(self):
+        return self
+
+    def parameters(self):
+        return iter(())
+
+    def encode(self, x: torch.Tensor):
+        latents = F.interpolate(x, size=(8, 8), mode="bilinear", align_corners=False)
+        latents = latents.repeat(1, 4, 1, 1)
+        sigma = torch.ones_like(latents) * 0.5
+        return latents, sigma
+
+    def sampling(self, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+        return mu
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        decoded = z[:, :1]
+        return F.interpolate(decoded, size=(16, 16), mode="bilinear", align_corners=False)
 
 
 def _make_sample(idx: int, *, n_objects: int) -> dict:
@@ -450,6 +472,65 @@ def test_stay_v2_trainer_smoke_loop_and_config_loading() -> None:
             if os.path.isdir(path):
                 saved_debug_files.extend(os.listdir(path))
         assert any(name.startswith("generated_masks") for name in saved_debug_files)
+
+
+def test_stay_v2_latent_scalar_logging_uses_latent_spatial_size() -> None:
+    unet = _small_stay_layout_latent_unet()
+    recorded_spatial_sizes: list[tuple[int, int]] = []
+    original_build_conditioning = unet.build_conditioning
+
+    def recording_build_conditioning(*args, **kwargs):
+        recorded_spatial_sizes.append(tuple(kwargs["spatial_size"]))
+        return original_build_conditioning(*args, **kwargs)
+
+    unet.build_conditioning = recording_build_conditioning
+    samples = [_make_sample(0, n_objects=2)]
+    loader = DataLoader(samples, batch_size=1, shuffle=False, collate_fn=collate_layout_batch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = LayoutFMTrainer(
+            unet,
+            layout_config=LayoutConditioningConfig(
+                enabled=True,
+                variant="stay_v2",
+                num_classes=4,
+                category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+                class_embed_dim=16,
+                bbox_embed_dim=16,
+                object_embed_dim=32,
+                use_style_latent=True,
+                style_latent_dim=8,
+                mask_resolution=8,
+                mask_hidden_channels=16,
+                mask_threshold=0.5,
+                edge_dilation=1,
+                injection_mode="ea_norm",
+                use_masked_context=True,
+                log_internal_maps=True,
+            ),
+            device="cpu",
+            t_scale=1.0,
+            model_dir=tmpdir,
+            unet_config=unet.base_unet_config,
+            vae=_FakeLatentVAE(),
+        )
+        trainer.train(
+            dataloader=loader,
+            epochs=1,
+            log_dir=os.path.join(tmpdir, "tb"),
+            debug_dir=os.path.join(tmpdir, "debug"),
+            lr=1e-4,
+            sample_every=0,
+            save_every_n_epochs=0,
+            scalar_every_steps=1,
+            image_every_steps=0,
+            fixed_validation_examples=0,
+            sample_every_steps=0,
+            ema_enabled=False,
+        )
+
+    assert recorded_spatial_sizes
+    assert set(recorded_spatial_sizes) == {(8, 8)}
 
 
 def test_stay_v2_latent_from_config_builds_frozen_vae_path() -> None:

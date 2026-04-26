@@ -897,7 +897,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                             boxes_xyxy_norm=cond_kw["boxes_xyxy_norm"],
                             labels=cond_kw["labels"],
                             object_mask=cond_kw["object_mask"],
-                            spatial_size=(int(pixel_values.shape[-2]), int(pixel_values.shape[-1])),
+                            spatial_size=(int(x_fm.shape[-2]), int(x_fm.shape[-1])),
                             style_noise=cond_kw.get("style_noise"),
                         )
                     n_objects = batch["n_objects"].to(torch.float32)
@@ -941,8 +941,8 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                         float(self._last_loss_components.get("mask_activation_loss", 0.0)),
                         global_step,
                     )
-                    if "soft_masks_full" in layout_debug:
-                        soft_masks = layout_debug["soft_masks_full"]
+                    soft_masks = layout_debug.get("soft_masks_full")
+                    if soft_masks is not None:
                         if soft_masks.numel() > 0:
                             writer.add_scalar(
                                 "layout_fm/mask_mean",
@@ -963,6 +963,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                             float(layout_debug["edge_map"].abs().mean().item()),
                             global_step,
                         )
+                    del layout_debug, soft_masks
 
                 if (not epoch_image_logging) and self._should_log(global_step, image_every_steps):
                     ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
