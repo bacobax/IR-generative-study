@@ -374,6 +374,38 @@ def test_stay_conditional_ot_keeps_condition_order_when_layout_cost_dominates() 
     assert torch.allclose(matched[1], x_fm[1])
 
 
+def test_stay_conditional_ot_permutation_keeps_layouts_with_targets() -> None:
+    unet = _small_stay_layout_unet()
+    trainer = LayoutFMTrainer(
+        unet,
+        layout_config=LayoutConditioningConfig(
+            enabled=True,
+            variant="stay_v2",
+            num_classes=4,
+            category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+        ),
+        device="cpu",
+        t_scale=1.0,
+        model_dir="/tmp/stay_layout_fm_test",
+        path_mode="conditional_ot",
+        condition_weight=0.0,
+    )
+    batch = collate_layout_batch([
+        _make_sample(0, n_objects=1),
+        _make_sample(1, n_objects=2),
+    ])
+    cond_kw = trainer.prepare_conditioning_kwargs(batch, device="cpu")
+    z0 = torch.stack([torch.ones(1, 16, 16), torch.zeros(1, 16, 16)], dim=0)
+    x_fm = torch.stack([torch.zeros(1, 16, 16), torch.ones(1, 16, 16)], dim=0)
+
+    _, permutation = trainer._match_flow_targets_with_permutation(z0, x_fm, cond_kw)
+    aligned = trainer._permute_conditioning_kwargs(cond_kw, permutation, batch_size=2)
+
+    assert torch.equal(permutation, torch.tensor([1, 0]))
+    assert torch.equal(aligned["object_mask"], cond_kw["object_mask"].index_select(0, permutation))
+    assert torch.allclose(aligned["boxes_xyxy_norm"], cond_kw["boxes_xyxy_norm"].index_select(0, permutation))
+
+
 def test_stay_v2_trainer_smoke_loop_and_config_loading() -> None:
     parser = build_parser()
     args = parser.parse_args([

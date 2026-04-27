@@ -12,6 +12,10 @@ from typing import Any, Dict, Iterable, List, Optional
 import torch
 import torch.nn as nn
 
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy()
+
 from diffusers.models.attention import BasicTransformerBlock
 from diffusers.models.attention_processor import Attention
 

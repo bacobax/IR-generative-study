@@ -8,15 +8,17 @@ It replaces the inference methods formerly embedded in
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from diffusers import UNet2DModel
-from torch.utils.tensorboard import SummaryWriter
 
 from src.models.regiondiffusion import load_regiondiff_config
 from src.models.regiondiffusion_factory import build_regiondiff_wrapper
+
+if TYPE_CHECKING:
+    from diffusers import UNet2DModel
+    from torch.utils.tensorboard import SummaryWriter
 
 
 # ---------------------------------------------------------------------------

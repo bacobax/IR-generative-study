@@ -22,6 +22,39 @@ class PrecisionSettings:
     use_grad_scaler: bool
 
 
+class NullSummaryWriter:
+    """No-op TensorBoard writer used when tensorboard is not installed."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+
+    def __getattr__(self, name: str):
+        if name.startswith("add_") or name in {"flush", "close"}:
+            return self._noop
+        raise AttributeError(name)
+
+    def _noop(self, *args, **kwargs) -> None:
+        del args, kwargs
+
+    def close(self) -> None:
+        pass
+
+
+def build_summary_writer(log_dir: str):
+    """Create a TensorBoard writer, falling back to no-op logging if unavailable."""
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+    except ModuleNotFoundError as exc:
+        if exc.name != "tensorboard":
+            raise
+        print(
+            "[TensorBoard] tensorboard is not installed; continuing with "
+            "scalar/image logging disabled."
+        )
+        return NullSummaryWriter(log_dir)
+    return SummaryWriter(log_dir)
+
+
 def resolve_precision_settings(
     device: Union[str, torch.device],
     mixed_precision: Optional[str],
@@ -140,6 +173,21 @@ def build_scheduler(
         f"Unsupported scheduler={scheduler_name!r}. Expected 'none', "
         "'warmup_cosine', or 'constant_with_warmup'."
     )
+
+
+def compute_snr(noise_scheduler, timesteps: torch.Tensor) -> torch.Tensor:
+    """Compute per-timestep signal-to-noise ratio without importing diffusers helpers."""
+    alphas_cumprod = noise_scheduler.alphas_cumprod.to(device=timesteps.device)
+    sqrt_alphas_cumprod = alphas_cumprod.sqrt()
+    sqrt_one_minus_alphas_cumprod = (1.0 - alphas_cumprod).sqrt()
+
+    timesteps = timesteps.long()
+    alpha = sqrt_alphas_cumprod[timesteps].float()
+    sigma = sqrt_one_minus_alphas_cumprod[timesteps].float()
+    while alpha.ndim < timesteps.ndim:
+        alpha = alpha[..., None]
+        sigma = sigma[..., None]
+    return (alpha / sigma.clamp(min=1e-20)) ** 2
 
 
 class EMAState:

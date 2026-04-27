@@ -18,11 +18,11 @@ from peft.utils import get_peft_model_state_dict, set_peft_model_state_dict
 from transformers import CLIPTextModel, CLIPTokenizer
 
 from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel
-from diffusers.training_utils import cast_training_params
 from diffusers.utils import convert_unet_state_dict_to_peft
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
 
+from src.core.training_utils import cast_training_params
 from src.core.normalization import RAW_UINT16_PERCENTILE
 from src.core.paths import sd_lora_runs_dir, sd_unet_runs_dir
 from src.models.regiondiffusion import iter_regiondiff_adapter_parameters, load_regiondiff_config

@@ -18,7 +18,6 @@ from diffusers import (
     StableDiffusionPipeline,
     UNet2DConditionModel,
 )
-from diffusers.training_utils import cast_training_params
 from diffusers.utils.import_utils import is_xformers_available
 
 from src.algorithms.stable_diffusion.models import (
@@ -29,6 +28,7 @@ from src.algorithms.stable_diffusion.models import (
     get_weight_dtype,
 )
 from src.core.configs.sd_layout_config import SDLayoutTrainConfig
+from src.core.training_utils import cast_training_params
 from src.models.regiondiffusion import (
     RegionDiffusionUNetWrapper,
     iter_regiondiff_adapter_parameters,

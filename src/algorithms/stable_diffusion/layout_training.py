@@ -21,7 +21,6 @@ from tqdm.auto import tqdm
 
 from diffusers import StableDiffusionPipeline
 from diffusers.optimization import get_scheduler
-from diffusers.training_utils import compute_snr
 from diffusers.utils import is_wandb_available
 
 from src.algorithms.stable_diffusion.layout_models import (
@@ -34,6 +33,7 @@ from src.algorithms.stable_diffusion.layout_models import (
 from src.algorithms.stable_diffusion.models import unwrap_model
 from src.core.configs.config_loader import dataclass_to_dict
 from src.core.configs.sd_layout_config import SDLayoutTrainConfig
+from src.core.training_utils import compute_snr
 from src.core.visualization.layout_debug import draw_bbox_overlays, render_class_layout
 from src.models.regiondiffusion import build_area_weight_map
 

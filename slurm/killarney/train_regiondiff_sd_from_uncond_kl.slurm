@@ -16,6 +16,8 @@ CONFIG_REL="configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from
 CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 PRETRAINED_UNET="${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512/UNET/unet_sd_uncond_best.pt"
 
+export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
+
 cd "${PROJECT_ROOT}"
 mkdir -p "${PROJECT_ROOT}/logs"
 

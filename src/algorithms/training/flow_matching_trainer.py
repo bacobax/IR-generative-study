@@ -14,14 +14,12 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from diffusers import UNet2DModel
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler
@@ -31,6 +29,7 @@ from src.core.training_utils import (
     autocast_context,
     build_grad_scaler,
     build_scheduler,
+    build_summary_writer,
     move_optimizer_state_to_device,
     resolve_precision_settings,
 )
@@ -46,6 +45,10 @@ from src.models.regiondiffusion_factory import (
     regiondiff_optimizer_param_groups,
     save_regiondiff_metadata,
 )
+
+if TYPE_CHECKING:
+    from diffusers import UNet2DModel
+    from torch.utils.tensorboard import SummaryWriter
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +622,53 @@ class FlowMatchingTrainer:
     # ------------------------------------------------------------------
     # Flow-matching loss
     # ------------------------------------------------------------------
+    @staticmethod
+    def _permute_conditioning_kwargs(
+        cond_kwargs: Dict[str, Any],
+        permutation: Optional[torch.Tensor],
+        batch_size: int,
+    ) -> Dict[str, Any]:
+        """Keep batch-aligned conditioning tensors paired with matched targets."""
+        if permutation is None:
+            return cond_kwargs
+
+        aligned: Dict[str, Any] = {}
+        cpu_permutation = None
+        for key, value in cond_kwargs.items():
+            if torch.is_tensor(value) and value.ndim > 0 and int(value.shape[0]) == int(batch_size):
+                aligned[key] = value.index_select(0, permutation.to(value.device))
+            elif isinstance(value, list) and len(value) == int(batch_size):
+                if cpu_permutation is None:
+                    cpu_permutation = permutation.detach().cpu().tolist()
+                aligned[key] = [value[int(index)] for index in cpu_permutation]
+            else:
+                aligned[key] = value
+        return aligned
+
+    def _match_flow_targets_with_permutation(
+        self,
+        z0: torch.Tensor,
+        x_fm: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Apply the configured path coupling and return targets plus permutation."""
+        del cond_kwargs
+        if self.path_mode == "independent":
+            return x_fm, None
+        if self.path_mode in {"minibatch_ot", "conditional_ot"}:
+            # The base trainer has no condition-dependent cost term. In that case
+            # conditional OT reduces to plain minibatch OT instead of erroring.
+            matched, permutation, _ = match_target_batch(
+                z0,
+                x_fm,
+                solver=self.path_solver,
+            )
+            return matched, permutation
+        raise ValueError(
+            f"Unsupported path_mode={self.path_mode!r}. Expected 'independent', "
+            "'minibatch_ot', or 'conditional_ot'."
+        )
+
     def _match_flow_targets(
         self,
         z0: torch.Tensor,
@@ -626,22 +676,8 @@ class FlowMatchingTrainer:
         cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
         """Apply the configured path coupling and return the matched targets."""
-        del cond_kwargs
-        if self.path_mode == "independent":
-            return x_fm
-        if self.path_mode in {"minibatch_ot", "conditional_ot"}:
-            # The base trainer has no condition-dependent cost term. In that case
-            # conditional OT reduces to plain minibatch OT instead of erroring.
-            matched, _, _ = match_target_batch(
-                z0,
-                x_fm,
-                solver=self.path_solver,
-            )
-            return matched
-        raise ValueError(
-            f"Unsupported path_mode={self.path_mode!r}. Expected 'independent', "
-            "'minibatch_ot', or 'conditional_ot'."
-        )
+        matched, _ = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
+        return matched
 
     def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
         """Compute a single flow-matching loss on encoded input *x_fm*."""
@@ -651,7 +687,8 @@ class FlowMatchingTrainer:
         z0 = torch.randn_like(x_fm)
         t = torch.rand(B, device=x_fm.device)
         t_expanded = t[:, None, None, None]
-        x_target = self._match_flow_targets(z0, x_fm, cond_kwargs)
+        x_target, target_permutation = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
+        cond_kwargs = self._permute_conditioning_kwargs(cond_kwargs, target_permutation, B)
 
         zt = (1 - t_expanded) * z0 + t_expanded * x_target
         v_target = x_target - z0
@@ -822,7 +859,7 @@ class FlowMatchingTrainer:
                 f"global_step={global_step}, best_eval={best_eval:.6f}"
             )
 
-        writer = SummaryWriter(log_dir)
+        writer = build_summary_writer(log_dir)
 
         def _save_checkpoint(path: str, epoch_idx: int) -> None:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)

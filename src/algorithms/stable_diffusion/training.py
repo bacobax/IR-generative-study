@@ -24,9 +24,9 @@ from tqdm.auto import tqdm
 
 from diffusers import DiffusionPipeline, StableDiffusionPipeline
 from diffusers.optimization import get_scheduler
-from diffusers.training_utils import compute_snr
 from diffusers.utils import convert_state_dict_to_diffusers, is_wandb_available
 
+from src.core.training_utils import compute_snr
 from .config import TrainingConfig
 from .models import (
     ModelComponents,

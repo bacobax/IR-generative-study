@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
@@ -22,6 +21,7 @@ from src.core.training_utils import (
     autocast_context,
     build_grad_scaler,
     build_scheduler,
+    build_summary_writer,
     grad_norm,
     move_optimizer_state_to_device,
     resolve_precision_settings,
@@ -42,6 +42,9 @@ from src.models.layout_conditioned_unet import (
     save_layout_conditioning_metadata,
 )
 from src.models.stay_layout_conditioned_unet import build_stay_layout_conditioned_pixel_unet
+
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
 
 
 class LayoutFMTrainer(FlowMatchingTrainer):
@@ -329,14 +332,14 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         ).cpu()
         return seeded
 
-    def _match_flow_targets(
+    def _match_flow_targets_with_permutation(
         self,
         z0: torch.Tensor,
         x_fm: torch.Tensor,
         cond_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.path_mode != "conditional_ot":
-            return super()._match_flow_targets(z0, x_fm, cond_kwargs)
+            return super()._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
         if cond_kwargs is None:
             raise ValueError("conditional_ot requires layout conditioning kwargs.")
 
@@ -348,12 +351,21 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             resolution=int(self.layout_cost_resolution),
         )
         layout_cost = pairwise_mean_squared_cost(descriptor, descriptor)
-        matched, _, _ = match_target_batch(
+        matched, permutation, _ = match_target_batch(
             z0,
             x_fm,
             solver=self.path_solver,
             extra_cost=float(self.condition_weight) * layout_cost,
         )
+        return matched, permutation
+
+    def _match_flow_targets(
+        self,
+        z0: torch.Tensor,
+        x_fm: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> torch.Tensor:
+        matched, _ = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
         return matched
 
     def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
@@ -363,7 +375,8 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         z0 = torch.randn_like(x_fm)
         t = torch.rand(batch_size, device=x_fm.device)
         t_expanded = t[:, None, None, None]
-        x_target = self._match_flow_targets(z0, x_fm, cond_kwargs)
+        x_target, target_permutation = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
+        cond_kwargs = self._permute_conditioning_kwargs(cond_kwargs, target_permutation, batch_size)
 
         zt = (1.0 - t_expanded) * z0 + t_expanded * x_target
         v_target = x_target - z0
@@ -808,7 +821,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 f"[Resume] epoch={start_epoch}, step={global_step}, best_eval={best_eval:.6f}"
             )
 
-        writer = SummaryWriter(log_dir)
+        writer = build_summary_writer(log_dir)
         sampler = self._make_sampler()
         fixed_batch = self._build_fixed_validation_batch(
             eval_dataloader or dataloader,

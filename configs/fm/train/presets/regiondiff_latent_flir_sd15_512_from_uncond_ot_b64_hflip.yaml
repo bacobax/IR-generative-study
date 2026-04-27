@@ -73,6 +73,7 @@ ema:
   start_step: 100
 
 path:
+  # The trainer must keep layout tensors paired with the matched target images.
   mode: "minibatch_ot"
   solver: "hungarian"
   layout_cost_resolution: 32

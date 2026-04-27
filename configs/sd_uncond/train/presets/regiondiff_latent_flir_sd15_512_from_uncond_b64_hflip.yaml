@@ -14,7 +14,7 @@ model:
   vae_weights: null
   vae_pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
   vae_pretrained_subfolder: "vae"
-  pretrained_unet_path: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512/UNET/unet_sd_uncond_best.pt"
+  pretrained_unet_path: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET/unet_sd_uncond_best.pt"
 
 augment:
   warmup_frac: 0.10

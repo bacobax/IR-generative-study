@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy()
+
 from src.core.configs.sd_uncond_config import build_parser, parse_args
 from src.core.data import collate_layout_batch
 from src.core.data.datasets import AnnotationLayoutDataset

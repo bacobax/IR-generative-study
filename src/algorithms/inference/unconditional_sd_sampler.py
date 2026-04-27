@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
 
 import torch
-from diffusers import DDPMScheduler, UNet2DModel
-from torch.utils.tensorboard import SummaryWriter
 
 from src.algorithms.inference.flow_matching_sampler import (
     _default_from_norm_to_display,
@@ -14,6 +12,7 @@ from src.algorithms.inference.flow_matching_sampler import (
     _pick_latest,
     get_unet_sample_shape,
 )
+from src.core.diffusers_compat import import_diffusers_attr
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
 from src.models.vae import (
     build_vae_from_config,
@@ -22,6 +21,10 @@ from src.models.vae import (
     load_vae_config,
     load_vae_weights,
 )
+
+if TYPE_CHECKING:
+    from diffusers import DDPMScheduler, UNet2DModel
+    from torch.utils.tensorboard import SummaryWriter
 
 
 class UnconditionalStableDiffusionSampler:
@@ -121,6 +124,7 @@ class UnconditionalStableDiffusionSampler:
             load_vae_weights(vae, vae_w, map_location=device)
         freeze_vae(vae)
 
+        DDPMScheduler = import_diffusers_attr("diffusers", "DDPMScheduler")
         noise_scheduler = DDPMScheduler.from_pretrained(scheduler_dir)
         return cls.from_stable(
             unet,

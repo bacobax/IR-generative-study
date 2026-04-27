@@ -135,6 +135,38 @@ def test_regiondiff_strict_load_accepts_plain_base_checkpoint(tmp_path) -> None:
     )
 
 
+def test_sd_uncond_regiondiff_strict_load_accepts_plain_base_checkpoint(tmp_path) -> None:
+    base_state = _tiny_unet2d().state_dict()
+    checkpoint_path = tmp_path / "unet_sd.pt"
+    torch.save(base_state, checkpoint_path)
+
+    wrapper = build_regiondiff_wrapper(
+        base_model=_tiny_unet2d(),
+        region_config=_region_config(),
+        category_id_to_name={0: "person", 1: "car", 2: "dog"},
+        backbone_kind="sd_uncond_unet2d",
+        attachment_kind="attention",
+    )
+    trainer = UnconditionalStableDiffusionTrainer(
+        wrapper,
+        noise_scheduler=DDPMScheduler(num_train_timesteps=10),
+        diffusion_config=type(
+            "_Diffusion",
+            (),
+            {"noise_offset": 0.0, "snr_gamma": None},
+        )(),
+        device="cpu",
+        layout_config=_region_config(),
+    )
+
+    trainer.load_unet_weights(str(checkpoint_path), strict=True)
+
+    assert torch.allclose(
+        wrapper.base_model.conv_in.weight,
+        base_state["conv_in.weight"],
+    )
+
+
 def test_regiondiff_trainability_adapters_only_freezes_unet2d_backbone() -> None:
     wrapper = build_regiondiff_wrapper(
         base_model=_tiny_unet2d(),
@@ -156,6 +188,33 @@ def test_regiondiff_trainability_adapters_only_freezes_unet2d_backbone() -> None
         (not param.requires_grad) or id(param) in adapter_ids
         for param in wrapper.parameters()
     )
+
+
+def test_regiondiff_fm_target_ot_permutation_keeps_layouts_with_targets() -> None:
+    config = _region_config()
+    wrapper = build_regiondiff_wrapper(
+        base_model=_tiny_unet2d(),
+        region_config=config,
+        category_id_to_name=config.category_id_to_name,
+        backbone_kind="fm_unet2d",
+        attachment_kind="attention",
+    )
+    trainer = FlowMatchingTrainer(
+        wrapper,
+        device="cpu",
+        layout_config=config,
+        path_mode="minibatch_ot",
+    )
+    cond_kwargs = _layout_kwargs(batch_size=2)
+    cond_kwargs["labels"] = torch.tensor([[0], [1]], dtype=torch.long)
+    z0 = torch.stack([torch.ones(4, 16, 16), torch.zeros(4, 16, 16)], dim=0)
+    x_fm = torch.stack([torch.zeros(4, 16, 16), torch.ones(4, 16, 16)], dim=0)
+
+    _, permutation = trainer._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
+    aligned = trainer._permute_conditioning_kwargs(cond_kwargs, permutation, batch_size=2)
+
+    assert torch.equal(permutation, torch.tensor([1, 0]))
+    assert torch.equal(aligned["labels"], cond_kwargs["labels"].index_select(0, permutation))
 
 
 def test_regiondiff_trainability_partial_backbone_unfreezes_prefix() -> None:

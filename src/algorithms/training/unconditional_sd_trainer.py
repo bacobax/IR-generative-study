@@ -3,24 +3,27 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import torch
 import torch.nn.functional as F
-from diffusers import DDPMScheduler
-from diffusers.training_utils import compute_snr
 
 from src.algorithms.inference.unconditional_sd_sampler import UnconditionalStableDiffusionSampler
 from src.algorithms.training.flow_matching_trainer import (
     FlowMatchingTrainer,
     _resolve_unet_sample_size,
 )
+from src.core.diffusers_compat import import_diffusers_attr
+from src.core.training_utils import compute_snr
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
 from src.models.regiondiffusion_factory import (
     build_regiondiff_wrapper,
     configure_regiondiff_trainability,
     save_regiondiff_metadata,
 )
+
+if TYPE_CHECKING:
+    from diffusers import DDPMScheduler
 
 
 class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
@@ -151,6 +154,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
     @staticmethod
     def build_noise_scheduler(diffusion_config) -> DDPMScheduler:
         """Construct the DDPM scheduler used for training and sampling."""
+        DDPMScheduler = import_diffusers_attr("diffusers", "DDPMScheduler")
         return DDPMScheduler(
             num_train_timesteps=int(diffusion_config.num_train_timesteps),
             beta_schedule=str(diffusion_config.beta_schedule),
