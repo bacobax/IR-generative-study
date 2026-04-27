@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import torch
@@ -444,6 +445,32 @@ class LayoutFMTrainer(FlowMatchingTrainer):
     @staticmethod
     def _should_log_epoch(epoch_idx: int, every: int) -> bool:
         return every > 0 and (epoch_idx + 1) % every == 0
+
+    @staticmethod
+    def _process_rss_bytes() -> Optional[int]:
+        """Return current process RSS in bytes when available."""
+        try:
+            with open("/proc/self/status", "r", encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            return int(parts[1]) * 1024
+                        break
+        except OSError:
+            pass
+
+        try:
+            import resource
+
+            ru_maxrss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+            if ru_maxrss <= 0:
+                return None
+            if platform.system() == "Darwin":
+                return ru_maxrss
+            return ru_maxrss * 1024
+        except Exception:
+            return None
 
     def _log_training_visuals(
         self,
@@ -954,6 +981,18 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                         float(self._last_loss_components.get("mask_activation_loss", 0.0)),
                         global_step,
                     )
+                    rss_bytes = self._process_rss_bytes()
+                    if rss_bytes is not None:
+                        writer.add_scalar(
+                            "layout_fm/cpu_rss_mb",
+                            float(rss_bytes / (1024.0 * 1024.0)),
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            "layout_fm/cpu_rss_gb",
+                            float(rss_bytes / (1024.0 * 1024.0 * 1024.0)),
+                            global_step,
+                        )
                     soft_masks = layout_debug.get("soft_masks_full")
                     if soft_masks is not None:
                         if soft_masks.numel() > 0:
@@ -1013,6 +1052,13 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             avg_loss = total_loss / max(1, len(dataloader))
             print(f"[LayoutFM Epoch {epoch + 1}] loss={avg_loss:.6f}")
             writer.add_scalar("layout_fm/loss_epoch", avg_loss, epoch)
+            epoch_rss_bytes = self._process_rss_bytes()
+            if epoch_rss_bytes is not None:
+                writer.add_scalar(
+                    "layout_fm/cpu_rss_epoch_mb",
+                    float(epoch_rss_bytes / (1024.0 * 1024.0)),
+                    epoch,
+                )
 
             if save_every_n_epochs and (epoch + 1) % save_every_n_epochs == 0:
                 self.save_unet_weights(os.path.join(self._unet_dir(), f"unet_fm_epoch_{epoch + 1}.pt"))

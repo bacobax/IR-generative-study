@@ -7,7 +7,7 @@ data:
   dataset_id: "flir_private_proxy_alignment_v18"
   image_size: 512
   batch_size: 32
-  num_workers: 4
+  num_workers: 2
 
 model:
   unet_config: "configs/models/fm/stable_unet_x4_512.json"
@@ -87,7 +87,7 @@ layout_conditioning:
   mask_overlap_loss_weight: 0.05
   mask_sharpness_loss_weight: 0.01
   mask_activation_loss_weight: 0.01
-  log_internal_maps: true
+  log_internal_maps: false
 
 logging:
   scalar_every_steps: 50
