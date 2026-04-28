@@ -293,6 +293,7 @@ class Trainer:
             "lr_scheduler": self.config.lr_scheduler,
             "lr_warmup_steps": self.config.lr_warmup_steps,
             "max_train_steps": self.config.max_train_steps,
+            "checkpointing_epochs": self.config.checkpointing_epochs,
         }
 
     def _write_checkpoint_metadata(self, checkpoint_dir: Path) -> None:
@@ -429,6 +430,8 @@ class Trainer:
             ):
                 self._run_validation(epoch)
 
+            self._maybe_save_checkpoint(epoch)
+
             if self.global_step >= self.config.max_train_steps:
                 break
 
@@ -461,7 +464,6 @@ class Trainer:
                 self.global_step += 1
                 self.accelerator.log({"train_loss": train_loss}, step=self.global_step)
                 train_loss = 0.0
-                self._maybe_save_checkpoint()
 
             logs = {
                 "step_loss": loss.detach().item(),
@@ -579,8 +581,8 @@ class Trainer:
         loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
         return loss.mean()
 
-    def _maybe_save_checkpoint(self) -> None:
-        if self.global_step % self.config.checkpointing_steps != 0:
+    def _maybe_save_checkpoint(self, epoch: int) -> None:
+        if (epoch + 1) % self.config.checkpointing_epochs != 0:
             return
         if not self.accelerator.is_main_process:
             return

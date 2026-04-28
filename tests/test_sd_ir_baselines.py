@@ -11,7 +11,11 @@ import pytest
 import torch
 from diffusers import UNet2DConditionModel
 
-from src.algorithms.stable_diffusion.config import LEGACY_GENERIC_PROMPT, parse_args
+from src.algorithms.stable_diffusion.config import (
+    DEFAULT_NUM_TRAIN_EPOCHS,
+    LEGACY_GENERIC_PROMPT,
+    parse_args,
+)
 from src.algorithms.stable_diffusion.data import (
     TextImageDataset,
     ir_npy_to_normalized_rgb,
@@ -184,6 +188,58 @@ def test_sd_config_yaml_parses_training_and_validation_steps(tmp_path: Path):
     assert cfg.validation_num_inference_steps == 17
 
 
+def test_sd_stage1_defaults_to_epoch_driven_training():
+    cfg = parse_args(
+        [
+            "--dataset_id",
+            "flir_private_proxy_alignment_v18",
+            "--output_dir",
+            "/tmp/sd_ir_epochs",
+        ]
+    )
+
+    assert cfg.num_train_epochs == DEFAULT_NUM_TRAIN_EPOCHS == 80
+    assert cfg.max_train_steps is None
+
+
+def test_flir_stage1_presets_are_epoch_driven_by_default():
+    preset_paths = [
+        "configs/sd/train/presets/flir_unet_full_stage1.yaml",
+        "configs/sd/train/presets/flir_unet_partial_stage1.yaml",
+        "configs/sd/train/presets/flir_lora_stage1_r8.yaml",
+        "configs/sd/train/presets/flir_lora_stage1_r16.yaml",
+        "configs/sd/train/presets/flir_lora_stage1_r32.yaml",
+        "configs/sd/train/presets/flir_lora_stage1_r64.yaml",
+        "configs/sd/train/presets/flir_lora_stage1_r128.yaml",
+    ]
+
+    for preset_path in preset_paths:
+        cfg = parse_args(["--config", preset_path])
+        assert cfg.num_train_epochs > 0
+        assert cfg.max_train_steps is None
+        assert cfg.resume_from_checkpoint is None
+        assert cfg.checkpointing_epochs > 0
+
+
+def test_yaml_can_choose_stage1_epoch_count(tmp_path: Path):
+    config_path = tmp_path / "sd_epochs.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "dataset_id: flir_private_proxy_alignment_v18",
+                f"output_dir: {tmp_path / 'sd_run'}",
+                "num_train_epochs: 12",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = parse_args(["--config", str(config_path)])
+
+    assert cfg.num_train_epochs == 12
+    assert cfg.max_train_steps is None
+
+
 def test_sd_config_generic_prompt_overrides_default_prompt_text():
     cfg = parse_args(
         [
@@ -324,18 +380,18 @@ def test_flir_lora_r64_preset_reaches_lora_and_checkpoint_consumers(tmp_path: Pa
         accelerator=accelerator,
     )
 
-    trainer.global_step = cfg.checkpointing_steps - 1
-    trainer._maybe_save_checkpoint()
+    cfg.checkpointing_epochs = 2
+    trainer.global_step = 17
+    trainer._maybe_save_checkpoint(epoch=0)
     assert accelerator.saved_paths == []
 
-    trainer.global_step = cfg.checkpointing_steps
-    trainer._maybe_save_checkpoint()
+    trainer._maybe_save_checkpoint(epoch=1)
 
-    expected_dir = Path(cfg.output_dir) / f"checkpoint-{cfg.checkpointing_steps}"
+    expected_dir = Path(cfg.output_dir) / "checkpoint-17"
     assert accelerator.saved_paths == [str(expected_dir)]
 
     metadata = json.loads((expected_dir / "training_state.json").read_text(encoding="utf-8"))
-    assert metadata["global_step"] == cfg.checkpointing_steps
+    assert metadata["global_step"] == 17
     assert metadata["lr_warmup_steps"] == cfg.lr_warmup_steps
     assert metadata["lr_scheduler"] == cfg.lr_scheduler
 
@@ -352,7 +408,7 @@ def test_yaml_lora_overrides_reach_target_modules_and_alpha_scale(tmp_path: Path
                 "lora_target_modules:",
                 "  - to_q",
                 "  - to_v",
-                "checkpointing_steps: 123",
+                "checkpointing_epochs: 3",
             ]
         ),
         encoding="utf-8",
@@ -366,7 +422,7 @@ def test_yaml_lora_overrides_reach_target_modules_and_alpha_scale(tmp_path: Path
     assert peft_cfg.r == 16
     assert float(peft_cfg.lora_alpha) == 8.0
     assert sorted(peft_cfg.target_modules) == ["to_q", "to_v"]
-    assert cfg.checkpointing_steps == 123
+    assert cfg.checkpointing_epochs == 3
 
 
 def test_lora_state_dict_normalization_preserves_checkpoint_loader_keys():

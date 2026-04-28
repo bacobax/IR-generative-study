@@ -8,7 +8,7 @@ data:
 
 stage1:
   pretrained_model_name_or_path: runwayml/stable-diffusion-v1-5
-  stage1_dir: artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_stage1
+  stage1_dir: artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8
   stage1_checkpoint: null
 
 prompt:
@@ -44,8 +44,6 @@ training:
   checkpoints_total_limit: 5
   mixed_precision: fp16
   report_to: tensorboard
-  # resume_from_checkpoint: artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2/checkpoint-1000
-
 
 validation:
   validation_epochs: 1
@@ -54,5 +52,5 @@ validation:
   guidance_scale: 7.5
 
 output:
-  output_dir: artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2
+  output_dir: artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8
   logging_dir: logs

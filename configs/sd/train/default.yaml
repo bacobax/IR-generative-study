@@ -15,6 +15,7 @@ freeze_text_encoder: true
 resolution: 512
 image_interpolation_mode: "lanczos"
 train_batch_size: 4
+num_train_epochs: 80
 gradient_accumulation_steps: 4
 learning_rate: 1.0e-4
 lr_scheduler: "constant"
@@ -38,6 +39,6 @@ unet_trainable_modules:
 logging_dir: "logs"
 report_to: "tensorboard"
 validation_num_inference_steps: 30
-checkpointing_steps: 1000
+checkpointing_epochs: 1
 output_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_r8"
 seed: 42

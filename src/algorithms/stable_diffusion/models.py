@@ -554,7 +554,7 @@ def build_stage1_manifest(
         "unet_trainable_modules": list(config.unet_trainable_modules),
         "validation_prompt": config.validation_prompt,
         "validation_num_inference_steps": config.validation_num_inference_steps,
-        "checkpointing_steps": config.checkpointing_steps,
+        "checkpointing_epochs": config.checkpointing_epochs,
         "resume_from_checkpoint": config.resume_from_checkpoint,
         "output_dir": config.output_dir,
         "adaptation_info": adaptation_info,

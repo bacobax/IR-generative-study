@@ -18,6 +18,7 @@ DEFAULT_PROMPT_TEXT = "thermal image"
 LEGACY_GENERIC_PROMPT = "overhead infrared surveillance image with any people or objects"
 DEFAULT_LORA_TARGET_MODULES = ["to_k", "to_q", "to_v", "to_out.0", "proj_in", "proj_out"]
 DEFAULT_PARTIAL_UNET_MODULES = ["mid_block", "up_blocks"]
+DEFAULT_NUM_TRAIN_EPOCHS = 80
 
 
 def _str2bool(value):
@@ -73,7 +74,7 @@ class TrainingConfig:
 
     # Training hyperparameters
     train_batch_size: int = 16
-    num_train_epochs: int = 100
+    num_train_epochs: int = DEFAULT_NUM_TRAIN_EPOCHS
     max_train_steps: Optional[int] = None
     gradient_accumulation_steps: int = 1
     gradient_checkpointing: bool = False
@@ -130,7 +131,7 @@ class TrainingConfig:
     seed: Optional[int] = None
 
     # Checkpointing
-    checkpointing_steps: int = 500
+    checkpointing_epochs: int = 1
     checkpoints_total_limit: Optional[int] = None
     resume_from_checkpoint: Optional[str] = None
 
@@ -235,8 +236,8 @@ class TrainingConfig:
             raise ValueError("--validation_epochs must be positive.")
         if self.validation_num_inference_steps <= 0:
             raise ValueError("--validation_num_inference_steps must be positive.")
-        if self.checkpointing_steps <= 0:
-            raise ValueError("--checkpointing_steps must be positive.")
+        if self.checkpointing_epochs <= 0:
+            raise ValueError("--checkpointing_epochs must be positive.")
 
 
 def _validate_yaml_config_keys(
@@ -375,7 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     train_group = parser.add_argument_group("Training Hyperparameters")
     train_group.add_argument("--train_batch_size", type=int, default=16)
-    train_group.add_argument("--num_train_epochs", type=int, default=100)
+    train_group.add_argument("--num_train_epochs", type=int, default=DEFAULT_NUM_TRAIN_EPOCHS)
     train_group.add_argument("--max_train_steps", type=int, default=None)
     train_group.add_argument("--gradient_accumulation_steps", type=int, default=1)
     train_group.add_argument("--gradient_checkpointing", action="store_true")
@@ -469,7 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
     output_group.add_argument("--seed", type=int, default=None)
 
     ckpt_group = parser.add_argument_group("Checkpointing")
-    ckpt_group.add_argument("--checkpointing_steps", type=int, default=500)
+    ckpt_group.add_argument("--checkpointing_epochs", type=int, default=1)
     ckpt_group.add_argument("--checkpoints_total_limit", type=int, default=None)
     ckpt_group.add_argument("--resume_from_checkpoint", type=str, default=None)
 

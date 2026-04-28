@@ -21,6 +21,7 @@ from diffusers import (
 from diffusers.utils.import_utils import is_xformers_available
 
 from src.algorithms.stable_diffusion.models import (
+    LORA_WEIGHT_FILENAMES,
     STAGE1_MANIFEST_NAME,
     TEXT_ENCODER_EXPORT_DIRNAME,
     UNET_EXPORT_DIRNAME,
@@ -51,6 +52,8 @@ STAGE2_REGIONDIFF_CONFIG = "regiondiff_config.json"
 STAGE2_UNET_WEIGHTS = "regiondiff_unet.safetensors"
 STAGE2_CHECKPOINT_UNET_WEIGHTS = "regiondiff_unet_checkpoint.safetensors"
 LEGACY_ACCELERATE_MODEL_WEIGHTS = "model.safetensors"
+FUSED_UNET_EXPORT_DIRNAME = "fused_unet"
+FUSED_UNET_METADATA_NAME = "fused_unet_metadata.json"
 
 
 try:
@@ -241,6 +244,138 @@ def _load_exported_components_if_present(
     return pipeline
 
 
+def _resolve_lora_weights_path(path: str | Path) -> Path:
+    path = Path(path)
+    if path.is_file():
+        return path
+    for filename in LORA_WEIGHT_FILENAMES:
+        candidate = path / filename
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"Missing LoRA weights under {path}")
+
+
+def _source_file_fingerprint(path: Path) -> Dict[str, object]:
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _lora_fused_checkpoint_path(
+    *,
+    manifest_dir: Path,
+    resolved_path: Path,
+    source_kind: str,
+) -> Path:
+    checkpoint_name = resolved_path.name if source_kind == "checkpoint" else "export"
+    return manifest_dir / FUSED_UNET_EXPORT_DIRNAME / checkpoint_name
+
+
+def _is_fused_unet_checkpoint_current(
+    *,
+    checkpoint_dir: Path,
+    source_fingerprint: Dict[str, object],
+) -> bool:
+    metadata_path = checkpoint_dir / FUSED_UNET_METADATA_NAME
+    weights_path = checkpoint_dir / LEGACY_ACCELERATE_MODEL_WEIGHTS
+    if not metadata_path.is_file() or not weights_path.is_file():
+        return False
+
+    try:
+        metadata = _load_json(metadata_path)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    return metadata.get("source_lora_weights") == source_fingerprint
+
+
+def _copy_lora_training_state_if_present(source_dir: Path, target_dir: Path) -> None:
+    source_state = source_dir / "training_state.json"
+    if not source_state.is_file():
+        return
+
+    try:
+        state = _load_json(source_state)
+    except (OSError, json.JSONDecodeError):
+        return
+
+    state = {
+        **state,
+        "materialized_from_lora": True,
+        "contains_optimizer_state": False,
+    }
+    _save_json(target_dir / "training_state.json", state)
+
+
+def materialize_lora_as_unet_checkpoint(
+    *,
+    pipeline: StableDiffusionPipeline,
+    init_info: Dict[str, object],
+    manifest: Dict[str, object],
+) -> Tuple[Path, Dict[str, object]]:
+    """Fuse a Stage-1 LoRA source into a full-UNet-style checkpoint folder."""
+    manifest_dir = Path(str(init_info["manifest_dir"]))
+    resolved_path = Path(str(init_info["resolved_path"]))
+    source_kind = str(init_info["source_kind"])
+    lora_weights_path = _resolve_lora_weights_path(resolved_path)
+    source_fingerprint = _source_file_fingerprint(lora_weights_path)
+    fused_checkpoint_dir = _lora_fused_checkpoint_path(
+        manifest_dir=manifest_dir,
+        resolved_path=resolved_path,
+        source_kind=source_kind,
+    )
+
+    if _is_fused_unet_checkpoint_current(
+        checkpoint_dir=fused_checkpoint_dir,
+        source_fingerprint=source_fingerprint,
+    ):
+        return fused_checkpoint_dir, {"reused_existing": True}
+
+    os.makedirs(fused_checkpoint_dir, exist_ok=True)
+    load_lora_weights_compat(pipeline, resolved_path)
+    if not hasattr(pipeline, "fuse_lora"):
+        raise RuntimeError("Current diffusers pipeline does not support fuse_lora().")
+    pipeline.fuse_lora()
+    if hasattr(pipeline, "unload_lora_weights"):
+        pipeline.unload_lora_weights()
+
+    state_dict = {
+        key: value.detach().cpu().to(torch.float32)
+        for key, value in pipeline.unet.state_dict().items()
+    }
+    _save_state_dict(fused_checkpoint_dir / LEGACY_ACCELERATE_MODEL_WEIGHTS, state_dict)
+    _copy_lora_training_state_if_present(resolved_path, fused_checkpoint_dir)
+
+    fused_manifest = {
+        **manifest,
+        "baseline_mode": "sd_ir_unet",
+        "materialized_from_lora": True,
+        "source_stage1_manifest_dir": str(manifest_dir),
+        "source_lora_checkpoint": str(resolved_path),
+    }
+    fused_manifest["adaptation_info"] = {
+        **dict(manifest.get("adaptation_info", {})),
+        "baseline_mode": "sd_ir_unet",
+        "lora_active": False,
+        "materialized_from_lora": True,
+    }
+    _save_json(manifest_dir / FUSED_UNET_EXPORT_DIRNAME / STAGE1_MANIFEST_NAME, fused_manifest)
+    _save_json(
+        fused_checkpoint_dir / FUSED_UNET_METADATA_NAME,
+        {
+            "source_lora_weights": source_fingerprint,
+            "source_stage1_manifest_dir": str(manifest_dir),
+            "source_lora_checkpoint": str(resolved_path),
+            "weights_filename": LEGACY_ACCELERATE_MODEL_WEIGHTS,
+        },
+    )
+    logger.info("Materialized fused LoRA UNet checkpoint at %s", fused_checkpoint_dir)
+    return fused_checkpoint_dir, {"reused_existing": False}
+
+
 def load_stage1_pipeline_for_stage2(
     *,
     config: SDLayoutTrainConfig,
@@ -279,11 +414,22 @@ def load_stage1_pipeline_for_stage2(
         else:
             _load_unet_weights_from_checkpoint(pipeline.unet, resolved_path)
     else:
-        load_lora_weights_compat(pipeline, resolved_path)
-        if hasattr(pipeline, "fuse_lora"):
-            pipeline.fuse_lora()
-        if hasattr(pipeline, "unload_lora_weights"):
-            pipeline.unload_lora_weights()
+        fused_path, fuse_info = materialize_lora_as_unet_checkpoint(
+            pipeline=pipeline,
+            init_info=init_info,
+            manifest=manifest,
+        )
+        _load_unet_weights_from_checkpoint(pipeline.unet, fused_path)
+        init_info = {
+            **init_info,
+            "source_lora_checkpoint": str(resolved_path),
+            "source_lora_weights": str(_resolve_lora_weights_path(resolved_path)),
+            "materialized_unet_checkpoint": str(fused_path),
+            "materialized_unet_reused": bool(fuse_info["reused_existing"]),
+            "resolved_path": str(fused_path),
+            "source_kind": "materialized_lora_unet_checkpoint",
+        }
+        resolved_path = fused_path
 
     if device is not None:
         pipeline.to(device)
