@@ -1,0 +1,21 @@
+# Stage-1 SD IR adaptation baseline B: full U-Net fine-tuning on FLIR proxy.
+pretrained_model_name_or_path: runwayml/stable-diffusion-v1-5
+baseline_mode: sd_ir_unet
+dataset_id: flir_private_proxy_alignment_v18
+train_split: train
+prompt_text: "thermal image"
+resolution: 512
+train_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 1e-3
+lr_warmup_steps: 0
+max_train_steps: 60000
+unet_train_mode: full
+freeze_vae: true
+freeze_text_encoder: true
+validation_prompt: "thermal image"
+validation_num_inference_steps: 100
+checkpointing_steps: 1000
+output_dir: ./artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_stage1
+resume_from_checkpoint: latest
+seed: 42

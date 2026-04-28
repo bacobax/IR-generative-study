@@ -1,0 +1,4 @@
+rsync -avhP \
+  --files-from=target_weights.txt \
+  /Users/francescobassignana/Desktop/school/unitn/internship/canada/IR-generative-study \
+  Fbassignana@bool4.livia.etsmtl.ca:/projets/Fbassignana/diffusers_try/flow_matching_trial
