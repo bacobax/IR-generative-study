@@ -24,7 +24,8 @@ from tqdm.auto import tqdm
 
 from diffusers import DiffusionPipeline, StableDiffusionPipeline
 from diffusers.optimization import get_scheduler
-from diffusers.utils import convert_state_dict_to_diffusers, is_wandb_available
+from diffusers.training_utils import compute_snr
+from diffusers.utils import is_wandb_available
 
 from src.core.training_utils import compute_snr
 from .config import TrainingConfig
@@ -701,9 +702,7 @@ class Trainer:
         self.models.unet = self.models.unet.to(torch.float32)
         unwrapped_unet = unwrap_model(self.models.unet, self.accelerator)
         lora_source = unwrapped_unet.base_unet if hasattr(unwrapped_unet, "base_unet") else unwrapped_unet
-        unet_lora_state_dict = convert_state_dict_to_diffusers(
-            get_peft_model_state_dict(lora_source)
-        )
+        unet_lora_state_dict = get_peft_model_state_dict(lora_source)
         StableDiffusionPipeline.save_lora_weights(
             save_directory=self.config.output_dir,
             unet_lora_layers=unet_lora_state_dict,

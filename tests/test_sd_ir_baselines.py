@@ -17,7 +17,11 @@ from src.algorithms.stable_diffusion.data import (
     ir_npy_to_normalized_rgb,
     resolve_training_data_source,
 )
-from src.algorithms.stable_diffusion.models import ModelComponents, configure_trainable_components
+from src.algorithms.stable_diffusion.models import (
+    ModelComponents,
+    configure_trainable_components,
+    normalize_lora_state_dict_keys,
+)
 import src.algorithms.stable_diffusion.training as sd_training
 from src.algorithms.stable_diffusion.training import Trainer, log_validation
 from src.core.normalization import RAW_UINT16_PERCENTILE, UINT8_LINEAR
@@ -363,6 +367,21 @@ def test_yaml_lora_overrides_reach_target_modules_and_alpha_scale(tmp_path: Path
     assert float(peft_cfg.lora_alpha) == 8.0
     assert sorted(peft_cfg.target_modules) == ["to_q", "to_v"]
     assert cfg.checkpointing_steps == 123
+
+
+def test_lora_state_dict_normalization_preserves_checkpoint_loader_keys():
+    state = {
+        "unet.block.to_q.lora.down.weight": torch.zeros(2, 3),
+        "unet.block.to_q.lora.up.weight": torch.zeros(3, 2),
+        "unet.block.proj_in.lora_A.weight": torch.zeros(2, 3, 1, 1),
+    }
+
+    normalized = normalize_lora_state_dict_keys(state)
+
+    assert "unet.block.to_q.lora_A.weight" in normalized
+    assert "unet.block.to_q.lora_B.weight" in normalized
+    assert "unet.block.proj_in.lora_A.weight" in normalized
+    assert "unet.block.to_q.lora.down.weight" not in normalized
 
 
 def test_unet_full_mode_unfreezes_all_unet_params():

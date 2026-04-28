@@ -26,6 +26,7 @@ from src.algorithms.stable_diffusion.models import (
     UNET_EXPORT_DIRNAME,
     VAE_EXPORT_DIRNAME,
     get_weight_dtype,
+    load_lora_weights_compat,
 )
 from src.core.configs.sd_layout_config import SDLayoutTrainConfig
 from src.core.training_utils import cast_training_params
@@ -278,7 +279,7 @@ def load_stage1_pipeline_for_stage2(
         else:
             _load_unet_weights_from_checkpoint(pipeline.unet, resolved_path)
     else:
-        pipeline.load_lora_weights(str(resolved_path))
+        load_lora_weights_compat(pipeline, resolved_path)
         if hasattr(pipeline, "fuse_lora"):
             pipeline.fuse_lora()
         if hasattr(pipeline, "unload_lora_weights"):
