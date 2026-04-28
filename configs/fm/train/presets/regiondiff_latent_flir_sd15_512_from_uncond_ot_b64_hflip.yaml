@@ -95,7 +95,7 @@ output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip"
   log_dir: "./artifacts/runs/main/flow_matching/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip"
   debug_dir: "./artifacts/debug/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip"
-  resume: null
+  resume: "./artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip/UNET/unet_last_ckpt.pt"
 
 trainer_name: "default_fm"
 device: null
