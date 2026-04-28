@@ -17,6 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.algorithms.stable_diffusion.config import parse_args as parse_stage1_config
 from src.algorithms.stable_diffusion.layout_models import (
     STAGE2_MANIFEST_NAME,
@@ -31,7 +35,6 @@ from src.algorithms.stable_diffusion.models import (
 from src.core.configs.sd_layout_config import parse_args as parse_stage2_config
 
 
-ROOT = Path(__file__).resolve().parents[2]
 CHAIN_MARKER_NAME = "stage_chain_complete.json"
 
 
