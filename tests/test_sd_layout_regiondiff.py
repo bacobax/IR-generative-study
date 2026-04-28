@@ -17,10 +17,14 @@ from src.algorithms.stable_diffusion.layout_data import (
 )
 from src.algorithms.stable_diffusion.layout_training import LayoutTrainer, log_layout_validation
 from src.algorithms.stable_diffusion.layout_models import (
+    FUSED_UNET_EXPORT_DIRNAME,
+    FUSED_UNET_METADATA_NAME,
+    LEGACY_ACCELERATE_MODEL_WEIGHTS,
     SDLayoutModelComponents,
     configure_layout_trainability,
     create_stage2_load_model_hook,
     create_stage2_save_model_hook,
+    load_stage1_pipeline_for_stage2,
     load_stage2_layout_pipeline,
     save_stage2_layout_artifact,
 )
@@ -88,6 +92,28 @@ class _FakePipeline:
     def __call__(self, prompt, **kwargs):
         del prompt, kwargs
         return SimpleNamespace(images=[np.zeros((16, 16, 3), dtype=np.uint8)])
+
+
+class _FakeLoRAPipeline:
+    def __init__(self):
+        self.unet = _tiny_unet()
+        with torch.no_grad():
+            self.unet.conv_in.bias.zero_()
+        self.fused = False
+        self.unloaded = False
+        self.device = None
+
+    def fuse_lora(self):
+        self.fused = True
+        with torch.no_grad():
+            self.unet.conv_in.bias.add_(1.0)
+
+    def unload_lora_weights(self):
+        self.unloaded = True
+
+    def to(self, device):
+        self.device = device
+        return self
 
 
 class _TensorboardWriter:
@@ -192,6 +218,166 @@ def _make_layout_dataset(tmp_path: Path) -> tuple[Path, Path]:
     with open(annotations_path, "w", encoding="utf-8") as handle:
         json.dump(annotations, handle)
     return root_dir, annotations_path
+
+
+def _write_stage1_manifest(stage1_dir: Path, baseline_mode: str = "sd_ir_lora") -> None:
+    stage1_dir.mkdir(parents=True, exist_ok=True)
+    (stage1_dir / "stage1_manifest.json").write_text(
+        json.dumps(
+            {
+                "baseline_mode": baseline_mode,
+                "pretrained_model_name_or_path": "tiny-sd",
+                "revision": None,
+                "variant": None,
+                "dataset_id": "flir_private_proxy_alignment_v18",
+                "train_split": "train",
+                "adaptation_info": {
+                    "baseline_mode": baseline_mode,
+                    "lora_active": baseline_mode == "sd_ir_lora",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _stage2_config_for_stage1(stage1_dir: Path, checkpoint: str | None) -> SDLayoutTrainConfig:
+    cfg = SDLayoutTrainConfig()
+    cfg.stage1.pretrained_model_name_or_path = "tiny-sd"
+    cfg.stage1.stage1_dir = str(stage1_dir)
+    cfg.stage1.stage1_checkpoint = checkpoint
+    cfg.training.mixed_precision = "no"
+    return cfg
+
+
+def test_lora_stage1_materializes_fused_unet_checkpoint_before_stage2_load(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    stage1_dir = tmp_path / "lora_stage1"
+    checkpoint_dir = stage1_dir / "checkpoint-5"
+    checkpoint_dir.mkdir(parents=True)
+    _write_stage1_manifest(stage1_dir, baseline_mode="sd_ir_lora")
+    (checkpoint_dir / "pytorch_lora_weights.safetensors").write_bytes(b"lora")
+    (checkpoint_dir / "training_state.json").write_text(
+        json.dumps({"global_step": 5, "lr_scheduler": "constant"}),
+        encoding="utf-8",
+    )
+
+    calls = {"load_lora": 0}
+    fake_pipeline = _FakeLoRAPipeline()
+
+    def _fake_load_lora(pipeline, path):
+        assert pipeline is fake_pipeline
+        assert Path(path) == checkpoint_dir
+        calls["load_lora"] += 1
+
+    monkeypatch.setattr(
+        "src.algorithms.stable_diffusion.layout_models.StableDiffusionPipeline.from_pretrained",
+        lambda *args, **kwargs: fake_pipeline,
+    )
+    monkeypatch.setattr(
+        "src.algorithms.stable_diffusion.layout_models.load_lora_weights_compat",
+        _fake_load_lora,
+    )
+
+    pipeline, init_info = load_stage1_pipeline_for_stage2(
+        config=_stage2_config_for_stage1(stage1_dir, "checkpoint-5"),
+        device=torch.device("cpu"),
+    )
+
+    fused_checkpoint = stage1_dir / FUSED_UNET_EXPORT_DIRNAME / "checkpoint-5"
+    assert calls["load_lora"] == 1
+    assert fake_pipeline.fused is True
+    assert fake_pipeline.unloaded is True
+    assert (fused_checkpoint / LEGACY_ACCELERATE_MODEL_WEIGHTS).is_file()
+    assert (fused_checkpoint / FUSED_UNET_METADATA_NAME).is_file()
+    assert (stage1_dir / FUSED_UNET_EXPORT_DIRNAME / "stage1_manifest.json").is_file()
+    assert init_info["source_lora_checkpoint"] == str(checkpoint_dir)
+    assert init_info["materialized_unet_checkpoint"] == str(fused_checkpoint)
+    assert init_info["resolved_stage1_checkpoint"] == str(fused_checkpoint)
+    assert init_info["source_kind"] == "materialized_lora_unet_checkpoint"
+    assert init_info["materialized_unet_reused"] is False
+    assert torch.allclose(pipeline.unet.conv_in.bias, torch.ones_like(pipeline.unet.conv_in.bias))
+
+    training_state = json.loads((fused_checkpoint / "training_state.json").read_text())
+    assert training_state["global_step"] == 5
+    assert training_state["materialized_from_lora"] is True
+    assert training_state["contains_optimizer_state"] is False
+
+
+def test_lora_stage1_reuses_current_fused_checkpoint(monkeypatch, tmp_path: Path) -> None:
+    stage1_dir = tmp_path / "lora_stage1"
+    checkpoint_dir = stage1_dir / "checkpoint-5"
+    checkpoint_dir.mkdir(parents=True)
+    _write_stage1_manifest(stage1_dir, baseline_mode="sd_ir_lora")
+    (checkpoint_dir / "pytorch_lora_weights.safetensors").write_bytes(b"lora")
+
+    calls = {"load_lora": 0}
+
+    def _fake_load_lora(_pipeline, _path):
+        calls["load_lora"] += 1
+
+    monkeypatch.setattr(
+        "src.algorithms.stable_diffusion.layout_models.StableDiffusionPipeline.from_pretrained",
+        lambda *args, **kwargs: _FakeLoRAPipeline(),
+    )
+    monkeypatch.setattr(
+        "src.algorithms.stable_diffusion.layout_models.load_lora_weights_compat",
+        _fake_load_lora,
+    )
+
+    cfg = _stage2_config_for_stage1(stage1_dir, "checkpoint-5")
+    _, first_info = load_stage1_pipeline_for_stage2(config=cfg)
+    _, second_info = load_stage1_pipeline_for_stage2(config=cfg)
+
+    assert calls["load_lora"] == 1
+    assert first_info["materialized_unet_reused"] is False
+    assert second_info["materialized_unet_reused"] is True
+    assert first_info["materialized_unet_checkpoint"] == second_info["materialized_unet_checkpoint"]
+
+
+def test_unet_stage1_checkpoint_does_not_materialize_lora(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    stage1_dir = tmp_path / "unet_stage1"
+    checkpoint_dir = stage1_dir / "checkpoint-5"
+    checkpoint_dir.mkdir(parents=True)
+    _write_stage1_manifest(stage1_dir, baseline_mode="sd_ir_unet")
+
+    from safetensors.torch import save_file
+
+    expected_unet = _tiny_unet()
+    with torch.no_grad():
+        expected_unet.conv_in.bias.fill_(2.0)
+    save_file(
+        {key: value.detach().cpu() for key, value in expected_unet.state_dict().items()},
+        str(checkpoint_dir / LEGACY_ACCELERATE_MODEL_WEIGHTS),
+    )
+
+    fake_pipeline = _FakeLoRAPipeline()
+
+    def _unexpected_materialize(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("LoRA materialization should not run for sd_ir_unet checkpoints")
+
+    monkeypatch.setattr(
+        "src.algorithms.stable_diffusion.layout_models.StableDiffusionPipeline.from_pretrained",
+        lambda *args, **kwargs: fake_pipeline,
+    )
+    monkeypatch.setattr(
+        "src.algorithms.stable_diffusion.layout_models.materialize_lora_as_unet_checkpoint",
+        _unexpected_materialize,
+    )
+
+    pipeline, init_info = load_stage1_pipeline_for_stage2(
+        config=_stage2_config_for_stage1(stage1_dir, "checkpoint-5")
+    )
+
+    assert init_info["resolved_stage1_checkpoint"] == str(checkpoint_dir)
+    assert "materialized_unet_checkpoint" not in init_info
+    assert torch.allclose(pipeline.unet.conv_in.bias, torch.full_like(pipeline.unet.conv_in.bias, 2.0))
 
 
 def test_sd_layout_dataset_applies_square_pad_resize_geometry(tmp_path: Path) -> None:

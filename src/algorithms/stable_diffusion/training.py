@@ -24,7 +24,8 @@ from tqdm.auto import tqdm
 
 from diffusers import DiffusionPipeline, StableDiffusionPipeline
 from diffusers.optimization import get_scheduler
-from diffusers.utils import convert_state_dict_to_diffusers, is_wandb_available
+from diffusers.training_utils import compute_snr
+from diffusers.utils import is_wandb_available
 
 from src.core.training_utils import compute_snr
 from .config import TrainingConfig
@@ -292,6 +293,7 @@ class Trainer:
             "lr_scheduler": self.config.lr_scheduler,
             "lr_warmup_steps": self.config.lr_warmup_steps,
             "max_train_steps": self.config.max_train_steps,
+            "checkpointing_epochs": self.config.checkpointing_epochs,
         }
 
     def _write_checkpoint_metadata(self, checkpoint_dir: Path) -> None:
@@ -428,6 +430,8 @@ class Trainer:
             ):
                 self._run_validation(epoch)
 
+            self._maybe_save_checkpoint(epoch)
+
             if self.global_step >= self.config.max_train_steps:
                 break
 
@@ -460,7 +464,6 @@ class Trainer:
                 self.global_step += 1
                 self.accelerator.log({"train_loss": train_loss}, step=self.global_step)
                 train_loss = 0.0
-                self._maybe_save_checkpoint()
 
             logs = {
                 "step_loss": loss.detach().item(),
@@ -578,8 +581,8 @@ class Trainer:
         loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
         return loss.mean()
 
-    def _maybe_save_checkpoint(self) -> None:
-        if self.global_step % self.config.checkpointing_steps != 0:
+    def _maybe_save_checkpoint(self, epoch: int) -> None:
+        if (epoch + 1) % self.config.checkpointing_epochs != 0:
             return
         if not self.accelerator.is_main_process:
             return
@@ -701,9 +704,7 @@ class Trainer:
         self.models.unet = self.models.unet.to(torch.float32)
         unwrapped_unet = unwrap_model(self.models.unet, self.accelerator)
         lora_source = unwrapped_unet.base_unet if hasattr(unwrapped_unet, "base_unet") else unwrapped_unet
-        unet_lora_state_dict = convert_state_dict_to_diffusers(
-            get_peft_model_state_dict(lora_source)
-        )
+        unet_lora_state_dict = get_peft_model_state_dict(lora_source)
         StableDiffusionPipeline.save_lora_weights(
             save_directory=self.config.output_dir,
             unet_lora_layers=unet_lora_state_dict,

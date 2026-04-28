@@ -85,3 +85,5 @@ events.out.tfevents.*
 !/archive/legacy_outputs/.gitkeep
 # archive/legacy_code/ is tracked (source code)
 **/*smoked*/
+artifacts/evaluations
+artifacts/flir_private_proxy_alignment_v18.zip

@@ -45,6 +45,7 @@ TEXT_ENCODER_EXPORT_DIRNAME = "text_encoder"
 VAE_EXPORT_DIRNAME = "vae"
 REGIONDIFF_ADAPTER_WEIGHTS = "regiondiff_adapters.safetensors"
 REGIONDIFF_CHECKPOINT_WEIGHTS = "regiondiff_adapters_checkpoint.safetensors"
+LORA_WEIGHT_FILENAMES = ("pytorch_lora_weights.safetensors", "pytorch_lora_weights.bin")
 
 try:
     from safetensors.torch import load_file as safe_load_file
@@ -66,6 +67,35 @@ def _load_state_dict(path: str) -> Dict[str, torch.Tensor]:
     if path.endswith(".safetensors") and safe_load_file is not None:
         return safe_load_file(path)
     return torch.load(path, map_location="cpu")
+
+
+def _resolve_lora_weights_path(path: str | Path) -> Path:
+    path = Path(path)
+    if path.is_file():
+        return path
+    for filename in LORA_WEIGHT_FILENAMES:
+        candidate = path / filename
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"Missing LoRA weights under {path}")
+
+
+def normalize_lora_state_dict_keys(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    """Normalize mixed Diffusers/PEFT LoRA key spellings for local SD1.5 exports."""
+    return {
+        key.replace(".lora.down.weight", ".lora_A.weight").replace(".lora.up.weight", ".lora_B.weight"): value
+        for key, value in state_dict.items()
+    }
+
+
+def load_lora_weights_compat(pipeline: StableDiffusionPipeline, path: str | Path) -> None:
+    """Load local LoRA weights, accepting legacy final exports with mixed key names."""
+    weights_path = _resolve_lora_weights_path(path)
+    state_dict = _load_state_dict(str(weights_path))
+    if isinstance(state_dict, dict) and "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+    state_dict = normalize_lora_state_dict_keys(dict(state_dict))
+    pipeline.load_lora_weights(state_dict)
 
 
 @dataclass
@@ -524,7 +554,7 @@ def build_stage1_manifest(
         "unet_trainable_modules": list(config.unet_trainable_modules),
         "validation_prompt": config.validation_prompt,
         "validation_num_inference_steps": config.validation_num_inference_steps,
-        "checkpointing_steps": config.checkpointing_steps,
+        "checkpointing_epochs": config.checkpointing_epochs,
         "resume_from_checkpoint": config.resume_from_checkpoint,
         "output_dir": config.output_dir,
         "adaptation_info": adaptation_info,
@@ -567,7 +597,7 @@ def load_stage1_pipeline(
     )
 
     if manifest["baseline_mode"] == "sd_ir_lora":
-        pipeline.load_lora_weights(stage1_dir)
+        load_lora_weights_compat(pipeline, stage1_dir)
     else:
         unet_dir = Path(stage1_dir) / UNET_EXPORT_DIRNAME
         if not unet_dir.is_dir():

@@ -86,11 +86,12 @@ def main() -> None:
         )
 
     logger.info("Loading stage-2 RegionDiff wrapper")
-    models, init_info = load_layout_model_components(
-        config=config,
-        category_id_to_name=train_dataset.category_id_to_name,
-        device=accelerator.device,
-    )
+    with accelerator.main_process_first():
+        models, init_info = load_layout_model_components(
+            config=config,
+            category_id_to_name=train_dataset.category_id_to_name,
+            device=accelerator.device,
+        )
     trainability_info = configure_layout_trainability(models=models, config=config)
 
     trainer = LayoutTrainer(

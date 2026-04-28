@@ -10,7 +10,7 @@ center_crop: true
 train_batch_size: 4
 gradient_accumulation_steps: 4
 lr_warmup_steps: 0
-checkpointing_steps: 1000
+checkpointing_epochs: 1
 validation_prompt: "overhead infrared surveillance image with any people or objects"
 rank: 16
 lora_alpha_scale: 0.5

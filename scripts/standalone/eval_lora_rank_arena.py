@@ -32,6 +32,8 @@ from src.evaluation.mmd import compute_rbf_mmd
 
 
 SUPPORTED_FEATURE_EXTRACTORS = {"dinov2", "inception"}
+STAGE1_MANIFEST_NAME = "stage1_manifest.json"
+LORA_WEIGHT_FILENAMES = ("pytorch_lora_weights.safetensors", "pytorch_lora_weights.bin")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -152,12 +154,20 @@ def validate_lora_ranks(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
                 "LoRA checkpoint must be a Diffusers LoRA directory containing "
                 f"pytorch_lora_weights.safetensors/.bin or a .safetensors file: {checkpoint_path}"
             )
+        manifest = _load_stage1_manifest_if_available(checkpoint_path)
+        manifest_rank = manifest.get("rank") if manifest else None
+        if manifest_rank is not None and int(manifest_rank) != rank:
+            raise ValueError(
+                f"LoRA rank mismatch for {label}: config rank={rank}, "
+                f"{STAGE1_MANIFEST_NAME} rank={manifest_rank}."
+            )
         validated.append(
             {
                 "rank": rank,
                 "label": label,
                 "checkpoint_path": checkpoint_path,
                 "checkpoint_path_config": str(entry["checkpoint_path"]),
+                "stage1_manifest": manifest,
             }
         )
     return validated
@@ -170,6 +180,104 @@ def _is_diffusers_lora_checkpoint(path: Path) -> bool:
         (path / "pytorch_lora_weights.safetensors").is_file()
         or (path / "pytorch_lora_weights.bin").is_file()
     )
+
+
+def _find_stage1_manifest_path(path: Path) -> Path | None:
+    candidates = [path / STAGE1_MANIFEST_NAME]
+    if path.is_file():
+        candidates.append(path.parent / STAGE1_MANIFEST_NAME)
+    else:
+        candidates.append(path.parent / STAGE1_MANIFEST_NAME)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _load_stage1_manifest_if_available(path: Path) -> Dict[str, Any] | None:
+    manifest_path = _find_stage1_manifest_path(path)
+    if manifest_path is None:
+        return None
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def _resolve_lora_weights_path(path: Path) -> Path:
+    if path.is_file():
+        return path
+    for filename in LORA_WEIGHT_FILENAMES:
+        candidate = path / filename
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"Missing LoRA weights under {path}")
+
+
+def _normalize_lora_state_dict_keys(state_dict: Mapping[str, torch.Tensor]) -> tuple[Dict[str, torch.Tensor], int]:
+    """Normalize mixed Diffusers/PEFT LoRA key spellings for local SD1.5 exports."""
+    normalized: Dict[str, torch.Tensor] = {}
+    changed = 0
+    for key, value in state_dict.items():
+        new_key = key
+        if ".lora.down.weight" in new_key:
+            new_key = new_key.replace(".lora.down.weight", ".lora_A.weight")
+        if ".lora.up.weight" in new_key:
+            new_key = new_key.replace(".lora.up.weight", ".lora_B.weight")
+        if new_key != key:
+            changed += 1
+        normalized[new_key] = value
+    return normalized, changed
+
+
+def _load_local_lora_state_dict(path: Path) -> Dict[str, torch.Tensor]:
+    weights_path = _resolve_lora_weights_path(path)
+    if weights_path.suffix == ".safetensors":
+        from safetensors.torch import load_file as safe_load_file
+
+        return dict(safe_load_file(str(weights_path), device="cpu"))
+
+    payload = torch.load(weights_path, map_location="cpu")
+    if isinstance(payload, Mapping) and "state_dict" in payload and isinstance(payload["state_dict"], Mapping):
+        payload = payload["state_dict"]
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"Expected a state dict in LoRA weights file: {weights_path}")
+    return dict(payload)
+
+
+def _module_has_lora(module: torch.nn.Module) -> bool:
+    lora_a = getattr(module, "lora_A", None)
+    if isinstance(lora_a, (torch.nn.ModuleDict, dict)) and len(lora_a) > 0:
+        return True
+    return hasattr(module, "lora_layer")
+
+
+def _count_loaded_lora_targets(pipe: Any, target_modules: Sequence[str]) -> Dict[str, int]:
+    counts = {str(target): 0 for target in target_modules}
+    for module_name, module in pipe.unet.named_modules():
+        if not _module_has_lora(module):
+            continue
+        for target in counts:
+            if module_name == target or module_name.endswith(f".{target}"):
+                counts[target] += 1
+    return counts
+
+
+def _load_lora_weights_compat(pipe: Any, checkpoint_path: Path) -> None:
+    state_dict = _load_local_lora_state_dict(checkpoint_path)
+    state_dict, _ = _normalize_lora_state_dict_keys(state_dict)
+    pipe.load_lora_weights(state_dict)
+
+
+def _assert_expected_lora_targets_loaded(pipe: Any, rank_entry: Mapping[str, Any]) -> None:
+    manifest = rank_entry.get("stage1_manifest") or {}
+    target_modules = list(manifest.get("lora_target_modules") or [])
+    if not target_modules:
+        return
+    counts = _count_loaded_lora_targets(pipe, target_modules)
+    missing = [target for target, count in counts.items() if count == 0]
+    if missing:
+        raise RuntimeError(
+            f"LoRA checkpoint for {rank_entry['label']} did not attach adapters to target modules "
+            f"{missing}. Loaded target counts: {counts}"
+        )
 
 
 def expected_generated_paths(output_dir: Path, n_samples: int) -> List[Path]:
@@ -209,7 +317,8 @@ def _build_pipeline(config: Mapping[str, Any], rank_entry: Mapping[str, Any], *,
     if prediction_type is not None and hasattr(pipe.scheduler, "register_to_config"):
         pipe.scheduler.register_to_config(prediction_type=str(prediction_type))
 
-    pipe.load_lora_weights(str(rank_entry["checkpoint_path"]))
+    _load_lora_weights_compat(pipe, Path(rank_entry["checkpoint_path"]))
+    _assert_expected_lora_targets_loaded(pipe, rank_entry)
     pipe.to(device)
     pipe.set_progress_bar_config(disable=True)
     return pipe

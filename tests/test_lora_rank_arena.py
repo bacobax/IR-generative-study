@@ -123,3 +123,43 @@ def test_generate_samples_for_rank_with_fake_pipeline(tmp_path: Path, monkeypatc
         "sample_000002.png",
     ]
     assert (tmp_path / "generated" / "metadata.jsonl").is_file()
+
+
+def test_normalize_lora_state_dict_keys_converts_diffusers_down_up_names() -> None:
+    state = {
+        "unet.block.to_q.lora.down.weight": torch.zeros(2, 3),
+        "unet.block.to_q.lora.up.weight": torch.zeros(3, 2),
+        "unet.block.proj_in.lora_A.weight": torch.zeros(2, 3, 1, 1),
+    }
+
+    normalized, changed = arena._normalize_lora_state_dict_keys(state)
+
+    assert changed == 2
+    assert "unet.block.to_q.lora_A.weight" in normalized
+    assert "unet.block.to_q.lora_B.weight" in normalized
+    assert "unet.block.proj_in.lora_A.weight" in normalized
+    assert "unet.block.to_q.lora.down.weight" not in normalized
+
+
+def test_expected_lora_targets_loaded_raises_for_missing_training_targets() -> None:
+    class _LoRALinear(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lora_A = torch.nn.ModuleDict({"default_0": torch.nn.Linear(1, 1)})
+
+    class _UNet(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj_in = _LoRALinear()
+
+    class _Pipe:
+        def __init__(self) -> None:
+            self.unet = _UNet()
+
+    rank_entry = {
+        "label": "lora_r8",
+        "stage1_manifest": {"lora_target_modules": ["proj_in", "to_q"]},
+    }
+
+    with pytest.raises(RuntimeError, match="to_q"):
+        arena._assert_expected_lora_targets_loaded(_Pipe(), rank_entry)

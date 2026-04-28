@@ -5,13 +5,14 @@ dataset_id: flir_private_proxy_alignment_v18
 train_split: train
 prompt_text: "thermal image"
 resolution: 512
-train_batch_size: 4
+train_batch_size: 16
+num_train_epochs: 100
 gradient_accumulation_steps: 4
 learning_rate: 1.0e-4
 lr_warmup_steps: 0
 rank: 64
 lora_alpha_scale: 1.0
 validation_prompt: "thermal image"
-checkpointing_steps: 1000
+checkpointing_epochs: 1
 output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r64
 seed: 42

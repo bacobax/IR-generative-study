@@ -21,16 +21,16 @@ model:
 lora_arena:
   ranks:
     - rank: 8
-      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8/checkpoint-62000"
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8"
       label: "lora_r8"
     - rank: 16
-      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r16/checkpoint-10000"
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r16"
       label: "lora_r16"
     - rank: 32
       checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r32"
       label: "lora_r32"
     - rank: 64
-      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r64/checkpoint-19000"
+      checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r64"
       label: "lora_r64"
     - rank: 128
       checkpoint_path: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r128"

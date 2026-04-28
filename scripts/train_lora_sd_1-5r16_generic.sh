@@ -40,7 +40,7 @@ accelerate launch --mixed_precision=fp16 \
   --lr_warmup_steps 0 \
   --max_grad_norm 1.0 \
   --num_train_epochs 100 \
-  --checkpointing_steps 1000 \
+  --checkpointing_epochs 1 \
   --validation_prompt "$VALID_PROMPT" \
   --validation_epochs 1 \
   --num_validation_images 4 \
