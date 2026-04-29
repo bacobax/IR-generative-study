@@ -13,8 +13,6 @@ from typing import Dict, Iterable, List, Optional
 
 import torch
 from packaging import version
-from peft import LoraConfig
-from peft.utils import get_peft_model_state_dict, set_peft_model_state_dict
 
 from src.core.diffusers_compat import disable_diffusers_optional_scipy
 
@@ -200,7 +198,9 @@ def get_lora_config(
     rank: int = 4,
     lora_alpha_scale: float = 1.0,
     target_modules: Optional[List[str]] = None,
-) -> LoraConfig:
+) -> object:
+    from peft import LoraConfig
+
     return LoraConfig(
         r=rank,
         lora_alpha=rank * lora_alpha_scale,
@@ -430,6 +430,8 @@ def create_save_model_hook(unet, accelerator):
 
             for model in models:
                 if isinstance(model, type(unwrap_model(unet, accelerator))):
+                    from peft.utils import get_peft_model_state_dict
+
                     unwrapped = accelerator.unwrap_model(model)
                     lora_source = unwrapped.base_unet if hasattr(unwrapped, "base_unet") else unwrapped
                     unet_lora_layers_to_save = get_peft_model_state_dict(lora_source)
@@ -480,6 +482,8 @@ def create_load_model_hook(unet, accelerator, mixed_precision: Optional[str] = N
             for key, value in lora_state_dict.items()
             if key.startswith("unet.")
         }
+        from peft.utils import set_peft_model_state_dict
+
         unet_state_dict = convert_unet_state_dict_to_peft(unet_state_dict)
         lora_target = unet_.base_unet if hasattr(unet_, "base_unet") else unet_
         incompatible_keys = set_peft_model_state_dict(lora_target, unet_state_dict, adapter_name="default")

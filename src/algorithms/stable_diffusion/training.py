@@ -18,7 +18,6 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
-from peft.utils import get_peft_model_state_dict
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
@@ -701,6 +700,8 @@ class Trainer:
         self.accelerator.end_training()
 
     def _finalize_lora_export(self) -> None:
+        from peft.utils import get_peft_model_state_dict
+
         self.models.unet = self.models.unet.to(torch.float32)
         unwrapped_unet = unwrap_model(self.models.unet, self.accelerator)
         lora_source = unwrapped_unet.base_unet if hasattr(unwrapped_unet, "base_unet") else unwrapped_unet
