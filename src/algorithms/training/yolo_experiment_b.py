@@ -24,7 +24,6 @@ from src.algorithms.inference.rare_layout_dataset_tools import (
     sample_layout_batch,
 )
 from src.algorithms.stable_diffusion.layout_data import build_layout_prompt
-from src.algorithms.stable_diffusion.models import load_stage1_pipeline
 from src.core.configs.yolo_experiment_config import YOLOExperimentConfig
 from src.core.data.layout_batching import collate_layout_batch
 from src.core.normalization import RAW_UINT16_PERCENTILE, sd_output_to_npy
@@ -464,6 +463,8 @@ def _load_sd_pipeline(cfg: YOLOExperimentConfig, *, device: str):
         raise FileNotFoundError(f"Missing SD source directory: {source_dir}")
 
     if (source_path / "stage1_manifest.json").is_file():
+        from src.algorithms.stable_diffusion.models import load_stage1_pipeline
+
         pipe, manifest = load_stage1_pipeline(
             stage1_dir=str(source_path),
             base_model=cfg.experiment_b.sd.base_model,
@@ -621,6 +622,10 @@ def audit_generated_candidates(
         instance_rows=instance_rows,
         image_rows=image_rows,
     )
+    annotation_filter_summary = _write_filtered_annotations_from_audit(
+        generated_dataset_dir=generated_dataset_dir,
+        instance_rows=instance_rows,
+    )
     classified_rows = classify_generated_image_rows(
         image_rows,
         invalid_instance_ratio_threshold=float(cfg.experiment_b.invalid_instance_ratio_threshold),
@@ -632,14 +637,58 @@ def audit_generated_candidates(
     )
     _write_json(audit_dir / "experiment_b_discard_summary.json", discard_summary)
     print(
-        "[Experiment B] filter discard summary: "
-        f"{discard_summary['global']['discarded_instance_count']}/"
-        f"{discard_summary['global']['total_instance_count']} instances discarded "
-        f"({discard_summary['global']['instance_discard_ratio']:.3f}); "
-        f"valid={discard_summary['global']['discarded_valid_instance_count']}, "
-        f"invalid={discard_summary['global']['discarded_invalid_instance_count']}"
+        "[Experiment B] filter annotation summary: "
+        f"{annotation_filter_summary['n_invalid_annotations_removed']}/"
+        f"{annotation_filter_summary['n_annotations_unfiltered']} annotations removed; "
+        "generated images are retained."
     )
     return classified_rows, audit_dir, discard_summary
+
+
+def _write_filtered_annotations_from_audit(
+    *,
+    generated_dataset_dir: Path,
+    instance_rows: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    """Remove invalid instance annotations while retaining every generated image."""
+
+    annotations_path = generated_dataset_dir / "annotations.json"
+    unfiltered_path = generated_dataset_dir / "annotations_unfiltered.json"
+    if not annotations_path.is_file():
+        raise FileNotFoundError(f"Generated dataset is missing annotations.json: {generated_dataset_dir}")
+    if not unfiltered_path.is_file():
+        shutil.copy2(annotations_path, unfiltered_path)
+    payload = _load_json(unfiltered_path)
+    valid_annotation_ids = {
+        int(row["annotation_id"])
+        for row in instance_rows
+        if bool(row.get("is_positive", False))
+    }
+    filtered_annotations = [
+        ann for ann in payload.get("annotations", [])
+        if int(ann.get("id", -1)) in valid_annotation_ids
+    ]
+    filtered_payload = {
+        "images": list(payload.get("images", [])),
+        "annotations": filtered_annotations,
+        "categories": list(payload.get("categories", [])),
+    }
+    _write_json(annotations_path, filtered_payload)
+    summary = {
+        "n_images": len(filtered_payload["images"]),
+        "n_annotations_unfiltered": len(payload.get("annotations", [])),
+        "n_annotations": len(filtered_annotations),
+        "n_invalid_annotations_removed": len(payload.get("annotations", [])) - len(filtered_annotations),
+    }
+    _write_json(generated_dataset_dir / "metadata" / "filtered_annotation_summary.json", summary)
+    metadata_path = generated_dataset_dir / "metadata" / "summary.json"
+    if metadata_path.is_file():
+        metadata = _load_json(metadata_path)
+        metadata.update(summary)
+        metadata["annotations_path"] = "annotations.json"
+        metadata["unfiltered_annotations_path"] = "annotations_unfiltered.json"
+        _write_json(metadata_path, metadata)
+    return summary
 
 
 def classify_generated_image_rows(
@@ -674,17 +723,22 @@ def load_precomputed_generated_image_rows(generated_dataset_dir: Path) -> list[d
         raise ValueError(f"Precomputed generated dataset has no images: {annotations_path}")
 
     rows: list[dict[str, Any]] = []
+    anns_by_image_id: dict[int, list[dict[str, Any]]] = {}
+    for ann in payload.get("annotations", []):
+        anns_by_image_id.setdefault(int(ann["image_id"]), []).append(ann)
+
     for image in images:
         image_id = int(image["id"])
         file_name = str(image["file_name"])
         image_path = generated_dataset_dir / "images" / file_name
         if not image_path.is_file():
             raise FileNotFoundError(f"Generated image listed in annotations.json is missing: {image_path}")
+        n_instances = len(anns_by_image_id.get(image_id, []))
         rows.append(
             {
                 "generated_image_id": image_id,
                 "generated_file_name": file_name,
-                "n_instances": 0,
+                "n_instances": n_instances,
                 "n_negative_instances": 0,
                 "invalid_instance_ratio": 0.0,
                 "discarded_by_invalid_instance_ratio": False,
@@ -817,6 +871,37 @@ def _source_sample_by_generated_rows(
     return mapping
 
 
+def _load_filtered_generated_coco(generated_dataset_dir: Path) -> tuple[list[dict[str, Any]], dict[int, list[dict[str, Any]]]]:
+    annotations_path = generated_dataset_dir / "annotations.json"
+    if not annotations_path.is_file():
+        raise FileNotFoundError(
+            "Experiment B precomputed augmentation requires filtered annotations.json "
+            f"under {generated_dataset_dir}"
+        )
+    payload = _load_json(annotations_path)
+    images = list(payload.get("images", []))
+    anns_by_image_id: dict[int, list[dict[str, Any]]] = {}
+    for ann in payload.get("annotations", []):
+        anns_by_image_id.setdefault(int(ann["image_id"]), []).append(ann)
+    images.sort(key=lambda row: int(row["id"]))
+    return images, anns_by_image_id
+
+
+def _annotation_to_yolo_line(ann: Mapping[str, Any], *, image_w: float, image_h: float) -> str:
+    x, y, w, h = [float(value) for value in ann["bbox"]]
+    x_center = (x + 0.5 * w) / max(1.0, image_w)
+    y_center = (y + 0.5 * h) / max(1.0, image_h)
+    width = w / max(1.0, image_w)
+    height = h / max(1.0, image_h)
+    return (
+        f"{int(ann['category_id'])} "
+        f"{min(max(x_center, 0.0), 1.0):.8f} "
+        f"{min(max(y_center, 0.0), 1.0):.8f} "
+        f"{min(max(width, 0.0), 1.0):.8f} "
+        f"{min(max(height, 0.0), 1.0):.8f}"
+    )
+
+
 def export_augmented_yolo_dataset(
     *,
     cfg: YOLOExperimentConfig,
@@ -826,7 +911,7 @@ def export_augmented_yolo_dataset(
     classified_rows: Sequence[dict[str, Any]],
     discard_summary: Optional[dict[str, Any]] = None,
 ) -> Path:
-    """Export a YOLO dataset with all real samples plus kept synthetic samples."""
+    """Export a YOLO dataset with all real samples plus all generated images."""
 
     output_root = _repo_path(cfg.experiment_b.augmented_yolo_root)
     if output_root is None:
@@ -846,16 +931,26 @@ def export_augmented_yolo_dataset(
         shutil.copy2(sample.label_path, label_dst)
 
     source_by_generated_id = _source_sample_by_generated_rows(source_samples, generated_dataset_dir)
-    kept_rows = [row for row in classified_rows if not bool(row["discarded_by_invalid_instance_ratio"])]
-    for row in kept_rows:
-        generated_id = int(row["generated_image_id"])
-        sample = source_by_generated_id[generated_id]
-        generated_path = generated_dataset_dir / "images" / str(row["generated_file_name"])
+    generated_images, anns_by_image_id = _load_filtered_generated_coco(generated_dataset_dir)
+    for image_info in generated_images:
+        generated_id = int(image_info["id"])
+        sample = source_by_generated_id.get(generated_id)
+        generated_path = generated_dataset_dir / "images" / str(image_info["file_name"])
         generated_array = np.load(generated_path)
-        synthetic_stem = f"synthetic_{sample.index:06d}_{sample.stem}"
+        synthetic_stem = (
+            f"synthetic_{sample.index:06d}_{sample.stem}"
+            if sample is not None
+            else f"synthetic_generated_{generated_id:06d}"
+        )
         _save_png_from_array(generated_array, train_images_dir / f"{synthetic_stem}.png")
+        image_w = float(image_info.get("width", _image_size_from_array(generated_array)[0]))
+        image_h = float(image_info.get("height", _image_size_from_array(generated_array)[1]))
+        label_lines = [
+            _annotation_to_yolo_line(ann, image_w=image_w, image_h=image_h)
+            for ann in anns_by_image_id.get(generated_id, [])
+        ]
         (train_labels_dir / f"{synthetic_stem}.txt").write_text(
-            "\n".join(box.to_line() for box in sample.boxes) + ("\n" if sample.boxes else ""),
+            "\n".join(label_lines) + ("\n" if label_lines else ""),
             encoding="utf-8",
         )
 
@@ -871,7 +966,7 @@ def export_augmented_yolo_dataset(
     }
     yaml_path.write_text(yaml.safe_dump(yaml_payload, sort_keys=False), encoding="utf-8")
 
-    discarded_rows = [row for row in classified_rows if bool(row["discarded_by_invalid_instance_ratio"])]
+    flagged_rows = [row for row in classified_rows if bool(row.get("discarded_by_invalid_instance_ratio", False))]
     _write_json(
         output_root / "experiment_b_augmented_dataset_summary.json",
         {
@@ -881,11 +976,13 @@ def export_augmented_yolo_dataset(
             "generated_dataset_dir": str(generated_dataset_dir.resolve()),
             "invalid_instance_ratio_threshold": float(cfg.experiment_b.invalid_instance_ratio_threshold),
             "n_real_images": len(source_samples),
-            "n_generated_images": len(classified_rows),
-            "n_kept_synthetic_images": len(kept_rows),
-            "n_discarded_synthetic_images": len(discarded_rows),
-            "kept_generated_image_ids": [int(row["generated_image_id"]) for row in kept_rows],
-            "discarded_generated_image_ids": [int(row["generated_image_id"]) for row in discarded_rows],
+            "n_generated_images": len(generated_images),
+            "n_kept_synthetic_images": len(generated_images),
+            "n_discarded_synthetic_images": 0,
+            "n_flagged_by_invalid_instance_ratio": len(flagged_rows),
+            "kept_generated_image_ids": [int(row["id"]) for row in generated_images],
+            "discarded_generated_image_ids": [],
+            "flagged_generated_image_ids": [int(row["generated_image_id"]) for row in flagged_rows],
             "discard_summary": discard_summary,
         },
     )
@@ -974,8 +1071,9 @@ def prepare_experiment_b_dataset(cfg: YOLOExperimentConfig, *, device: str) -> d
         "augmented_dataset_yaml": str(augmented_yaml.resolve()),
         "n_source_images": len(source_samples),
         "n_generated_images": len(classified_rows),
-        "n_kept_synthetic_images": sum(
-            int(not bool(row["discarded_by_invalid_instance_ratio"]))
+        "n_kept_synthetic_images": len(classified_rows),
+        "n_flagged_by_invalid_instance_ratio": sum(
+            int(bool(row.get("discarded_by_invalid_instance_ratio", False)))
             for row in classified_rows
         ),
     }

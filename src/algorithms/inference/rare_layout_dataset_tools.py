@@ -1570,6 +1570,7 @@ def audit_generated_layout_dataset(
     crop_batch_size: int = 64,
     show_progress: bool = False,
     classifier_summary: Optional[Dict[str, Any]] = None,
+    min_valid_object_fraction: Optional[float] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     annotations, images_by_id, anns_by_image_id, categories, images_dir = _load_generated_dataset(dataset_dir)
     metadata_summary_path = Path(dataset_dir) / "metadata" / "summary.json"
