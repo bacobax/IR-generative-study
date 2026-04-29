@@ -1,0 +1,53 @@
+yolo_dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
+output_root: artifacts/generated/yolo/exp_b/precomputed_candidates
+max_samples: null
+seed: 7
+device: null
+overwrite: true
+
+filter:
+  enabled: true
+  run_dir: artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440
+  batch_size: 64
+
+retry:
+  enabled: true
+  invalid_instance_ratio_threshold: 0.5
+  max_tries: 3Ω
+  seed_stride: 1000000
+
+metrics:
+  enabled: true
+  feature_extractor: inception
+  batch_size: 16
+  force: false
+  inception:
+    resize_to: 299
+    normalize: true
+  kid:
+    subsets: 100
+    subset_size: 1000
+    seed: 7
+  mmd:
+    bandwidths: [0.1, 1.0, 10.0]
+
+sanity:
+  max_images: 24
+  max_crops_per_sheet: 24
+
+generators:
+  - name: stay_fm_hflip
+    backend: stay_fm
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip/UNET/unet_fm_epoch_120.pt
+    preset_path: configs/fm/train/presets/stay_layout_latent_flir_sd15_512_b64.yaml
+    steps: 20
+    batch_size: 8
+    seed_offset: 0
+
+  - name: regiondiff_fm_ot_hflip
+    backend: regiondiff_fm
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip/UNET/unet_fm_epoch_80.pt
+    preset_path: configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
+    steps: 50
+    batch_size: 32
+    seed_offset: 100000

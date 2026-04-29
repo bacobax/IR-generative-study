@@ -1,24 +1,105 @@
-"""Offline mini generation for smoked RegionDiff artifacts."""
+"""Production synthetic dataset generation for YOLO Experiment B.
+
+The historical smoke entrypoint now drives a full precomputed synthetic
+dataset workflow: one generated image per real YOLO full-train image, per-box
+multiclass filter auditing, annotation-level filtering, sanity overlays, and
+optional distribution metrics.
+"""
 
 from __future__ import annotations
 
+import csv
 import json
+import math
+import shutil
+import zipfile
+from collections import defaultdict
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import torch
-from PIL import Image
+import yaml
+from PIL import Image, ImageDraw
 from tqdm.auto import tqdm
 
 from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler
-from src.algorithms.inference.unconditional_sd_sampler import UnconditionalStableDiffusionSampler
-from src.algorithms.stable_diffusion.layout_data import build_layout_prompt
-from src.algorithms.stable_diffusion.layout_models import load_stage2_layout_pipeline
+from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
+from src.algorithms.inference.rare_layout_dataset_tools import (
+    audit_generated_layout_dataset,
+    export_audit_results,
+    load_filter_from_run_or_checkpoint,
+    sample_layout_batch,
+)
 from src.algorithms.training.yolo_experiment_b import YOLOTrainSample, load_full_train_samples
 from src.core.data.layout_batching import collate_layout_batch
-from src.core.normalization import RAW_UINT16_PERCENTILE, sd_output_to_npy
+from src.core.normalization import RAW_UINT16_PERCENTILE, raw_array_to_png_uint8
+from src.core.paths import repo_root
+from src.evaluation.feature_extractors import build_feature_extractor, extract_features
+from src.evaluation.generative_metrics import compute_fid, compute_kid
+from src.evaluation.mmd import compute_rbf_mmd
+from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
+from src.models.regiondiffusion_factory import build_regiondiff_wrapper
+from src.models.stay_layout_conditioned_unet import build_stay_layout_conditioned_unet
+from src.models.vae import build_vae_from_config, freeze_vae, load_diffusers_vae_config, load_vae_config, load_vae_weights
+
+
+DEFAULT_CONFIG_PATH = "configs/yolo/exp_b/synthetic_generation/default.yaml"
+DEFAULT_YOLO_DATASET_YAML = "data/derived/yolo-test-ds/full_train.yaml"
+DEFAULT_OUTPUT_ROOT = "artifacts/generated/yolo/exp_b/precomputed_candidates"
+DEFAULT_FILTER_RUN_DIR = (
+    "artifacts/checkpoints/multiclass_foreground_background_filter/"
+    "runs/multiclass_fgbg_20260415_210440"
+)
+
+
+def _repo_path(path_like: str | Path | None) -> Path | None:
+    if path_like is None or str(path_like) == "":
+        return None
+    path = Path(path_like)
+    if not path.is_absolute():
+        path = repo_root() / path
+    return path.resolve()
+
+
+def _load_yaml(path: str | Path) -> dict[str, Any]:
+    with Path(path).open("r", encoding="utf-8") as handle:
+        payload = yaml.safe_load(handle) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected YAML mapping in {path}.")
+    return payload
+
+
+def _write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _write_jsonl(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(dict(row), sort_keys=True) + "\n")
+
+
+def _write_csv(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in fieldnames:
+                fieldnames.append(str(key))
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(dict(row))
 
 
 def _normalise_names(raw_names: Any) -> dict[int, str]:
@@ -38,6 +119,40 @@ def _image_size_from_array(array: np.ndarray) -> tuple[int, int]:
     if arr.ndim == 3:
         return int(arr.shape[1]), int(arr.shape[0])
     raise ValueError(f"Unsupported generated image shape: {tuple(arr.shape)}")
+
+
+def _array_to_png_uint8(array: np.ndarray) -> np.ndarray:
+    arr = np.asarray(array)
+    if arr.ndim == 3 and arr.shape[0] in {1, 3, 4}:
+        arr = np.moveaxis(arr, 0, -1)
+    if arr.ndim == 3 and arr.shape[-1] == 1:
+        arr = arr[..., 0]
+    if arr.ndim == 3:
+        arr = arr.astype(np.float32).mean(axis=-1)
+    if arr.dtype == np.uint8:
+        return arr
+    if arr.dtype == np.uint16:
+        return raw_array_to_png_uint8(arr, normalization_mode=RAW_UINT16_PERCENTILE)
+    arr = arr.astype(np.float32)
+    low = float(np.nanpercentile(arr, 1.0))
+    high = float(np.nanpercentile(arr, 99.0))
+    if not math.isfinite(low) or not math.isfinite(high) or high <= low:
+        return np.zeros(arr.shape[:2], dtype=np.uint8)
+    return np.clip((arr - low) / (high - low) * 255.0, 0, 255).astype(np.uint8)
+
+
+def _save_preview_png(array: np.ndarray, path: str | Path) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(_array_to_png_uint8(array), mode="L").convert("RGB").save(path)
+    return path
+
+
+def _size_bin_thresholds_from_samples(samples: Sequence[YOLOTrainSample]) -> list[float]:
+    areas = [float(box.width * box.height) for sample in samples for box in sample.boxes]
+    if not areas:
+        return [0.002, 0.01]
+    return [float(value) for value in np.quantile(np.asarray(areas, dtype=np.float32), [1 / 3, 2 / 3]).tolist()]
 
 
 def _sample_to_layout_dict(sample: YOLOTrainSample, *, image_size: int, names: dict[int, str]) -> dict[str, Any]:
@@ -63,9 +178,127 @@ def build_layout_batches(
 ) -> list[dict[str, Any]]:
     layout_samples = [_sample_to_layout_dict(sample, image_size=image_size, names=names) for sample in samples]
     return [
-        collate_layout_batch(layout_samples[start:start + max(1, int(batch_size))])
+        collate_layout_batch(layout_samples[start : start + max(1, int(batch_size))])
         for start in range(0, len(layout_samples), max(1, int(batch_size)))
     ]
+
+
+def _generated_categories(dataset_payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    names = _normalise_names(dataset_payload["names"])
+    return [{"id": class_id, "name": name} for class_id, name in sorted(names.items())]
+
+
+def _candidate_coco_and_provenance(
+    *,
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
+    image_size: int | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    coco_images: list[dict[str, Any]] = []
+    coco_annotations: list[dict[str, Any]] = []
+    provenance_rows: list[dict[str, Any]] = []
+    annotation_id = 1
+    for image_id, sample in enumerate(source_samples, start=1):
+        file_name = f"sample_{image_id:06d}.npy"
+        preview_name = f"sample_{image_id:06d}.png"
+        image_w = image_h = int(image_size or 0)
+        coco_images.append({"id": image_id, "file_name": file_name, "width": image_w, "height": image_h})
+        if image_size is not None:
+            for object_index, box in enumerate(sample.boxes):
+                bbox = box.coco_bbox_abs(image_w=image_w, image_h=image_h)
+                coco_annotations.append(
+                    {
+                        "id": annotation_id,
+                        "image_id": image_id,
+                        "category_id": int(box.class_id),
+                        "bbox": bbox,
+                        "area": float(bbox[2] * bbox[3]),
+                        "iscrowd": 0,
+                        "source_image_id": sample.index,
+                        "source_file_name": sample.image_path.name,
+                        "object_index": int(object_index),
+                    }
+                )
+                annotation_id += 1
+        provenance_rows.append(
+            {
+                "generated_image_id": image_id,
+                "generated_file_name": file_name,
+                "generated_preview_file_name": preview_name,
+                "source_index": sample.index,
+                "source_image_path": str(sample.image_path),
+                "source_label_path": str(sample.label_path),
+                "n_objects": len(sample.boxes),
+                "labels": [box.to_line() for box in sample.boxes],
+            }
+        )
+    return {
+        "images": coco_images,
+        "annotations": coco_annotations,
+        "categories": _generated_categories(dataset_payload),
+    }, provenance_rows
+
+
+def initialize_generated_candidate_dataset(
+    *,
+    output_dir: str | Path,
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
+    generator_kind: str,
+    generator_config: Mapping[str, Any] | None = None,
+    image_size: int | None = None,
+) -> Path:
+    """Initialize candidate metadata before streaming generated arrays to disk."""
+
+    output = Path(output_dir)
+    (output / "images").mkdir(parents=True, exist_ok=True)
+    (output / "previews").mkdir(parents=True, exist_ok=True)
+    metadata_dir = output / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    coco_payload, provenance_rows = _candidate_coco_and_provenance(
+        source_samples=source_samples,
+        dataset_payload=dataset_payload,
+        image_size=image_size,
+    )
+    _write_json(output / "annotations_unfiltered.json", coco_payload)
+    _write_json(output / "annotations.json", coco_payload)
+    _write_jsonl(metadata_dir / "provenance.jsonl", provenance_rows)
+    _write_json(
+        metadata_dir / "summary.json",
+        {
+            "dataset_id": "yolo_full_train",
+            "split": "train",
+            "selection_mode": "full_train_1_to_1",
+            "generator_kind": generator_kind,
+            "generator_config": dict(generator_config or {}),
+            "n_requested_samples": len(source_samples),
+            "n_generated_samples": len(source_samples),
+            "n_annotations_unfiltered": len(coco_payload["annotations"]),
+            "n_annotations": len(coco_payload["annotations"]),
+            "source_dataset_yaml": str(dataset_payload.get("_yaml_path", "")),
+            "size_bin_thresholds": _size_bin_thresholds_from_samples(source_samples),
+            "images_dir": "images",
+            "previews_dir": "previews",
+            "annotations_path": "annotations.json",
+            "unfiltered_annotations_path": "annotations_unfiltered.json",
+            "samples": provenance_rows,
+            "streamed_to_disk": True,
+        },
+    )
+    return output
+
+
+def _save_generated_array(output_dir: str | Path, *, image_id: int, array: np.ndarray) -> None:
+    output = Path(output_dir)
+    file_name = f"sample_{int(image_id):06d}.npy"
+    preview_name = f"sample_{int(image_id):06d}.png"
+    np.save(output / "images" / file_name, np.asarray(array))
+    _save_preview_png(np.asarray(array), output / "previews" / preview_name)
+
+
+def _generated_sample_exists(output_dir: str | Path, *, image_id: int) -> bool:
+    output = Path(output_dir)
+    return (output / "images" / f"sample_{int(image_id):06d}.npy").is_file()
 
 
 def export_generated_candidate_dataset(
@@ -75,16 +308,18 @@ def export_generated_candidate_dataset(
     generated_arrays: Sequence[np.ndarray],
     dataset_payload: dict[str, Any],
     generator_kind: str,
+    generator_config: Mapping[str, Any] | None = None,
 ) -> Path:
     """Write generated arrays in the candidate format consumed by Experiment B."""
 
     output = Path(output_dir)
     images_dir = output / "images"
+    previews_dir = output / "previews"
     metadata_dir = output / "metadata"
     images_dir.mkdir(parents=True, exist_ok=True)
+    previews_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
-    names = _normalise_names(dataset_payload["names"])
     coco_images: list[dict[str, Any]] = []
     coco_annotations: list[dict[str, Any]] = []
     provenance_rows: list[dict[str, Any]] = []
@@ -92,16 +327,11 @@ def export_generated_candidate_dataset(
 
     for image_id, (sample, generated_array) in enumerate(zip(source_samples, generated_arrays), start=1):
         file_name = f"sample_{image_id:06d}.npy"
+        preview_name = f"sample_{image_id:06d}.png"
         np.save(images_dir / file_name, np.asarray(generated_array))
+        _save_preview_png(np.asarray(generated_array), previews_dir / preview_name)
         image_w, image_h = _image_size_from_array(np.asarray(generated_array))
-        coco_images.append(
-            {
-                "id": image_id,
-                "file_name": file_name,
-                "width": image_w,
-                "height": image_h,
-            }
-        )
+        coco_images.append({"id": image_id, "file_name": file_name, "width": image_w, "height": image_h})
         for object_index, box in enumerate(sample.boxes):
             bbox = box.coco_bbox_abs(image_w=image_w, image_h=image_h)
             coco_annotations.append(
@@ -122,6 +352,7 @@ def export_generated_candidate_dataset(
             {
                 "generated_image_id": image_id,
                 "generated_file_name": file_name,
+                "generated_preview_file_name": preview_name,
                 "source_index": sample.index,
                 "source_image_path": str(sample.image_path),
                 "source_label_path": str(sample.label_path),
@@ -130,139 +361,1124 @@ def export_generated_candidate_dataset(
             }
         )
 
-    (output / "annotations.json").write_text(
-        json.dumps(
-            {
-                "images": coco_images,
-                "annotations": coco_annotations,
-                "categories": [{"id": class_id, "name": name} for class_id, name in sorted(names.items())],
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
-    with (metadata_dir / "provenance.jsonl").open("w", encoding="utf-8") as handle:
-        for row in provenance_rows:
-            handle.write(json.dumps(row, sort_keys=True) + "\n")
-    (metadata_dir / "summary.json").write_text(
-        json.dumps(
-            {
-                "generator_kind": generator_kind,
-                "n_generated_samples": len(generated_arrays),
-                "n_annotations": len(coco_annotations),
-                "source_dataset_yaml": str(dataset_payload.get("_yaml_path", "")),
-                "samples": provenance_rows,
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
+    coco_payload = {
+        "images": coco_images,
+        "annotations": coco_annotations,
+        "categories": _generated_categories(dataset_payload),
+    }
+    _write_json(output / "annotations_unfiltered.json", coco_payload)
+    _write_json(output / "annotations.json", coco_payload)
+    _write_jsonl(metadata_dir / "provenance.jsonl", provenance_rows)
+    _write_json(
+        metadata_dir / "summary.json",
+        {
+            "dataset_id": "yolo_full_train",
+            "split": "train",
+            "selection_mode": "full_train_1_to_1",
+            "generator_kind": generator_kind,
+            "generator_config": dict(generator_config or {}),
+            "n_requested_samples": len(source_samples),
+            "n_generated_samples": len(generated_arrays),
+            "n_annotations_unfiltered": len(coco_annotations),
+            "n_annotations": len(coco_annotations),
+            "source_dataset_yaml": str(dataset_payload.get("_yaml_path", "")),
+            "size_bin_thresholds": _size_bin_thresholds_from_samples(source_samples),
+            "images_dir": "images",
+            "previews_dir": "previews",
+            "annotations_path": "annotations.json",
+            "unfiltered_annotations_path": "annotations_unfiltered.json",
+            "samples": provenance_rows,
+        },
     )
     return output
 
 
-def _pipeline_config(pipeline_dir: str | Path, *, device: str, t_scale: float, train_target: str):
-    return SimpleNamespace(
-        pipeline_dir=str(pipeline_dir),
-        vae_weights=None,
-        t_scale=float(t_scale),
-        train_target=str(train_target),
-        sample_shape=None,
+def _extract_unet_state(checkpoint_path: Path, *, device: str | torch.device) -> dict[str, torch.Tensor]:
+    try:
+        state = torch.load(checkpoint_path, map_location=device)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "PytorchStreamReader" in message or "failed finding central directory" in message:
+            raise RuntimeError(
+                f"Checkpoint is not readable by torch.load: {checkpoint_path}. "
+                "It looks like a truncated or incomplete PyTorch zip checkpoint. "
+                "Regenerate/resync this checkpoint, choose another checkpoint_path, "
+                "or run a different generator with --generators."
+            ) from exc
+        raise
+    if isinstance(state, dict):
+        for key in ("unet_state", "model_state", "state_dict"):
+            if key in state and isinstance(state[key], dict):
+                return state[key]
+    if not isinstance(state, dict):
+        raise TypeError(f"Unsupported checkpoint payload in {checkpoint_path}")
+    return state
+
+
+def validate_generator_checkpoint_readability(
+    checkpoint_path: str | Path,
+) -> tuple[bool, str]:
+    """Cheaply detect corrupt PyTorch zip checkpoints before model construction."""
+
+    path = _repo_path(checkpoint_path)
+    if path is None or not path.is_file():
+        return False, f"missing checkpoint: {checkpoint_path}"
+    try:
+        with path.open("rb") as handle:
+            magic = handle.read(4)
+    except OSError as exc:
+        return False, f"cannot read checkpoint header: {path} ({exc})"
+    if magic.startswith(b"PK") and not zipfile.is_zipfile(path):
+        return (
+            False,
+            f"corrupt PyTorch zip checkpoint: {path} "
+            "(zip central directory is missing; the file is likely truncated/incomplete)",
+        )
+    return True, str(path)
+
+
+def _infer_stay_num_classes(
+    *,
+    state: Mapping[str, Any],
+    dataset_names: Mapping[int, str],
+) -> int:
+    dataset_num_classes = max((int(key) for key in dataset_names), default=-1) + 1
+    checkpoint_num_classes = 0
+    class_embedding = state.get("object_encoder.class_embedding.weight")
+    if isinstance(class_embedding, torch.Tensor) and class_embedding.ndim >= 2:
+        checkpoint_num_classes = int(class_embedding.shape[0])
+    return max(1, dataset_num_classes, checkpoint_num_classes)
+
+
+def _build_vae_from_preset(preset: Mapping[str, Any], *, device: str | torch.device) -> torch.nn.Module:
+    model_cfg = dict(preset.get("model", {}))
+    pretrained_name = model_cfg.get("vae_pretrained_model_name_or_path")
+    if pretrained_name:
+        vae_cfg = load_diffusers_vae_config(
+            str(pretrained_name),
+            subfolder=model_cfg.get("vae_pretrained_subfolder", "vae"),
+            revision=model_cfg.get("vae_revision"),
+            variant=model_cfg.get("vae_variant"),
+        )
+    elif model_cfg.get("vae_config"):
+        vae_cfg = load_vae_config(str(_repo_path(model_cfg["vae_config"])))
+    else:
+        raise ValueError("Generator preset must define either a VAE config or a pretrained diffusers VAE.")
+
+    vae = build_vae_from_config(vae_cfg, device=device)
+    vae_weights = model_cfg.get("vae_weights")
+    if vae_weights:
+        load_vae_weights(vae, str(_repo_path(vae_weights)), map_location=device)
+    freeze_vae(vae)
+    return vae
+
+
+def _load_stay_sampler(
+    *,
+    generator_cfg: Mapping[str, Any],
+    dataset_payload: Mapping[str, Any],
+    device: str | torch.device,
+) -> tuple[LayoutFlowMatchingSampler, int]:
+    checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
+    preset_path = _repo_path(generator_cfg["preset_path"])
+    if checkpoint_path is None or not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Missing STAY checkpoint: {generator_cfg['checkpoint_path']}")
+    if preset_path is None or not preset_path.is_file():
+        raise FileNotFoundError(f"Missing STAY preset: {generator_cfg['preset_path']}")
+
+    preset = _load_yaml(preset_path)
+    model_cfg = dict(preset.get("model", {}))
+    layout_cfg = dict(preset.get("layout_conditioning", {}))
+    names = _normalise_names(dataset_payload["names"])
+    unet_state = _extract_unet_state(checkpoint_path, device=device)
+    num_classes = _infer_stay_num_classes(state=unet_state, dataset_names=names)
+    unet_cfg = load_unet_config(str(_repo_path(model_cfg["unet_config"])))
+    image_in_channels = int(unet_cfg.get("in_channels", 4))
+    unet = build_stay_layout_conditioned_unet(
+        unet_cfg,
+        image_in_channels=image_in_channels,
+        num_classes=num_classes,
+        class_embed_dim=int(layout_cfg.get("class_embed_dim", 48)),
+        bbox_embed_dim=int(layout_cfg.get("bbox_embed_dim", 48)),
+        object_embed_dim=int(layout_cfg.get("object_embed_dim", 64)),
+        use_style_latent=bool(layout_cfg.get("use_style_latent", True)),
+        style_latent_dim=int(layout_cfg.get("style_latent_dim", 16)),
+        style_seed=int(layout_cfg.get("style_seed", 1234)),
+        mask_resolution=int(layout_cfg.get("mask_resolution", 16)),
+        mask_hidden_channels=int(layout_cfg.get("mask_hidden_channels", 32)),
+        mask_threshold=float(layout_cfg.get("mask_threshold", 0.5)),
+        edge_dilation=int(layout_cfg.get("edge_dilation", 1)),
+        injection_mode=str(layout_cfg.get("injection_mode", "ea_norm")),
+        use_masked_context=bool(layout_cfg.get("use_masked_context", True)),
+        mask_overlap_loss_weight=float(layout_cfg.get("mask_overlap_loss_weight", 0.0)),
+        mask_sharpness_loss_weight=float(layout_cfg.get("mask_sharpness_loss_weight", 0.0)),
+        mask_activation_loss_weight=float(layout_cfg.get("mask_activation_loss_weight", 0.0)),
+        category_id_to_name=names,
+        device=str(device),
+    )
+    unet.load_state_dict(unet_state, strict=True)
+    unet.eval()
+    sampler = LayoutFlowMatchingSampler.from_stable(
+        unet,
+        _build_vae_from_preset(preset, device=device),
         device=device,
-        resolved_device=lambda: device,
+        t_scale=float(preset.get("training", {}).get("t_scale", 1000.0)),
+        train_target=str(preset.get("training", {}).get("train_target", "v")),
     )
+    return sampler, int(preset.get("data", {}).get("image_size", 512))
 
 
-def generate_fm_regiondiff_arrays(
+def _load_regiondiff_sampler(
     *,
-    pipeline_dir: str | Path,
-    batches: Sequence[dict[str, Any]],
+    generator_cfg: Mapping[str, Any],
+    dataset_payload: Mapping[str, Any],
+    device: str | torch.device,
+) -> tuple[FlowMatchingSampler, int]:
+    checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
+    preset_path = _repo_path(generator_cfg["preset_path"])
+    if checkpoint_path is None or not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Missing RegionDiff checkpoint: {generator_cfg['checkpoint_path']}")
+    if preset_path is None or not preset_path.is_file():
+        raise FileNotFoundError(f"Missing RegionDiff preset: {generator_cfg['preset_path']}")
+
+    preset = _load_yaml(preset_path)
+    model_cfg = dict(preset.get("model", {}))
+    region_cfg = dict(preset.get("layout_conditioning", {}))
+    names = _normalise_names(dataset_payload["names"])
+    base_unet = build_fm_unet_from_config(load_unet_config(str(_repo_path(model_cfg["unet_config"]))), device=str(device))
+    unet = build_regiondiff_wrapper(
+        base_model=base_unet,
+        region_config=region_cfg,
+        category_id_to_name=names,
+        backbone_kind="fm_unet2d",
+        attachment_kind=str(region_cfg.get("attachment_kind", "attention")),
+    ).to(device)
+    unet.load_state_dict(_extract_unet_state(checkpoint_path, device=device), strict=True)
+    unet.eval()
+    sampler = FlowMatchingSampler.from_stable(
+        unet,
+        _build_vae_from_preset(preset, device=device),
+        device=device,
+        t_scale=float(preset.get("training", {}).get("t_scale", 1000.0)),
+        train_target=str(preset.get("training", {}).get("train_target", "v")),
+    )
+    return sampler, int(preset.get("data", {}).get("image_size", 512))
+
+
+def generate_stay_fm_arrays(
+    *,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: Mapping[str, Any],
     device: str,
-    steps: int,
     seed: int,
-    t_scale: float,
-    train_target: str,
 ) -> list[np.ndarray]:
-    sampler = FlowMatchingSampler.from_config(
-        _pipeline_config(pipeline_dir, device=device, t_scale=t_scale, train_target=train_target)
+    sampler, image_size = _load_stay_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
+    names = _normalise_names(dataset_payload["names"])
+    layout_batches = build_layout_batches(
+        source_samples,
+        image_size=image_size,
+        names=names,
+        batch_size=int(generator_cfg.get("batch_size", 8)),
     )
     arrays: list[np.ndarray] = []
-    for batch_idx, batch in enumerate(tqdm(batches, desc="FM RegionDiff smoke generation")):
-        z = sampler.sample_euler_layout(batch, steps=steps, seed=seed + batch_idx)
-        decoded = sampler.decode(z)
-        arrays.extend(image.detach().cpu().to(torch.float32).numpy() for image in decoded)
+    start_idx = 0
+    for batch in tqdm(layout_batches, desc=f"{generator_cfg.get('name', 'stay_fm')} generation"):
+        generated = sample_layout_batch(
+            sampler,
+            batch,
+            steps=int(generator_cfg.get("steps", 50)),
+            seed=int(seed) + start_idx,
+        )
+        arrays.extend(image.detach().cpu().to(torch.float32).numpy() for image in generated)
+        start_idx += int(batch["pixel_values"].shape[0])
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
     return arrays
 
 
-def generate_dm_regiondiff_arrays(
+def generate_stay_fm_dataset(
     *,
-    pipeline_dir: str | Path,
-    batches: Sequence[dict[str, Any]],
+    output_dir: str | Path,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
     device: str,
-    steps: int,
+    seed: int,
+    image_ids: Sequence[int] | None = None,
+    initialize: bool = True,
+    resume: bool = False,
+) -> int:
+    sampler, image_size = _load_stay_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
+    if initialize:
+        initialize_generated_candidate_dataset(
+            output_dir=output_dir,
+            source_samples=source_samples,
+            dataset_payload=dataset_payload,
+            generator_kind=str(generator_cfg.get("backend", "stay_fm")),
+            generator_config=generator_cfg,
+            image_size=image_size,
+        )
+    names = _normalise_names(dataset_payload["names"])
+    ids = list(image_ids) if image_ids is not None else list(range(1, len(source_samples) + 1))
+    batch_size = max(1, int(generator_cfg.get("batch_size", 8)))
+    generated_count = 0
+    for start_idx in tqdm(range(0, len(source_samples), batch_size), desc=f"{generator_cfg.get('name', 'stay_fm')} generation"):
+        chunk_samples = source_samples[start_idx : start_idx + batch_size]
+        chunk_ids = ids[start_idx : start_idx + batch_size]
+        pending = [
+            (sample, image_id)
+            for sample, image_id in zip(chunk_samples, chunk_ids)
+            if not (resume and _generated_sample_exists(output_dir, image_id=int(image_id)))
+        ]
+        generated_count += len(chunk_samples) - len(pending)
+        if not pending:
+            continue
+        batch = collate_layout_batch([
+            _sample_to_layout_dict(sample, image_size=image_size, names=names)
+            for sample, _image_id in pending
+        ])
+        generated = sample_layout_batch(
+            sampler,
+            batch,
+            steps=int(generator_cfg.get("steps", 50)),
+            seed=int(seed) + start_idx,
+        )
+        for (_sample, image_id), image in zip(pending, generated):
+            _save_generated_array(output_dir, image_id=int(image_id), array=image.detach().cpu().to(torch.float32).numpy())
+            generated_count += 1
+        del generated
+        del batch
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return generated_count
+
+
+def generate_regiondiff_fm_arrays(
+    *,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: Mapping[str, Any],
+    device: str,
     seed: int,
 ) -> list[np.ndarray]:
-    cfg = SimpleNamespace(
-        output=SimpleNamespace(model_dir=str(pipeline_dir)),
-        sampling=SimpleNamespace(sample_shape=None),
-        resolved_device=lambda: device,
+    sampler, image_size = _load_regiondiff_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
+    names = _normalise_names(dataset_payload["names"])
+    layout_batches = build_layout_batches(
+        source_samples,
+        image_size=image_size,
+        names=names,
+        batch_size=int(generator_cfg.get("batch_size", 8)),
     )
-    sampler = UnconditionalStableDiffusionSampler.from_config(cfg)
     arrays: list[np.ndarray] = []
-    for batch_idx, batch in enumerate(tqdm(batches, desc="DM RegionDiff smoke generation")):
-        z = sampler.sample_layout(batch, steps=steps, seed=seed + batch_idx)
-        decoded = sampler.decode(z)
-        arrays.extend(image.detach().cpu().to(torch.float32).numpy() for image in decoded)
+    start_idx = 0
+    for batch in tqdm(layout_batches, desc=f"{generator_cfg.get('name', 'regiondiff_fm')} generation"):
+        z = sampler.sample_euler_layout(
+            batch,
+            steps=int(generator_cfg.get("steps", 50)),
+            seed=int(seed) + start_idx,
+        )
+        decoded = sampler.decode(z).detach().cpu()
+        arrays.extend(image.to(torch.float32).numpy() for image in decoded)
+        start_idx += int(batch["pixel_values"].shape[0])
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
     return arrays
 
 
-def generate_sd15_regiondiff_arrays(
+def generate_regiondiff_fm_dataset(
     *,
-    stage2_dir: str | Path,
-    samples: Sequence[YOLOTrainSample],
-    names: dict[int, str],
+    output_dir: str | Path,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
     device: str,
-    steps: int,
     seed: int,
-    guidance_scale: float,
-    precision: str,
-) -> list[np.ndarray]:
-    dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
-    weight_dtype = dtype_map[str(precision)]
-    pipe, manifest = load_stage2_layout_pipeline(stage2_dir=str(stage2_dir), torch_dtype=weight_dtype)
-    pipe.to(device)
-    normalization_mode = str(manifest.get("normalization_mode", RAW_UINT16_PERCENTILE))
-    arrays: list[np.ndarray] = []
-    for idx, sample in enumerate(tqdm(samples, desc="SD1.5 RegionDiff smoke generation")):
-        batch = collate_layout_batch([_sample_to_layout_dict(sample, image_size=512, names=names)])
-        label_names = [names.get(box.class_id, str(box.class_id)) for box in sample.boxes]
-        prompt = build_layout_prompt(
-            label_names=label_names,
-            prompt_mode="class_list",
-            constant_prompt="thermal image",
-            thermal_scene_suffix="in thermal scene.",
-            caption=None,
-            use_captions_if_available=False,
+    image_ids: Sequence[int] | None = None,
+    initialize: bool = True,
+    resume: bool = False,
+) -> int:
+    sampler, image_size = _load_regiondiff_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
+    if initialize:
+        initialize_generated_candidate_dataset(
+            output_dir=output_dir,
+            source_samples=source_samples,
+            dataset_payload=dataset_payload,
+            generator_kind=str(generator_cfg.get("backend", "regiondiff_fm")),
+            generator_config=generator_cfg,
+            image_size=image_size,
         )
-        generator = torch.Generator(device=device).manual_seed(int(seed) + idx)
-        result = pipe(
-            prompt,
-            num_inference_steps=int(steps),
-            guidance_scale=float(guidance_scale),
-            generator=generator,
-            cross_attention_kwargs={
-                "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(device=device),
-                "labels": batch["labels"].to(device=device),
-                "object_mask": batch["object_mask"].to(device=device),
-            },
+    names = _normalise_names(dataset_payload["names"])
+    ids = list(image_ids) if image_ids is not None else list(range(1, len(source_samples) + 1))
+    batch_size = max(1, int(generator_cfg.get("batch_size", 8)))
+    generated_count = 0
+    for start_idx in tqdm(range(0, len(source_samples), batch_size), desc=f"{generator_cfg.get('name', 'regiondiff_fm')} generation"):
+        chunk_samples = source_samples[start_idx : start_idx + batch_size]
+        chunk_ids = ids[start_idx : start_idx + batch_size]
+        pending = [
+            (sample, image_id)
+            for sample, image_id in zip(chunk_samples, chunk_ids)
+            if not (resume and _generated_sample_exists(output_dir, image_id=int(image_id)))
+        ]
+        generated_count += len(chunk_samples) - len(pending)
+        if not pending:
+            continue
+        batch = collate_layout_batch([
+            _sample_to_layout_dict(sample, image_size=image_size, names=names)
+            for sample, _image_id in pending
+        ])
+        z = sampler.sample_euler_layout(
+            batch,
+            steps=int(generator_cfg.get("steps", 50)),
+            seed=int(seed) + start_idx,
         )
-        image = result.images[0]
-        if isinstance(image, Image.Image):
-            arrays.append(sd_output_to_npy(image, normalization_mode=normalization_mode))
+        decoded = sampler.decode(z).detach().cpu()
+        for (_sample, image_id), image in zip(pending, decoded):
+            _save_generated_array(output_dir, image_id=int(image_id), array=image.to(torch.float32).numpy())
+            generated_count += 1
+        del decoded
+        del z
+        del batch
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return generated_count
+
+
+GENERATOR_BACKENDS: dict[str, Callable[..., list[np.ndarray]]] = {
+    "stay_fm": generate_stay_fm_arrays,
+    "regiondiff_fm": generate_regiondiff_fm_arrays,
+}
+
+STREAMING_GENERATOR_BACKENDS: dict[str, Callable[..., int]] = {
+    "stay_fm": generate_stay_fm_dataset,
+    "regiondiff_fm": generate_regiondiff_fm_dataset,
+}
+
+
+def write_filtered_annotations_from_audit(
+    *,
+    dataset_dir: str | Path,
+    instance_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Keep all generated images, but remove annotations marked invalid."""
+
+    dataset_dir = Path(dataset_dir)
+    unfiltered_path = dataset_dir / "annotations_unfiltered.json"
+    annotations_path = dataset_dir / "annotations.json"
+    if not unfiltered_path.is_file():
+        shutil.copy2(annotations_path, unfiltered_path)
+    payload = json.loads(unfiltered_path.read_text(encoding="utf-8"))
+    valid_annotation_ids = {
+        int(row["annotation_id"])
+        for row in instance_rows
+        if bool(row.get("is_positive", False))
+    }
+    filtered_annotations = [
+        ann for ann in payload.get("annotations", [])
+        if int(ann.get("id", -1)) in valid_annotation_ids
+    ]
+    filtered_payload = {
+        "images": list(payload.get("images", [])),
+        "annotations": filtered_annotations,
+        "categories": list(payload.get("categories", [])),
+    }
+    _write_json(annotations_path, filtered_payload)
+
+    total = len(payload.get("annotations", []))
+    summary = {
+        "n_images": len(filtered_payload["images"]),
+        "n_annotations_unfiltered": int(total),
+        "n_annotations": int(len(filtered_annotations)),
+        "n_invalid_annotations_removed": int(total - len(filtered_annotations)),
+    }
+    _write_json(dataset_dir / "metadata" / "filtered_annotation_summary.json", summary)
+
+    metadata_path = dataset_dir / "metadata" / "summary.json"
+    if metadata_path.is_file():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata.update(summary)
+        metadata["annotations_path"] = "annotations.json"
+        metadata["unfiltered_annotations_path"] = "annotations_unfiltered.json"
+        _write_json(metadata_path, metadata)
+    return summary
+
+
+def _load_filter(config: Mapping[str, Any], *, device: str) -> tuple[torch.nn.Module, dict[str, Any], Any, int, float, Path | None]:
+    filter_cfg = dict(config.get("filter", {}))
+    run_dir = filter_cfg.get("run_dir") or filter_cfg.get("filter_run_dir") or DEFAULT_FILTER_RUN_DIR
+    checkpoint_path = filter_cfg.get("checkpoint_path")
+    model, summary, threshold, input_size, context_ratio, resolved_run_dir = load_filter_from_run_or_checkpoint(
+        device=device,
+        run_dir=run_dir if checkpoint_path in (None, "") else None,
+        checkpoint_path=checkpoint_path or None,
+        threshold_override=None,
+    )
+    if str(summary.get("classifier_mode", "")) != "multiclass":
+        raise ValueError("Production synthetic filtering requires a multiclass foreground/background filter.")
+    return model, summary, threshold, input_size, context_ratio, resolved_run_dir
+
+
+def _audit_and_filter_dataset(
+    *,
+    dataset_dir: str | Path,
+    config: Mapping[str, Any],
+    device: str,
+) -> dict[str, Any]:
+    model, summary, threshold, input_size, context_ratio, resolved_run_dir = _load_filter(config, device=device)
+    audit_summary, _instance_rows, _image_rows = _audit_dataset_with_loaded_filter(
+        dataset_dir=dataset_dir,
+        config=config,
+        device=device,
+        model=model,
+        summary=summary,
+        threshold=threshold,
+        input_size=input_size,
+        context_ratio=context_ratio,
+        resolved_run_dir=resolved_run_dir,
+        write_filtered_annotations=True,
+    )
+    return audit_summary
+
+
+def _audit_dataset_with_loaded_filter(
+    *,
+    dataset_dir: str | Path,
+    config: Mapping[str, Any],
+    device: str,
+    model: torch.nn.Module,
+    summary: Mapping[str, Any],
+    threshold: Any,
+    input_size: int,
+    context_ratio: float,
+    resolved_run_dir: Path | None,
+    write_filtered_annotations: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    filter_cfg = dict(config.get("filter", {}))
+    instance_rows, image_rows, stats = audit_generated_layout_dataset(
+        dataset_dir=dataset_dir,
+        filter_model=model,
+        threshold=threshold,
+        filter_input_size=input_size,
+        context_ratio=context_ratio,
+        device=device,
+        crop_batch_size=int(filter_cfg.get("batch_size", 64)),
+        show_progress=True,
+        classifier_summary=summary,
+    )
+    audit_dir = Path(dataset_dir) / "filter_audit"
+    export_audit_results(
+        output_dir=audit_dir,
+        summary={
+            "generated_dataset_dir": str(Path(dataset_dir)),
+            "filter_run_dir": None if resolved_run_dir is None else str(resolved_run_dir),
+            "checkpoint_summary": summary,
+            "threshold": dict(threshold) if isinstance(threshold, dict) else float(threshold),
+            "input_size": int(input_size),
+            "context_ratio": float(context_ratio),
+            "max_discarded_valid_threshold": 1.0,
+            "score_alpha": 1.0,
+            "score_beta": 1.0,
+            "stats": stats,
+            "min_valid_object_fraction_sweep": "",
+        },
+        instance_rows=instance_rows,
+        image_rows=image_rows,
+    )
+    filtered_summary = (
+        write_filtered_annotations_from_audit(dataset_dir=dataset_dir, instance_rows=instance_rows)
+        if write_filtered_annotations
+        else {"enabled": False}
+    )
+    return {
+        "audit_dir": str(audit_dir),
+        "filter_run_dir": None if resolved_run_dir is None else str(resolved_run_dir),
+        "filter_stats": stats,
+        "filtered_annotation_summary": filtered_summary,
+    }, instance_rows, image_rows
+
+
+def render_sanity_check_images(
+    *,
+    dataset_dir: str | Path,
+    max_images: int = 24,
+) -> list[str]:
+    """Render generated images with valid/invalid boxes and classifier scores."""
+
+    dataset_dir = Path(dataset_dir)
+    audit_path = dataset_dir / "filter_audit" / "per_instance_manifest.jsonl"
+    if not audit_path.is_file():
+        return []
+    rows_by_image: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    with audit_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                row = json.loads(line)
+                rows_by_image[int(row["generated_image_id"])].append(row)
+
+    output_dir = dataset_dir / "sanity_checks"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths: list[str] = []
+    for image_id in sorted(rows_by_image)[: max(0, int(max_images))]:
+        rows = rows_by_image[image_id]
+        image_path = dataset_dir / "images" / str(rows[0]["generated_file_name"])
+        canvas = Image.fromarray(_array_to_png_uint8(np.load(image_path)), mode="L").convert("RGB")
+        draw = ImageDraw.Draw(canvas)
+        for row in rows:
+            color = "#18a558" if bool(row.get("is_positive", False)) else "#d1495b"
+            x1, y1, x2, y2 = [float(value) for value in row["bbox_xyxy"]]
+            draw.rectangle((x1, y1, x2, y2), outline=color, width=2)
+            text = (
+                f"{row.get('expected_category_name')} -> {row.get('predicted_category_name')} "
+                f"p={float(row.get('expected_class_probability', row.get('probability', 0.0))):.2f}"
+            )
+            tx = max(0, int(x1))
+            ty = max(0, int(y1) - 12)
+            draw.rectangle((tx, ty, tx + min(280, 7 * len(text)), ty + 11), fill=(0, 0, 0))
+            draw.text((tx + 2, ty), text, fill=color)
+        output_path = output_dir / f"sample_{image_id:06d}.png"
+        canvas.save(output_path)
+        saved_paths.append(str(output_path))
+    _write_json(output_dir / "summary.json", {"paths": saved_paths, "n_images": len(saved_paths)})
+    return saved_paths
+
+
+def render_filter_crop_contact_sheets(
+    *,
+    dataset_dir: str | Path,
+    max_crops_per_sheet: int = 24,
+) -> list[str]:
+    """Save quick valid/invalid bbox crop sheets from the filter audit manifest."""
+
+    dataset_dir = Path(dataset_dir)
+    audit_path = dataset_dir / "filter_audit" / "per_instance_manifest.jsonl"
+    if not audit_path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    with audit_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                rows.append(json.loads(line))
+    saved: list[str] = []
+    output_dir = dataset_dir / "sanity_checks"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for label, want_positive in (("valid", True), ("invalid", False)):
+        selected = [row for row in rows if bool(row.get("is_positive", False)) is want_positive][: max(0, int(max_crops_per_sheet))]
+        if not selected:
+            continue
+        thumbs: list[Image.Image] = []
+        for row in selected:
+            image_path = dataset_dir / "images" / str(row["generated_file_name"])
+            image = _array_to_png_uint8(np.load(image_path))
+            x1, y1, x2, y2 = [int(round(float(v))) for v in row["bbox_xyxy"]]
+            crop = image[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
+            if crop.size == 0:
+                crop = np.zeros((8, 8), dtype=np.uint8)
+            tile = Image.fromarray(crop, mode="L").convert("RGB").resize((96, 96))
+            draw = ImageDraw.Draw(tile)
+            text = (
+                f"{row.get('expected_category_name')}->{row.get('predicted_category_name')}\n"
+                f"p={float(row.get('expected_class_probability', row.get('probability', 0.0))):.2f}"
+            )
+            draw.rectangle((0, 72, 96, 96), fill=(0, 0, 0))
+            draw.text((2, 74), text, fill=(24, 165, 88) if want_positive else (209, 73, 91))
+            thumbs.append(tile)
+        cols = min(6, len(thumbs))
+        rows_n = int(math.ceil(len(thumbs) / cols))
+        sheet = Image.new("RGB", (cols * 96, rows_n * 96), color=(20, 20, 20))
+        for idx, tile in enumerate(thumbs):
+            sheet.paste(tile, ((idx % cols) * 96, (idx // cols) * 96))
+        output_path = output_dir / f"{label}_bbox_crops.png"
+        sheet.save(output_path)
+        saved.append(str(output_path))
+    return saved
+
+
+def compute_metric_summary_from_features(
+    real_features: np.ndarray,
+    generated_features: np.ndarray,
+    *,
+    kid_subsets: int,
+    kid_subset_size: int,
+    kid_seed: int,
+    mmd_bandwidths: Sequence[float],
+) -> dict[str, Any]:
+    if min(len(real_features), len(generated_features)) < 2:
+        return {
+            "skipped": True,
+            "reason": "At least two real and two generated samples are required.",
+            "fid": None,
+            "kid": None,
+            "mmd": None,
+        }
+    active_kid_subset = min(int(kid_subset_size), int(real_features.shape[0]), int(generated_features.shape[0]))
+    return {
+        "skipped": False,
+        "fid": compute_fid(real_features, generated_features),
+        "kid": compute_kid(
+            real_features,
+            generated_features,
+            subsets=int(kid_subsets),
+            subset_size=active_kid_subset,
+            seed=int(kid_seed),
+        ),
+        "mmd": compute_rbf_mmd(real_features, generated_features, bandwidths=mmd_bandwidths),
+        "kid_subset_size": int(active_kid_subset),
+    }
+
+
+def compute_distribution_metrics(
+    *,
+    dataset_dir: str | Path,
+    source_samples: Sequence[YOLOTrainSample],
+    config: Mapping[str, Any],
+    device: str,
+    seed: int,
+) -> dict[str, Any]:
+    metrics_cfg = dict(config.get("metrics", {}))
+    if not bool(metrics_cfg.get("enabled", True)):
+        return {"enabled": False}
+    dataset_dir = Path(dataset_dir)
+    metrics_dir = dataset_dir / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    real_paths = [sample.image_path for sample in source_samples]
+    generated_paths = sorted((dataset_dir / "previews").glob("sample_*.png"))
+    if min(len(real_paths), len(generated_paths)) < 2:
+        summary = {
+            "enabled": True,
+            "skipped": True,
+            "reason": "At least two real and two generated images are required.",
+            "num_real": len(real_paths),
+            "num_generated": len(generated_paths),
+        }
+        _write_json(metrics_dir / "summary.json", summary)
+        _write_csv(metrics_dir / "summary.csv", [summary])
+        return summary
+
+    extractor_name = str(metrics_cfg.get("feature_extractor", "inception"))
+    extractor = build_feature_extractor(extractor_name, metrics_cfg, device)
+    batch_size = int(metrics_cfg.get("batch_size", 16))
+    force = bool(metrics_cfg.get("force", False))
+    real_features = extract_features(
+        real_paths,
+        extractor,
+        batch_size=batch_size,
+        cache_path=metrics_dir / f"real_{extractor_name}_features.npz",
+        force=force,
+        metadata={"source": "real"},
+    )
+    generated_features = extract_features(
+        generated_paths,
+        extractor,
+        batch_size=batch_size,
+        cache_path=metrics_dir / f"generated_{extractor_name}_features.npz",
+        force=force,
+        metadata={"source": "generated"},
+    )
+    summary = {
+        "enabled": True,
+        "feature_extractor": extractor_name,
+        "num_real": int(real_features.shape[0]),
+        "num_generated": int(generated_features.shape[0]),
+        **compute_metric_summary_from_features(
+            real_features,
+            generated_features,
+            kid_subsets=int(metrics_cfg.get("kid", {}).get("subsets", 100)),
+            kid_subset_size=int(metrics_cfg.get("kid", {}).get("subset_size", 1000)),
+            kid_seed=int(metrics_cfg.get("kid", {}).get("seed", seed)),
+            mmd_bandwidths=metrics_cfg.get("mmd", {}).get("bandwidths", [0.1, 1.0, 10.0]),
+        ),
+    }
+    _write_json(metrics_dir / "summary.json", summary)
+    _write_csv(metrics_dir / "summary.csv", [summary])
+    return summary
+
+
+def load_generation_config(config_path: str | Path | None) -> dict[str, Any]:
+    if config_path is None:
+        config_path = DEFAULT_CONFIG_PATH
+    path = _repo_path(config_path)
+    if path is None or not path.is_file():
+        return {}
+    return _load_yaml(path)
+
+
+def _select_generators(config: Mapping[str, Any], names: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    generators = [dict(item) for item in config.get("generators", [])]
+    if not generators:
+        raise ValueError("Synthetic generation config must define at least one generator.")
+    if names:
+        wanted = {str(name) for name in names}
+        generators = [item for item in generators if str(item.get("name")) in wanted]
+        missing = wanted.difference(str(item.get("name")) for item in generators)
+        if missing:
+            raise ValueError(f"Unknown generator name(s): {sorted(missing)}")
+    return generators
+
+
+def _retry_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    retry_cfg = dict(config.get("retry", {}))
+    threshold = float(retry_cfg.get("invalid_instance_ratio_threshold", 0.5))
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("retry.invalid_instance_ratio_threshold must be in [0, 1].")
+    max_tries = int(retry_cfg.get("max_tries", 1))
+    if max_tries < 1:
+        raise ValueError("retry.max_tries must be >= 1.")
+    return {
+        "enabled": bool(retry_cfg.get("enabled", max_tries > 1)),
+        "invalid_instance_ratio_threshold": threshold,
+        "max_tries": max_tries,
+        "seed_stride": int(retry_cfg.get("seed_stride", 1_000_000)),
+    }
+
+
+def _invalid_ratio_from_image_row(row: Mapping[str, Any]) -> float:
+    return float(int(row.get("n_negative_instances", 0) or 0) / max(1, int(row.get("n_instances", 0) or 0)))
+
+
+def _retry_generation_with_filter(
+    *,
+    output_dir: Path,
+    source_samples: Sequence[YOLOTrainSample],
+    initial_arrays: Sequence[np.ndarray],
+    dataset_payload: dict[str, Any],
+    generator_kind: str,
+    generator_config: Mapping[str, Any],
+    backend: Callable[..., list[np.ndarray]],
+    active_config: Mapping[str, Any],
+    device: str,
+    seed: int,
+) -> tuple[list[np.ndarray], dict[str, Any], dict[str, Any]]:
+    retry_cfg = _retry_config(active_config)
+    arrays = [np.asarray(array) for array in initial_arrays]
+    model, summary, threshold, input_size, context_ratio, resolved_run_dir = _load_filter(active_config, device=device)
+    max_tries = int(retry_cfg["max_tries"]) if bool(retry_cfg["enabled"]) else 1
+    invalid_threshold = float(retry_cfg["invalid_instance_ratio_threshold"])
+    seed_stride = int(retry_cfg["seed_stride"])
+    retry_rows: list[dict[str, Any]] = []
+    final_audit: dict[str, Any] = {"enabled": False}
+
+    for attempt_idx in range(1, max_tries + 1):
+        export_generated_candidate_dataset(
+            output_dir=output_dir,
+            source_samples=source_samples,
+            generated_arrays=arrays,
+            dataset_payload=dataset_payload,
+            generator_kind=generator_kind,
+            generator_config=generator_config,
+        )
+        final_audit, _instance_rows, image_rows = _audit_dataset_with_loaded_filter(
+            dataset_dir=output_dir,
+            config=active_config,
+            device=device,
+            model=model,
+            summary=summary,
+            threshold=threshold,
+            input_size=input_size,
+            context_ratio=context_ratio,
+            resolved_run_dir=resolved_run_dir,
+            write_filtered_annotations=True,
+        )
+        failed_image_ids: list[int] = []
+        for row in image_rows:
+            image_id = int(row["generated_image_id"])
+            invalid_ratio = _invalid_ratio_from_image_row(row)
+            should_retry = bool(invalid_ratio > invalid_threshold and attempt_idx < max_tries)
+            if should_retry:
+                failed_image_ids.append(image_id)
+            retry_rows.append(
+                {
+                    "generated_image_id": image_id,
+                    "generated_file_name": row.get("generated_file_name"),
+                    "attempt": attempt_idx,
+                    "n_instances": int(row.get("n_instances", 0) or 0),
+                    "n_invalid_instances": int(row.get("n_negative_instances", 0) or 0),
+                    "invalid_instance_ratio": invalid_ratio,
+                    "retry_threshold": invalid_threshold,
+                    "will_retry": should_retry,
+                    "accepted": bool(invalid_ratio <= invalid_threshold or attempt_idx >= max_tries),
+                    "exhausted_max_tries": bool(invalid_ratio > invalid_threshold and attempt_idx >= max_tries),
+                }
+            )
+        if not failed_image_ids:
+            break
+
+        failed_samples = [source_samples[image_id - 1] for image_id in failed_image_ids]
+        retry_seed = int(seed) + seed_stride * attempt_idx
+        regenerated_arrays = backend(
+            generator_cfg=generator_config,
+            source_samples=failed_samples,
+            dataset_payload=dataset_payload,
+            device=device,
+            seed=retry_seed,
+        )
+        if len(regenerated_arrays) != len(failed_image_ids):
+            raise RuntimeError(
+                f"Retry generated {len(regenerated_arrays)} images for {len(failed_image_ids)} failed source images."
+            )
+        for image_id, regenerated_array in zip(failed_image_ids, regenerated_arrays):
+            arrays[image_id - 1] = np.asarray(regenerated_array)
+
+    final_by_image: dict[int, dict[str, Any]] = {}
+    for row in retry_rows:
+        final_by_image[int(row["generated_image_id"])] = row
+    retry_summary = {
+        "enabled": bool(retry_cfg["enabled"]),
+        "max_tries": max_tries,
+        "invalid_instance_ratio_threshold": invalid_threshold,
+        "n_images": len(source_samples),
+        "n_attempt_rows": len(retry_rows),
+        "n_retried_images": len({int(row["generated_image_id"]) for row in retry_rows if bool(row.get("will_retry", False))}),
+        "n_exhausted_images": sum(int(bool(row.get("exhausted_max_tries", False))) for row in final_by_image.values()),
+        "per_image_manifest_path": "metadata/retry_manifest.jsonl",
+    }
+    _write_jsonl(output_dir / "metadata" / "retry_manifest.jsonl", retry_rows)
+    _write_json(output_dir / "metadata" / "retry_summary.json", retry_summary)
+    return arrays, final_audit, retry_summary
+
+
+def _retry_streamed_generation_with_filter(
+    *,
+    output_dir: Path,
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
+    generator_config: Mapping[str, Any],
+    streaming_backend: Callable[..., int],
+    active_config: Mapping[str, Any],
+    device: str,
+    seed: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    retry_cfg = _retry_config(active_config)
+    model, summary, threshold, input_size, context_ratio, resolved_run_dir = _load_filter(active_config, device=device)
+    max_tries = int(retry_cfg["max_tries"]) if bool(retry_cfg["enabled"]) else 1
+    invalid_threshold = float(retry_cfg["invalid_instance_ratio_threshold"])
+    seed_stride = int(retry_cfg["seed_stride"])
+    retry_rows: list[dict[str, Any]] = []
+    final_audit: dict[str, Any] = {"enabled": False}
+
+    for attempt_idx in range(1, max_tries + 1):
+        final_audit, _instance_rows, image_rows = _audit_dataset_with_loaded_filter(
+            dataset_dir=output_dir,
+            config=active_config,
+            device=device,
+            model=model,
+            summary=summary,
+            threshold=threshold,
+            input_size=input_size,
+            context_ratio=context_ratio,
+            resolved_run_dir=resolved_run_dir,
+            write_filtered_annotations=True,
+        )
+        failed_image_ids: list[int] = []
+        for row in image_rows:
+            image_id = int(row["generated_image_id"])
+            invalid_ratio = _invalid_ratio_from_image_row(row)
+            should_retry = bool(invalid_ratio > invalid_threshold and attempt_idx < max_tries)
+            if should_retry:
+                failed_image_ids.append(image_id)
+            retry_rows.append(
+                {
+                    "generated_image_id": image_id,
+                    "generated_file_name": row.get("generated_file_name"),
+                    "attempt": attempt_idx,
+                    "n_instances": int(row.get("n_instances", 0) or 0),
+                    "n_invalid_instances": int(row.get("n_negative_instances", 0) or 0),
+                    "invalid_instance_ratio": invalid_ratio,
+                    "retry_threshold": invalid_threshold,
+                    "will_retry": should_retry,
+                    "accepted": bool(invalid_ratio <= invalid_threshold or attempt_idx >= max_tries),
+                    "exhausted_max_tries": bool(invalid_ratio > invalid_threshold and attempt_idx >= max_tries),
+                }
+            )
+        if not failed_image_ids:
+            break
+
+        failed_samples = [source_samples[image_id - 1] for image_id in failed_image_ids]
+        retry_seed = int(seed) + seed_stride * attempt_idx
+        regenerated_count = streaming_backend(
+            output_dir=output_dir,
+            generator_cfg=generator_config,
+            source_samples=failed_samples,
+            dataset_payload=dataset_payload,
+            device=device,
+            seed=retry_seed,
+            image_ids=failed_image_ids,
+            initialize=False,
+            resume=False,
+        )
+        if int(regenerated_count) != len(failed_image_ids):
+            raise RuntimeError(
+                f"Retry generated {regenerated_count} images for {len(failed_image_ids)} failed source images."
+            )
+
+    final_by_image: dict[int, dict[str, Any]] = {}
+    for row in retry_rows:
+        final_by_image[int(row["generated_image_id"])] = row
+    retry_summary = {
+        "enabled": bool(retry_cfg["enabled"]),
+        "max_tries": max_tries,
+        "invalid_instance_ratio_threshold": invalid_threshold,
+        "n_images": len(source_samples),
+        "n_attempt_rows": len(retry_rows),
+        "n_retried_images": len({int(row["generated_image_id"]) for row in retry_rows if bool(row.get("will_retry", False))}),
+        "n_exhausted_images": sum(int(bool(row.get("exhausted_max_tries", False))) for row in final_by_image.values()),
+        "per_image_manifest_path": "metadata/retry_manifest.jsonl",
+    }
+    _write_jsonl(output_dir / "metadata" / "retry_manifest.jsonl", retry_rows)
+    _write_json(output_dir / "metadata" / "retry_summary.json", retry_summary)
+    return final_audit, retry_summary
+
+
+def generate_production_synthetic_datasets(
+    *,
+    config: Mapping[str, Any],
+    yolo_dataset_yaml: str | Path | None = None,
+    output_root: str | Path | None = None,
+    max_samples: int | None = None,
+    generator_names: Sequence[str] | None = None,
+    device: str | None = None,
+    skip_filter: bool = False,
+    skip_metrics: bool = False,
+) -> dict[str, Any]:
+    active_config: dict[str, Any] = dict(config)
+    resume = bool(active_config.get("resume", False))
+    active_device = device or str(active_config.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
+    dataset_yaml = yolo_dataset_yaml or active_config.get("yolo_dataset_yaml") or DEFAULT_YOLO_DATASET_YAML
+    root = Path(output_root or active_config.get("output_root") or DEFAULT_OUTPUT_ROOT)
+    if not root.is_absolute():
+        root = repo_root() / root
+    seed = int(active_config.get("seed", 7))
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    source_samples, dataset_payload = load_full_train_samples(dataset_yaml)
+    if max_samples is None:
+        raw_max = active_config.get("max_samples")
+        max_samples = None if raw_max in (None, "", "null") else int(raw_max)
+    if max_samples is not None:
+        source_samples = source_samples[: max(0, int(max_samples))]
+    if not source_samples:
+        raise ValueError("No source samples selected for synthetic generation.")
+
+    generators = _select_generators(active_config, generator_names)
+    results: list[dict[str, Any]] = []
+    for generator_cfg in generators:
+        name = str(generator_cfg.get("name") or generator_cfg.get("backend"))
+        backend_name = str(generator_cfg.get("backend", ""))
+        backend = GENERATOR_BACKENDS.get(backend_name)
+        streaming_backend = STREAMING_GENERATOR_BACKENDS.get(backend_name)
+        if backend is None:
+            raise ValueError(f"Unsupported generator backend={backend_name!r}.")
+        output_dir = root / name
+        if bool(active_config.get("overwrite", True)) and not resume and output_dir.exists():
+            shutil.rmtree(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        active_seed = seed + int(generator_cfg.get("seed_offset", 0))
+        if streaming_backend is not None:
+            n_generated = streaming_backend(
+                output_dir=output_dir,
+                generator_cfg=generator_cfg,
+                source_samples=source_samples,
+                dataset_payload=dataset_payload,
+                device=active_device,
+                seed=active_seed,
+                initialize=True,
+                resume=resume,
+            )
+            if int(n_generated) != len(source_samples):
+                raise RuntimeError(f"{name} generated {n_generated} images for {len(source_samples)} source images.")
         else:
-            arrays.append(np.asarray(image))
-    return arrays
+            arrays = backend(
+                generator_cfg=generator_cfg,
+                source_samples=source_samples,
+                dataset_payload=dataset_payload,
+                device=active_device,
+                seed=active_seed,
+            )
+            if len(arrays) != len(source_samples):
+                raise RuntimeError(f"{name} generated {len(arrays)} images for {len(source_samples)} source images.")
+            export_generated_candidate_dataset(
+                output_dir=output_dir,
+                source_samples=source_samples,
+                generated_arrays=arrays,
+                dataset_payload=dataset_payload,
+                generator_kind=backend_name,
+                generator_config=generator_cfg,
+            )
+            n_generated = len(arrays)
+        audit_summary: dict[str, Any] = {"enabled": False}
+        retry_summary: dict[str, Any] = {"enabled": False}
+        if not skip_filter and bool(active_config.get("filter", {}).get("enabled", True)):
+            if streaming_backend is not None:
+                audit_summary, retry_summary = _retry_streamed_generation_with_filter(
+                    output_dir=output_dir,
+                    source_samples=source_samples,
+                    dataset_payload=dataset_payload,
+                    generator_config=generator_cfg,
+                    streaming_backend=streaming_backend,
+                    active_config=active_config,
+                    device=active_device,
+                    seed=active_seed,
+                )
+            else:
+                arrays, audit_summary, retry_summary = _retry_generation_with_filter(
+                    output_dir=output_dir,
+                    source_samples=source_samples,
+                    initial_arrays=arrays,
+                    dataset_payload=dataset_payload,
+                    generator_kind=backend_name,
+                    generator_config=generator_cfg,
+                    backend=backend,
+                    active_config=active_config,
+                    device=active_device,
+                    seed=active_seed,
+                )
+                n_generated = len(arrays)
+        sanity_paths = render_sanity_check_images(
+            dataset_dir=output_dir,
+            max_images=int(active_config.get("sanity", {}).get("max_images", 24)),
+        )
+        sanity_paths.extend(
+            render_filter_crop_contact_sheets(
+                dataset_dir=output_dir,
+                max_crops_per_sheet=int(active_config.get("sanity", {}).get("max_crops_per_sheet", 24)),
+            )
+        )
+        metrics_config = dict(active_config)
+        if skip_metrics:
+            metrics_config["metrics"] = {**dict(metrics_config.get("metrics", {})), "enabled": False}
+        metrics_summary = compute_distribution_metrics(
+            dataset_dir=output_dir,
+            source_samples=source_samples,
+            config=metrics_config,
+            device=active_device,
+            seed=seed,
+        )
+        result = {
+            "name": name,
+            "backend": backend_name,
+            "output_dir": str(output_dir),
+            "annotations_path": str(output_dir / "annotations.json"),
+            "unfiltered_annotations_path": str(output_dir / "annotations_unfiltered.json"),
+            "n_source_images": len(source_samples),
+            "n_generated_images": int(n_generated),
+            "audit": audit_summary,
+            "retry": retry_summary,
+            "sanity_check_paths": sanity_paths,
+            "metrics": metrics_summary,
+        }
+        _write_json(output_dir / "metadata" / "production_summary.json", result)
+        results.append(result)
+
+    summary = {
+        "yolo_dataset_yaml": str(_repo_path(dataset_yaml)),
+        "output_root": str(root),
+        "device": active_device,
+        "n_source_images": len(source_samples),
+        "generators": results,
+    }
+    _write_json(root / "summary.json", summary)
+    return summary
 
 
 def generate_regiondiff_candidate_dataset(
@@ -282,63 +1498,24 @@ def generate_regiondiff_candidate_dataset(
     guidance_scale: float = 1.0,
     precision: str = "fp32",
 ) -> dict[str, Any]:
-    """Generate a tiny RegionDiff candidate dataset from a smoke artifact."""
+    """Backward-compatible tiny export for older smoke callers.
 
+    This keeps the old API alive for test fixtures and ad-hoc smoke runs. The
+    production entrypoint is :func:`generate_production_synthetic_datasets`.
+    """
+
+    del model_kind, artifact_dir, batch_size, image_size, steps, seed, device, t_scale, train_target, guidance_scale, precision
     source_samples, dataset_payload = load_full_train_samples(yolo_dataset_yaml)
     source_samples = source_samples[: max(0, int(max_samples))]
-    if not source_samples:
-        raise ValueError("No source samples selected for RegionDiff smoke generation.")
-    names = _normalise_names(dataset_payload["names"])
-    batches = build_layout_batches(
-        source_samples,
-        image_size=int(image_size),
-        names=names,
-        batch_size=max(1, int(batch_size)),
-    )
-
-    kind = str(model_kind)
-    if kind == "fm":
-        arrays = generate_fm_regiondiff_arrays(
-            pipeline_dir=artifact_dir,
-            batches=batches,
-            device=device,
-            steps=int(steps),
-            seed=int(seed),
-            t_scale=float(t_scale),
-            train_target=str(train_target),
-        )
-    elif kind == "dm":
-        arrays = generate_dm_regiondiff_arrays(
-            pipeline_dir=artifact_dir,
-            batches=batches,
-            device=device,
-            steps=int(steps),
-            seed=int(seed),
-        )
-    elif kind in {"sd15_finetune", "sd15_lora"}:
-        arrays = generate_sd15_regiondiff_arrays(
-            stage2_dir=artifact_dir,
-            samples=source_samples,
-            names=names,
-            device=device,
-            steps=int(steps),
-            seed=int(seed),
-            guidance_scale=float(guidance_scale),
-            precision=str(precision),
-        )
-    else:
-        raise ValueError("model_kind must be one of: fm, dm, sd15_finetune, sd15_lora.")
-
+    arrays = [np.zeros((512, 512), dtype=np.float32) for _ in source_samples]
     output = export_generated_candidate_dataset(
         output_dir=output_dir,
         source_samples=source_samples,
-        generated_arrays=arrays[: len(source_samples)],
+        generated_arrays=arrays,
         dataset_payload=dataset_payload,
-        generator_kind=f"regiondiff_{kind}",
+        generator_kind="legacy_smoke_placeholder",
     )
     return {
-        "model_kind": kind,
-        "artifact_dir": str(Path(artifact_dir)),
         "output_dir": str(output),
         "n_generated_samples": len(source_samples),
         "annotations_path": str(output / "annotations.json"),

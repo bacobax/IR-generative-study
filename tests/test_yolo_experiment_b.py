@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -154,6 +155,21 @@ def test_export_augmented_yolo_dataset_writes_real_and_kept_synthetic(tmp_path: 
     (generated_dir / "images").mkdir(parents=True)
     np.save(generated_dir / "images" / "sample_000001.npy", np.ones((16, 16), dtype=np.uint8) * 100)
     np.save(generated_dir / "images" / "sample_000002.npy", np.ones((16, 16), dtype=np.uint8) * 150)
+    (generated_dir / "annotations.json").write_text(
+        json.dumps(
+            {
+                "images": [
+                    {"id": 1, "file_name": "sample_000001.npy", "width": 16, "height": 16},
+                    {"id": 2, "file_name": "sample_000002.npy", "width": 16, "height": 16},
+                ],
+                "annotations": [
+                    {"id": 1, "image_id": 1, "category_id": 1, "bbox": [4, 4, 4, 4], "area": 16, "iscrowd": 0},
+                ],
+                "categories": [{"id": 0, "name": "person"}, {"id": 1, "name": "car"}],
+            },
+        ),
+        encoding="utf-8",
+    )
     classified_rows = [
         {
             "generated_image_id": 1,
@@ -180,9 +196,13 @@ def test_export_augmented_yolo_dataset_writes_real_and_kept_synthetic(tmp_path: 
     augmented_payload = yaml.safe_load(augmented_yaml.read_text(encoding="utf-8"))
     train_dir = Path(augmented_payload["train"])
     label_dir = train_dir.parent.parent / "labels" / "train"
-    assert len(list(train_dir.glob("*.png"))) == 3
-    assert len(list(label_dir.glob("*.txt"))) == 3
+    assert len(list(train_dir.glob("*.png"))) == 4
+    assert len(list(label_dir.glob("*.txt"))) == 4
     assert any(path.name.startswith("synthetic_000000_img0") for path in train_dir.glob("*.png"))
+    synthetic_label_0 = label_dir / "synthetic_000000_img0.txt"
+    synthetic_label_1 = label_dir / "synthetic_000001_img1.txt"
+    assert synthetic_label_0.read_text(encoding="utf-8").startswith("1 ")
+    assert synthetic_label_1.read_text(encoding="utf-8") == ""
     assert augmented_payload["val"] == yaml.safe_load(dataset_yaml.read_text(encoding="utf-8"))["val"]
     assert augmented_payload["test"] == yaml.safe_load(dataset_yaml.read_text(encoding="utf-8"))["test"]
     assert augmented_payload["names"] == {0: "person", 1: "car"}
@@ -300,6 +320,11 @@ def test_threshold_from_config_reaches_audit_discard_helper(tmp_path: Path, monk
         lambda **kwargs: ([], [{"generated_image_id": 1, "n_instances": 1, "n_negative_instances": 1}], {}),
     )
     monkeypatch.setattr(yolo_experiment_b, "export_audit_results", lambda **kwargs: None)
+    monkeypatch.setattr(
+        yolo_experiment_b,
+        "_write_filtered_annotations_from_audit",
+        lambda **kwargs: {"n_invalid_annotations_removed": 1, "n_annotations_unfiltered": 1},
+    )
 
     yolo_experiment_b.audit_generated_candidates(
         cfg=cfg,

@@ -105,7 +105,7 @@ output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip"
   log_dir: "./artifacts/runs/main/flow_matching/stay_layout_latent_flir_sd15_512_hflip"
   debug_dir: "./artifacts/debug/stay_layout_latent_flir_sd15_512_hflip"
-  resume: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip/UNET/unet_last_ckpt.pt"
+  resume: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip/UNET/unet_fm_epoch_120_ckpt.pt"
 
 trainer_name: "layout_fm"
 device: null
