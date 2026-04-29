@@ -22,6 +22,10 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from huggingface_hub import create_repo, upload_folder
 
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
+
 from diffusers.utils import check_min_version
 
 from src.algorithms.stable_diffusion.config import DEFAULT_PROMPT_TEXT, parse_args

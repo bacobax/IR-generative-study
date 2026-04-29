@@ -18,6 +18,7 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256
 
 cd "${PROJECT_ROOT}"
 mkdir -p "${PROJECT_ROOT}/logs"
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 
 if command -v conda >/dev/null 2>&1; then
     eval "$(conda shell.bash hook)"

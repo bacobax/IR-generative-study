@@ -15,6 +15,11 @@ import torch
 from packaging import version
 from peft import LoraConfig
 from peft.utils import get_peft_model_state_dict, set_peft_model_state_dict
+
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
+
 from transformers import CLIPTextModel, CLIPTokenizer
 
 from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel

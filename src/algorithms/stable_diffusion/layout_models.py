@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
+
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
+
 from transformers import CLIPTextModel
 
 from diffusers import (

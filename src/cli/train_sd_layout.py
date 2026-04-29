@@ -9,6 +9,11 @@ import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
+
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
+
 from transformers import CLIPTokenizer
 
 from diffusers.utils import check_min_version

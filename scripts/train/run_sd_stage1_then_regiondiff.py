@@ -21,6 +21,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
+
 from src.algorithms.stable_diffusion.config import parse_args as parse_stage1_config
 from src.algorithms.stable_diffusion.layout_models import (
     STAGE2_MANIFEST_NAME,

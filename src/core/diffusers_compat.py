@@ -1,4 +1,4 @@
-"""Compatibility helpers for lightweight diffusers imports."""
+"""Compatibility helpers for lightweight diffusion-stack imports."""
 
 from __future__ import annotations
 
@@ -8,19 +8,41 @@ import types
 from importlib.machinery import ModuleSpec
 
 
-def disable_diffusers_optional_scipy() -> None:
-    """Prevent diffusers' optional scheduler imports from loading SciPy.
+def disable_diffusers_optional_scipy(*, lightweight_diffusers_imports: bool = True) -> None:
+    """Prevent optional diffusion-stack imports from loading SciPy.
 
     Some cluster SciPy builds can fail while importing BLAS-linked extension
-    modules even when the current code path only needs diffusers model classes.
-    Flow-matching training does not use diffusers schedulers, so treating SciPy
-    as unavailable avoids importing optional scheduler code during lazy model
-    resolution.
+    modules even when the current code path only needs model classes.  Treating
+    SciPy as unavailable avoids importing optional scheduler/loss code during
+    lazy model resolution.
+
+    ``lightweight_diffusers_imports`` also installs narrow Diffusers package
+    shims used by unconditional/FM model imports.  Keep it disabled for Stable
+    Diffusion pipeline code because those pipelines need the real loader mixins
+    for LoRA loading and fusion.
     """
     value = os.environ.get("FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY", "1")
     if value.strip().lower() in {"0", "false", "no", "off"}:
         return
 
+    _disable_transformers_optional_scipy()
+    _disable_diffusers_optional_scipy(lightweight_imports=lightweight_diffusers_imports)
+
+
+def _disable_transformers_optional_scipy() -> None:
+    try:
+        import transformers.utils.import_utils as import_utils
+    except ModuleNotFoundError:
+        return
+
+    import_utils._scipy_available = False
+    # Transformers generation helpers treat sklearn as optional, but sklearn
+    # imports SciPy at module import time.  Disable it with SciPy for CLIP-only
+    # SD paths on clusters with broken SciPy shared-library links.
+    import_utils._sklearn_available = False
+
+
+def _disable_diffusers_optional_scipy(*, lightweight_imports: bool) -> None:
     try:
         import diffusers.utils.import_utils as import_utils
     except ModuleNotFoundError:
@@ -28,6 +50,9 @@ def disable_diffusers_optional_scipy() -> None:
 
     import_utils._scipy_available = False
     import_utils._scipy_version = "unavailable"
+
+    if not lightweight_imports:
+        return
 
     _install_lightweight_loaders_package()
     _install_lightweight_model_package("autoencoders")
