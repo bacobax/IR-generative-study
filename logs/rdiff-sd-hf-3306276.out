@@ -1,0 +1,45 @@
+Host: kn176
+Start time: Mon Apr 27 11:50:01 EDT 2026
+Submit dir / project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+CUDA_VISIBLE_DEVICES from Slurm: 0
+SLURM_JOB_ID: 3306276
+SLURM_SUBMIT_DIR: /project/6109890/bacobax2/ir-generative-study
+SLURM_CPUS_PER_TASK: 10
+SLURM_MEM_PER_NODE: 32768
+SLURM_MEM_PER_CPU: <unset>
+CPU count: 10
+Config: /project/6109890/bacobax2/ir-generative-study/configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml
+Pretrained UNet: /project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET/unet_sd_uncond_best.pt
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Configured batch size:
+8:  batch_size: 64
+Configured horizontal flip probabilities:
+30:  p_hflip_warmup: 0.0
+31:  p_hflip_max: 0.6
+32:  p_hflip_final: 0.3
+Configured mixed precision:
+74:  mixed_precision: "auto"
+Mon Apr 27 11:50:01 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.148.08             Driver Version: 570.148.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:19:00.0 Off |                    0 |
+| N/A   60C    P0             82W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+RegionDiff SD hflip exit code: 0
+End time: Mon Apr 27 20:58:43 EDT 2026

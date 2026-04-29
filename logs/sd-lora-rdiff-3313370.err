@@ -1,0 +1,28 @@
+Traceback (most recent call last):
+  File "/project/6109890/bacobax2/ir-generative-study/scripts/train/run_sd_stage1_then_regiondiff.py", line 20, in <module>
+    from src.algorithms.stable_diffusion.config import parse_args as parse_stage1_config
+ModuleNotFoundError: No module named 'src'
+Command exited with non-zero status 1
+	Command being timed: "python scripts/train/run_sd_stage1_then_regiondiff.py --project-root /project/6109890/bacobax2/ir-generative-study --stage1-config configs/sd/train/presets/flir_lora_stage1_r8.yaml --stage2-config configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml --mixed-precision fp16"
+	User time (seconds): 0.03
+	System time (seconds): 0.00
+	Percent of CPU this job got: 67%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.05
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 11520
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1761
+	Voluntary context switches: 134
+	Involuntary context switches: 1
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

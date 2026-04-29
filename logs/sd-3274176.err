@@ -1,0 +1,48 @@
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_sd_uncond.py", line 118, in <module>
+    main()
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_sd_uncond.py", line 114, in main
+    run_training(cfg)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_sd_uncond.py", line 108, in run_training
+    trainer.train_from_config(cfg, train_loader, eval_loader)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/unconditional_sd_trainer.py", line 173, in train_from_config
+    self.train(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 658, in train
+    resume_path = self._resolve_resume_path(resume_from_checkpoint)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 240, in _resolve_resume_path
+    raise FileNotFoundError(
+FileNotFoundError: No SDUncond checkpoint found in ./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512/UNET to resume from.
+Command exited with non-zero status 1
+	Command being timed: "python -m src.cli.train_sd_uncond --config /project/6109890/bacobax2/ir-generative-study/configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64.yaml --mixed_precision auto"
+	User time (seconds): 12.64
+	System time (seconds): 3.64
+	Percent of CPU this job got: 36%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:45.17
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 3197332
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2513
+	Minor (reclaiming a frame) page faults: 893074
+	Voluntary context switches: 36596
+	Involuntary context switches: 2421
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 264
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
