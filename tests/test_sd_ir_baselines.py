@@ -18,6 +18,7 @@ from src.algorithms.stable_diffusion.config import (
 )
 from src.algorithms.stable_diffusion.data import (
     TextImageDataset,
+    create_dataloader,
     ir_npy_to_normalized_rgb,
     resolve_training_data_source,
 )
@@ -334,6 +335,47 @@ def test_constant_prompt_dataset_works_without_metadata(tmp_path: Path):
     item = dataset[0]
     assert item["pixel_values"].shape == (3, 8, 8)
     assert item["input_ids"].shape == (8,)
+
+
+def test_local_dataloader_does_not_require_huggingface_datasets(tmp_path: Path, monkeypatch):
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+    np.save(images_dir / "sample.npy", np.zeros((8, 8), dtype=np.uint8))
+
+    real_import = __import__
+
+    def import_without_datasets(name, *args, **kwargs):
+        if name == "datasets" or name.startswith("datasets."):
+            raise ModuleNotFoundError("No module named 'datasets'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", import_without_datasets)
+
+    dataloader, normalization_mode = create_dataloader(
+        dataset_id=None,
+        dataset_name=None,
+        dataset_config_name=None,
+        train_data_dir=str(tmp_path),
+        train_split="train",
+        cache_dir=None,
+        tokenizer=_MockTokenizer(),
+        resolution=8,
+        center_crop=False,
+        random_flip=False,
+        interpolation_mode="nearest",
+        image_column="image",
+        caption_column="text",
+        batch_size=1,
+        num_workers=0,
+        max_train_samples=1,
+        seed=7,
+        prompt_text="thermal image",
+    )
+
+    batch = next(iter(dataloader))
+    assert normalization_mode == RAW_UINT16_PERCENTILE
+    assert batch["pixel_values"].shape == (1, 3, 8, 8)
+    assert batch["input_ids"].shape == (1, 8)
 
 
 def test_lora_mode_trains_only_adapter_params():

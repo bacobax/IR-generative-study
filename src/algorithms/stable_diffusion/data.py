@@ -13,9 +13,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-from datasets import Dataset, load_dataset
 from PIL import Image
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import functional as TF
 
@@ -228,6 +227,28 @@ class TextImageDataset:
         }
 
 
+class RecordDataset(Dataset):
+    """Small dict-record dataset used for local repo-native training data."""
+
+    def __init__(self, records: List[Dict[str, object]]):
+        self.records = list(records)
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, idx: int) -> Dict[str, object]:
+        return self.records[idx]
+
+    def shuffle(self, *, seed: Optional[int] = None) -> "RecordDataset":
+        rng = random.Random(seed)
+        records = list(self.records)
+        rng.shuffle(records)
+        return RecordDataset(records)
+
+    def select(self, indices) -> "RecordDataset":
+        return RecordDataset([self.records[int(idx)] for idx in indices])
+
+
 def collate_fn(examples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     pixel_values = torch.stack([example["pixel_values"] for example in examples])
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
@@ -268,10 +289,15 @@ def _build_local_training_dataset(
 
     captions = [captions_map.get(os.path.basename(path), "") for path in npy_paths]
 
-    ds = Dataset.from_dict({
-        image_column: npy_paths,
-        caption_column: captions,
-    })
+    ds = RecordDataset(
+        [
+            {
+                image_column: path,
+                caption_column: caption,
+            }
+            for path, caption in zip(npy_paths, captions)
+        ]
+    )
     return ds, image_column, caption_column
 
 
@@ -285,6 +311,15 @@ def load_training_dataset(
     caption_column: str = "text",
 ) -> Tuple[Dataset, str, str]:
     if dataset_name is not None:
+        try:
+            from datasets import load_dataset
+        except ImportError as exc:
+            raise ImportError(
+                "The `datasets` package is required only when `dataset_name` "
+                "points to a Hugging Face dataset. Install it or use "
+                "`dataset_id`/`train_data_dir` for repo-native local data."
+            ) from exc
+
         dataset = load_dataset(
             dataset_name,
             dataset_config_name,
