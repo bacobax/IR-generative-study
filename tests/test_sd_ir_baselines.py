@@ -29,6 +29,7 @@ from src.algorithms.stable_diffusion.models import (
 )
 import src.algorithms.stable_diffusion.training as sd_training
 from src.algorithms.stable_diffusion.training import Trainer, log_validation
+from src.algorithms.stable_diffusion.utils import setup_logging
 from src.core.normalization import RAW_UINT16_PERCENTILE, UINT8_LINEAR
 
 
@@ -376,6 +377,19 @@ def test_local_dataloader_does_not_require_huggingface_datasets(tmp_path: Path, 
     assert normalization_mode == RAW_UINT16_PERCENTILE
     assert batch["pixel_values"].shape == (1, 3, 8, 8)
     assert batch["input_ids"].shape == (1, 8)
+
+
+def test_setup_logging_does_not_import_huggingface_datasets(monkeypatch):
+    real_import = __import__
+
+    def import_without_datasets(name, *args, **kwargs):
+        if name == "datasets" or name.startswith("datasets."):
+            raise ModuleNotFoundError("No module named 'datasets'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", import_without_datasets)
+
+    setup_logging(type("Accelerator", (), {"is_local_main_process": True})())
 
 
 def test_lora_mode_trains_only_adapter_params():

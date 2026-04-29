@@ -202,7 +202,6 @@ def setup_logging(
         accelerator: Accelerator instance.
         log_level: Logging level.
     """
-    import datasets
     import transformers
     import diffusers
     
@@ -213,11 +212,9 @@ def setup_logging(
     )
     
     if accelerator.is_local_main_process:
-        datasets.utils.logging.set_verbosity_warning()
         transformers.utils.logging.set_verbosity_warning()
         diffusers.utils.logging.set_verbosity_info()
     else:
-        datasets.utils.logging.set_verbosity_error()
         transformers.utils.logging.set_verbosity_error()
         diffusers.utils.logging.set_verbosity_error()
 
