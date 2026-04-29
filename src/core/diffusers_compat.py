@@ -25,8 +25,43 @@ def disable_diffusers_optional_scipy(*, lightweight_diffusers_imports: bool = Tr
     if value.strip().lower() in {"0", "false", "no", "off"}:
         return
 
+    _install_scipy_optimize_stub()
     _disable_transformers_optional_scipy()
     _disable_diffusers_optional_scipy(lightweight_imports=lightweight_diffusers_imports)
+
+
+def _disabled_linear_sum_assignment(*_args, **_kwargs):
+    raise ImportError(
+        "scipy.optimize.linear_sum_assignment is disabled by "
+        "FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY."
+    )
+
+
+def _install_scipy_optimize_stub() -> None:
+    """Provide the tiny SciPy surface imported by optional Transformers losses."""
+    existing_scipy = sys.modules.get("scipy")
+    if existing_scipy is not None and not getattr(existing_scipy, "_flow_matching_stub", False):
+        return
+
+    existing_optimize = sys.modules.get("scipy.optimize")
+    if existing_optimize is not None and not getattr(existing_optimize, "_flow_matching_stub", False):
+        return
+
+    scipy_module = existing_scipy or types.ModuleType("scipy")
+    scipy_module.__package__ = "scipy"
+    scipy_module.__spec__ = ModuleSpec("scipy", loader=None, is_package=True)
+    scipy_module.__path__ = []
+    scipy_module._flow_matching_stub = True
+
+    optimize_module = existing_optimize or types.ModuleType("scipy.optimize")
+    optimize_module.__package__ = "scipy"
+    optimize_module.__spec__ = ModuleSpec("scipy.optimize", loader=None)
+    optimize_module._flow_matching_stub = True
+    optimize_module.linear_sum_assignment = _disabled_linear_sum_assignment
+
+    scipy_module.optimize = optimize_module
+    sys.modules["scipy"] = scipy_module
+    sys.modules["scipy.optimize"] = optimize_module
 
 
 def _disable_transformers_optional_scipy() -> None:

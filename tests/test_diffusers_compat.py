@@ -21,6 +21,10 @@ def test_clip_text_model_import_survives_blocked_scipy() -> None:
 
         disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
 
+        import transformers.utils.import_utils as import_utils
+
+        import_utils._scipy_available = True
+
         class BlockScipy(MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.startswith("scipy"):

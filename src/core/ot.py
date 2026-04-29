@@ -81,7 +81,10 @@ def solve_assignment(cost_matrix: torch.Tensor, solver: str = "hungarian") -> to
 
     try:
         from scipy.optimize import linear_sum_assignment
-    except ImportError as exc:
+
+        cpu_cost = cost_matrix.detach().cpu().float().numpy()
+        row_ind, col_ind = linear_sum_assignment(cpu_cost)
+    except (ImportError, OSError) as exc:
         global _WARNED_SCIPY_FALLBACK
         if not _WARNED_SCIPY_FALLBACK:
             warnings.warn(
@@ -94,8 +97,6 @@ def solve_assignment(cost_matrix: torch.Tensor, solver: str = "hungarian") -> to
         permutation = _hungarian_assignment(cost_matrix.detach().cpu().float())
         return permutation.to(cost_matrix.device)
 
-    cpu_cost = cost_matrix.detach().cpu().float().numpy()
-    row_ind, col_ind = linear_sum_assignment(cpu_cost)
     permutation = torch.empty(cost_matrix.shape[0], dtype=torch.long)
     permutation[torch.as_tensor(row_ind, dtype=torch.long)] = torch.as_tensor(col_ind, dtype=torch.long)
     return permutation.to(cost_matrix.device)
