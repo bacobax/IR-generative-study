@@ -13,7 +13,7 @@ filter:
 retry:
   enabled: true
   invalid_instance_ratio_threshold: 0.5
-  max_tries: 3Ω
+  max_tries: 3
   seed_stride: 1000000
 
 metrics:
@@ -36,18 +36,18 @@ sanity:
   max_crops_per_sheet: 24
 
 generators:
-  - name: stay_fm_hflip
-    backend: stay_fm
-    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip/UNET/unet_fm_epoch_120.pt
-    preset_path: configs/fm/train/presets/stay_layout_latent_flir_sd15_512_b64.yaml
-    steps: 20
-    batch_size: 8
-    seed_offset: 0
+  # - name: stay_fm_hflip
+  #   backend: stay_fm
+  #   checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip/UNET/unet_fm_epoch_120.pt
+  #   preset_path: configs/fm/train/presets/stay_layout_latent_flir_sd15_512_b64.yaml
+  #   steps: 20
+  #   batch_size: 8
+  #   seed_offset: 0
 
   - name: regiondiff_fm_ot_hflip
     backend: regiondiff_fm
     checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip/UNET/unet_fm_epoch_80.pt
     preset_path: configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
-    steps: 50
-    batch_size: 32
+    steps: 80
+    batch_size: 8
     seed_offset: 100000

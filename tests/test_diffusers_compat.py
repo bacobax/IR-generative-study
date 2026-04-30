@@ -49,6 +49,33 @@ def test_clip_text_model_import_survives_blocked_scipy() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_generative_metrics_import_survives_scipy_stub() -> None:
+    code = textwrap.dedent(
+        """
+        import numpy as np
+
+        from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+        disable_diffusers_optional_scipy()
+
+        from src.evaluation.generative_metrics import compute_fid
+
+        features = np.arange(24, dtype=np.float64).reshape(6, 4)
+
+        assert abs(compute_fid(features, features)) < 1e-6
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers is not installed")
 def test_sd_unet_imports_do_not_require_peft() -> None:
     code = textwrap.dedent(

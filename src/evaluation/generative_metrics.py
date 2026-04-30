@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Mapping, Sequence
 
 import numpy as np
-from scipy import linalg
 
 
 def _as_float64_features(features: np.ndarray, *, name: str) -> np.ndarray:
@@ -21,6 +20,29 @@ def _covariance(features: np.ndarray) -> np.ndarray:
     cov = np.cov(features, rowvar=False)
     cov = np.atleast_2d(cov).astype(np.float64, copy=False)
     return cov
+
+
+def _sqrtm_with_optional_scipy(matrix: np.ndarray) -> np.ndarray:
+    """Matrix square root with a NumPy fallback for SciPy-light environments."""
+    try:
+        from scipy import linalg
+    except Exception:
+        return _sqrtm_via_eigendecomposition(matrix)
+
+    try:
+        result = linalg.sqrtm(matrix, disp=False)
+    except TypeError:
+        result = linalg.sqrtm(matrix)
+    if isinstance(result, tuple):
+        return np.asarray(result[0])
+    return np.asarray(result)
+
+
+def _sqrtm_via_eigendecomposition(matrix: np.ndarray) -> np.ndarray:
+    values, vectors = np.linalg.eig(np.asarray(matrix, dtype=np.float64))
+    values = values.astype(np.complex128, copy=False)
+    sqrt_values = np.sqrt(values)
+    return (vectors * sqrt_values) @ np.linalg.pinv(vectors)
 
 
 def compute_fid(
@@ -44,10 +66,12 @@ def compute_fid(
     sigma_generated = _covariance(generated)
 
     offset = mu_real - mu_generated
-    covmean, _ = linalg.sqrtm(sigma_real @ sigma_generated, disp=False)
+    covmean = _sqrtm_with_optional_scipy(sigma_real @ sigma_generated)
     if not np.isfinite(covmean).all():
         eye = np.eye(sigma_real.shape[0], dtype=np.float64)
-        covmean = linalg.sqrtm((sigma_real + eps * eye) @ (sigma_generated + eps * eye))
+        covmean = _sqrtm_with_optional_scipy(
+            (sigma_real + eps * eye) @ (sigma_generated + eps * eye)
+        )
 
     if np.iscomplexobj(covmean):
         covmean = covmean.real
@@ -145,4 +169,3 @@ def sort_metric_rows(
         return tuple(float(row[key]) for key in keys)
 
     return [metrics_row_to_jsonable(row) for row in sorted(rows, key=sort_key)]
-

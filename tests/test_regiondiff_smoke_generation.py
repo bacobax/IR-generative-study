@@ -488,7 +488,7 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
     monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", _fake_build_regiondiff)
     monkeypatch.setattr(production_generation.FlowMatchingSampler, "from_stable", classmethod(_fake_from_stable))
 
-    sampler, image_size = production_generation._load_regiondiff_sampler(
+    sampler, image_size, label_id_map = production_generation._load_regiondiff_sampler(
         generator_cfg={"checkpoint_path": str(checkpoint_path), "preset_path": str(preset_path)},
         dataset_payload={"names": {0: "person", 1: "car"}},
         device="cpu",
@@ -496,12 +496,96 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
 
     assert sampler == "regiondiff_sampler"
     assert image_size == 41
+    assert label_id_map == {}
     assert captured["sampler_vae"] == "vae"
     assert captured["sampler_kwargs"]["t_scale"] == 222.0
     assert captured["regiondiff_kwargs"]["category_id_to_name"] == {0: "person", 1: "car"}
     assert captured["regiondiff_kwargs"]["backbone_kind"] == "fm_unet2d"
     assert captured["regiondiff_kwargs"]["attachment_kind"] == "residual"
     assert torch.equal(dummy_wrapper.loaded_state["sentinel"], torch.ones(1) * 2)
+
+
+def test_regiondiff_backend_maps_compact_labels_to_checkpoint_classes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import yaml
+
+    checkpoint_path = tmp_path / "UNET" / "unet_fm_epoch_80.pt"
+    checkpoint_path.parent.mkdir(parents=True)
+    torch.save(
+        {
+            "layout_tokenizer.class_text_features": torch.zeros(4, 17),
+            "sentinel": torch.ones(1) * 3,
+        },
+        checkpoint_path,
+    )
+    preset_path = tmp_path / "regiondiff_preset.yaml"
+    preset_path.write_text(
+        yaml.safe_dump(
+            {
+                "data": {"image_size": 41},
+                "model": {"unet_config": str(tmp_path / "unet.json")},
+                "layout_conditioning": {"layout_token_dim": 17},
+                "training": {"t_scale": 222.0, "train_target": "v"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyWrapper(torch.nn.Module):
+        def to(self, device):  # noqa: ANN001
+            return self
+
+        def load_state_dict(self, state, strict=True):  # noqa: ANN001
+            self.loaded_state = state
+
+        def eval(self):
+            return self
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(production_generation, "load_unet_config", lambda _path: {"in_channels": 4})
+    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
+    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+
+    def _fake_build_regiondiff(**kwargs):  # noqa: ANN003
+        captured["regiondiff_kwargs"] = kwargs
+        return DummyWrapper()
+
+    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", _fake_build_regiondiff)
+    monkeypatch.setattr(
+        production_generation.FlowMatchingSampler,
+        "from_stable",
+        classmethod(lambda cls, unet, vae, **kwargs: "regiondiff_sampler"),
+    )
+
+    _sampler, _image_size, label_id_map = production_generation._load_regiondiff_sampler(
+        generator_cfg={
+            "checkpoint_path": str(checkpoint_path),
+            "preset_path": str(preset_path),
+            "checkpoint_category_id_to_name": {0: "person", 1: "bike", 2: "car", 3: "bus"},
+        },
+        dataset_payload={"names": {0: "person", 1: "car"}},
+        device="cpu",
+    )
+
+    assert label_id_map == {0: 0, 1: 2}
+    assert captured["regiondiff_kwargs"]["category_id_to_name"] == {
+        0: "person",
+        1: "bike",
+        2: "car",
+        3: "bus",
+    }
+
+    batch = {
+        "labels": torch.tensor([[0, 1, 0]]),
+        "object_mask": torch.tensor([[True, True, False]]),
+    }
+    remapped = production_generation._remap_layout_batch_labels(batch, label_id_map)
+
+    assert remapped["labels"].tolist() == [[0, 2, 0]]
 
 
 def test_filtered_annotations_remove_only_invalid_instances_and_keep_images(tmp_path: Path) -> None:

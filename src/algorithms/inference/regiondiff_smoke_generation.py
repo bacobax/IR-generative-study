@@ -450,6 +450,155 @@ def _infer_stay_num_classes(
     return max(1, dataset_num_classes, checkpoint_num_classes)
 
 
+def _infer_regiondiff_num_classes(
+    *,
+    state: Mapping[str, Any],
+    dataset_names: Mapping[int, str],
+) -> int:
+    dataset_num_classes = max((int(key) for key in dataset_names), default=-1) + 1
+    checkpoint_num_classes = 0
+    class_features = state.get("layout_tokenizer.class_text_features")
+    if isinstance(class_features, torch.Tensor) and class_features.ndim == 2:
+        checkpoint_num_classes = int(class_features.shape[0])
+    return max(1, dataset_num_classes, checkpoint_num_classes)
+
+
+def _normalise_category_name(name: str) -> str:
+    return " ".join(str(name).replace("_", " ").strip().lower().split())
+
+
+def _category_names_from_coco(path: str | Path, *, num_classes: int) -> dict[int, str]:
+    resolved = _repo_path(path)
+    if resolved is None or not resolved.is_file():
+        return {}
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    categories = payload.get("categories", [])
+    if not isinstance(categories, list) or len(categories) != int(num_classes):
+        return {}
+    try:
+        ordered = sorted(categories, key=lambda row: int(row["id"]))
+        return {idx: str(row["name"]) for idx, row in enumerate(ordered)}
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+
+def _default_checkpoint_category_names(num_classes: int) -> dict[int, str]:
+    for path in (
+        "data/raw/flir/images_thermal_train/coco.json",
+        "data/raw/flir/images_thermal_val/coco.json",
+        "data/raw/flir/video_thermal_test/coco.json",
+        "data/tmp/flir_full_multiclass_v18_smoke/train/annotations.json",
+    ):
+        names = _category_names_from_coco(path, num_classes=num_classes)
+        if names:
+            return names
+    return {}
+
+
+def _expand_category_names(
+    names: Mapping[int, str],
+    *,
+    num_classes: int,
+) -> dict[int, str]:
+    return {
+        idx: str(names.get(idx, f"class {idx}"))
+        for idx in range(max(1, int(num_classes)))
+    }
+
+
+def _regiondiff_checkpoint_category_names(
+    generator_cfg: Mapping[str, Any],
+    *,
+    dataset_names: Mapping[int, str],
+    num_classes: int,
+) -> dict[int, str]:
+    raw_names = generator_cfg.get("checkpoint_category_id_to_name")
+    if raw_names is not None:
+        return _expand_category_names(_normalise_names(raw_names), num_classes=num_classes)
+
+    raw_path = generator_cfg.get("checkpoint_categories_path")
+    if raw_path:
+        names = _category_names_from_coco(str(raw_path), num_classes=num_classes)
+        if names:
+            return _expand_category_names(names, num_classes=num_classes)
+
+    if int(num_classes) > max((int(key) for key in dataset_names), default=-1) + 1:
+        names = _default_checkpoint_category_names(int(num_classes))
+        if names:
+            return _expand_category_names(names, num_classes=num_classes)
+
+    return _expand_category_names(dataset_names, num_classes=num_classes)
+
+
+def _coerce_label_id_map(raw_map: Any) -> dict[int, int]:
+    if raw_map in (None, "", {}):
+        return {}
+    if isinstance(raw_map, Mapping):
+        return {int(key): int(value) for key, value in raw_map.items()}
+    if isinstance(raw_map, Sequence) and not isinstance(raw_map, (str, bytes)):
+        return {idx: int(value) for idx, value in enumerate(raw_map)}
+    raise TypeError("Label id map must be a mapping or sequence.")
+
+
+def _regiondiff_label_id_map(
+    generator_cfg: Mapping[str, Any],
+    *,
+    dataset_names: Mapping[int, str],
+    checkpoint_names: Mapping[int, str],
+) -> dict[int, int]:
+    explicit_map = generator_cfg.get("dataset_label_to_checkpoint_label")
+    if explicit_map is None:
+        explicit_map = generator_cfg.get("label_id_map")
+    if explicit_map is not None:
+        return _coerce_label_id_map(explicit_map)
+
+    checkpoint_by_name = {
+        _normalise_category_name(name): int(category_id)
+        for category_id, name in checkpoint_names.items()
+    }
+    inferred: dict[int, int] = {}
+    for dataset_id, dataset_name in dataset_names.items():
+        checkpoint_id = checkpoint_by_name.get(_normalise_category_name(dataset_name))
+        if checkpoint_id is None:
+            return {}
+        inferred[int(dataset_id)] = int(checkpoint_id)
+    if all(int(source) == int(target) for source, target in inferred.items()):
+        return {}
+    return inferred
+
+
+def _remap_layout_batch_labels(
+    batch: Mapping[str, Any],
+    label_id_map: Mapping[int, int],
+) -> dict[str, Any]:
+    if not label_id_map:
+        return dict(batch)
+    remapped = dict(batch)
+    labels = remapped["labels"]
+    object_mask = remapped.get("object_mask")
+    if object_mask is not None:
+        active_labels = labels[object_mask].detach().cpu().tolist()
+    else:
+        active_labels = labels.detach().cpu().flatten().tolist()
+    missing = sorted(
+        {int(label) for label in active_labels}
+        - {int(key) for key in label_id_map}
+    )
+    if missing:
+        raise ValueError(
+            "Missing RegionDiff checkpoint label mapping for dataset class id(s): "
+            f"{missing}."
+        )
+    mapped_labels = labels.clone()
+    for source_id, target_id in label_id_map.items():
+        mapped_labels[labels == int(source_id)] = int(target_id)
+    remapped["labels"] = mapped_labels
+    return remapped
+
+
 def _build_vae_from_preset(preset: Mapping[str, Any], *, device: str | torch.device) -> torch.nn.Module:
     model_cfg = dict(preset.get("model", {}))
     pretrained_name = model_cfg.get("vae_pretrained_model_name_or_path")
@@ -533,7 +682,7 @@ def _load_regiondiff_sampler(
     generator_cfg: Mapping[str, Any],
     dataset_payload: Mapping[str, Any],
     device: str | torch.device,
-) -> tuple[FlowMatchingSampler, int]:
+) -> tuple[FlowMatchingSampler, int, dict[int, int]]:
     checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
     preset_path = _repo_path(generator_cfg["preset_path"])
     if checkpoint_path is None or not checkpoint_path.is_file():
@@ -545,15 +694,30 @@ def _load_regiondiff_sampler(
     model_cfg = dict(preset.get("model", {}))
     region_cfg = dict(preset.get("layout_conditioning", {}))
     names = _normalise_names(dataset_payload["names"])
-    base_unet = build_fm_unet_from_config(load_unet_config(str(_repo_path(model_cfg["unet_config"]))), device=str(device))
+    unet_state = _extract_unet_state(checkpoint_path, device=device)
+    num_classes = _infer_regiondiff_num_classes(state=unet_state, dataset_names=names)
+    checkpoint_names = _regiondiff_checkpoint_category_names(
+        generator_cfg,
+        dataset_names=names,
+        num_classes=num_classes,
+    )
+    label_id_map = _regiondiff_label_id_map(
+        generator_cfg,
+        dataset_names=names,
+        checkpoint_names=checkpoint_names,
+    )
+    base_unet = build_fm_unet_from_config(
+        load_unet_config(str(_repo_path(model_cfg["unet_config"]))),
+        device=str(device),
+    )
     unet = build_regiondiff_wrapper(
         base_model=base_unet,
         region_config=region_cfg,
-        category_id_to_name=names,
+        category_id_to_name=checkpoint_names,
         backbone_kind="fm_unet2d",
         attachment_kind=str(region_cfg.get("attachment_kind", "attention")),
     ).to(device)
-    unet.load_state_dict(_extract_unet_state(checkpoint_path, device=device), strict=True)
+    unet.load_state_dict(unet_state, strict=True)
     unet.eval()
     sampler = FlowMatchingSampler.from_stable(
         unet,
@@ -562,7 +726,7 @@ def _load_regiondiff_sampler(
         t_scale=float(preset.get("training", {}).get("t_scale", 1000.0)),
         train_target=str(preset.get("training", {}).get("train_target", "v")),
     )
-    return sampler, int(preset.get("data", {}).get("image_size", 512))
+    return sampler, int(preset.get("data", {}).get("image_size", 512)), label_id_map
 
 
 def generate_stay_fm_arrays(
@@ -662,7 +826,11 @@ def generate_regiondiff_fm_arrays(
     device: str,
     seed: int,
 ) -> list[np.ndarray]:
-    sampler, image_size = _load_regiondiff_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
+    sampler, image_size, label_id_map = _load_regiondiff_sampler(
+        generator_cfg=generator_cfg,
+        dataset_payload=dataset_payload,
+        device=device,
+    )
     names = _normalise_names(dataset_payload["names"])
     layout_batches = build_layout_batches(
         source_samples,
@@ -673,6 +841,7 @@ def generate_regiondiff_fm_arrays(
     arrays: list[np.ndarray] = []
     start_idx = 0
     for batch in tqdm(layout_batches, desc=f"{generator_cfg.get('name', 'regiondiff_fm')} generation"):
+        batch = _remap_layout_batch_labels(batch, label_id_map)
         z = sampler.sample_euler_layout(
             batch,
             steps=int(generator_cfg.get("steps", 50)),
@@ -698,7 +867,11 @@ def generate_regiondiff_fm_dataset(
     initialize: bool = True,
     resume: bool = False,
 ) -> int:
-    sampler, image_size = _load_regiondiff_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
+    sampler, image_size, label_id_map = _load_regiondiff_sampler(
+        generator_cfg=generator_cfg,
+        dataset_payload=dataset_payload,
+        device=device,
+    )
     if initialize:
         initialize_generated_candidate_dataset(
             output_dir=output_dir,
@@ -727,6 +900,7 @@ def generate_regiondiff_fm_dataset(
             _sample_to_layout_dict(sample, image_size=image_size, names=names)
             for sample, _image_id in pending
         ])
+        batch = _remap_layout_batch_labels(batch, label_id_map)
         z = sampler.sample_euler_layout(
             batch,
             steps=int(generator_cfg.get("steps", 50)),
