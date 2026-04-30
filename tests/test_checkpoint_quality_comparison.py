@@ -54,6 +54,19 @@ def test_resolve_checkpoint_pair_skips_corrupt_last_and_uses_latest_epoch(tmp_pa
     assert pair["latest"].source == "latest_epoch_weights"
 
 
+def test_resolve_checkpoint_pair_falls_back_to_epoch_when_best_missing(tmp_path: Path) -> None:
+    unet_dir = tmp_path / "UNET"
+    unet_dir.mkdir()
+    (unet_dir / "unet_last_ckpt.pt").write_text("partial checkpoint", encoding="utf-8")
+    _save_state(unet_dir / "unet_fm_epoch_120.pt", 120.0)
+
+    pair = cmp.resolve_checkpoint_pair(unet_dir)
+
+    assert pair["best"].path.name == "unet_fm_epoch_120.pt"
+    assert pair["best"].source == "best_fallback_latest_epoch_weights"
+    assert pair["latest"].path.name == "unet_fm_epoch_120.pt"
+
+
 def test_resolve_checkpoint_pair_finds_sd_best(tmp_path: Path) -> None:
     unet_dir = tmp_path / "UNET"
     _save_state(unet_dir / "unet_sd_uncond_best.pt", 1.0)
@@ -103,6 +116,29 @@ def test_export_conditional_comparison_split_writes_annotations_and_provenance(t
     assert payload["annotations"][0]["source_file_name"] == "real-1.npy"
     provenance = (tmp_path / "out" / "metadata" / "provenance.jsonl").read_text(encoding="utf-8")
     assert "unet_fm_best.pt" in provenance
+
+
+def test_layout_meta_fallback_uses_checkpoint_class_embedding_size() -> None:
+    meta = cmp._layout_meta_from_preset(
+        {"layout_conditioning": {"variant": "stay_v2", "class_embed_dim": 48}},
+        {"in_channels": 4},
+        {1: "person", 15: "car"},
+        checkpoint_state={
+            "object_encoder.class_embedding.weight": torch.zeros(80, 48),
+        },
+    )
+
+    assert meta["num_classes"] == 80
+
+
+def test_sparse_run_unet_config_sample_size_matches_training_vae_factor() -> None:
+    adjusted = cmp._apply_training_sample_size(
+        {"sample_size": 128, "in_channels": 4, "out_channels": 4},
+        {"data": {"image_size": 512}},
+        {"block_out_channels": [128, 256, 512, 512]},
+    )
+
+    assert adjusted["sample_size"] == 64
 
 
 def test_cli_smoke_with_mocked_unconditional_generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

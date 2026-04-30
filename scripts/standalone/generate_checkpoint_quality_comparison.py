@@ -33,7 +33,6 @@ from src.core.data.dataset_targets import resolve_dataset_target
 from src.core.diffusers_compat import import_diffusers_attr
 from src.core.normalization import (
     UINT8_LINEAR,
-    raw_array_to_png_uint8,
 )
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
 from src.models.stay_layout_conditioned_unet import build_stay_layout_conditioned_unet
@@ -139,6 +138,52 @@ def _epoch_candidates(unet_dir: Path, *, ckpt: bool) -> List[Tuple[Path, Optiona
     return [(path, epoch, source) for epoch, path in rows]
 
 
+def _checkpoint_stems(unet_dir: Path) -> List[str]:
+    stems = []
+    for stem in ("unet_fm", "unet_sd_uncond"):
+        if any(unet_dir.glob(f"{stem}_*.pt")):
+            stems.append(stem)
+    return stems or ["unet_fm", "unet_sd_uncond"]
+
+
+def _best_epoch_metadata_candidates(unet_dir: Path) -> List[Tuple[Path, Optional[int], str]]:
+    """Resolve best epoch weights from full checkpoint metadata when available."""
+    candidates: List[Tuple[Path, Optional[int], str]] = []
+    metadata_paths = [path for path, _epoch, _source in _epoch_candidates(unet_dir, ckpt=True)]
+    metadata_paths.extend(
+        path
+        for path in sorted(
+            unet_dir.glob("*last*.pt"),
+            key=lambda item: (item.stat().st_mtime if item.exists() else 0.0, item.name),
+            reverse=True,
+        )
+    )
+    seen = set()
+    for metadata_path in metadata_paths:
+        if metadata_path in seen or not metadata_path.is_file():
+            continue
+        seen.add(metadata_path)
+        try:
+            ckpt = torch.load(metadata_path, map_location="cpu")
+        except Exception as exc:
+            print(f"[warn] Could not inspect checkpoint metadata {metadata_path}: {exc}")
+            continue
+        if not isinstance(ckpt, dict):
+            continue
+        best_epoch = ckpt.get("best_epoch")
+        if best_epoch is None:
+            continue
+        try:
+            epoch_num = int(best_epoch) + 1
+        except (TypeError, ValueError):
+            continue
+        if epoch_num <= 0:
+            continue
+        for stem in _checkpoint_stems(unet_dir):
+            candidates.append((unet_dir / f"{stem}_epoch_{epoch_num}.pt", epoch_num, "best_epoch_metadata"))
+    return candidates
+
+
 def resolve_checkpoint_pair(unet_dir: str | Path) -> Dict[str, CheckpointChoice]:
     unet_dir = Path(unet_dir)
     best_names = [
@@ -151,6 +196,15 @@ def resolve_checkpoint_pair(unet_dir: str | Path) -> Dict[str, CheckpointChoice]
         (path, _epoch_from_name(path), "best_glob")
         for path in sorted(unet_dir.glob("*best.pt"))
         if path.name not in set(best_names)
+    )
+    best_candidates.extend(_best_epoch_metadata_candidates(unet_dir))
+    best_candidates.extend(
+        (path, epoch, "best_fallback_latest_epoch_weights")
+        for path, epoch, _source in _epoch_candidates(unet_dir, ckpt=False)
+    )
+    best_candidates.extend(
+        (path, epoch, "best_fallback_latest_epoch_ckpt")
+        for path, epoch, _source in _epoch_candidates(unet_dir, ckpt=True)
     )
 
     last_candidates = sorted(
@@ -214,6 +268,41 @@ def _resolve_unet_config(pipeline_dir: Path, preset: Dict[str, Any]) -> Dict[str
     return load_unet_config(str(config_path))
 
 
+def _infer_vae_downsample_factor(vae_config: Dict[str, Any]) -> int:
+    for key in ("num_channels", "block_out_channels", "down_block_types"):
+        values = vae_config.get(key)
+        if isinstance(values, (list, tuple)) and values:
+            return 2 ** max(0, len(values) - 1)
+    raise ValueError("Cannot infer VAE downsample factor from VAE config")
+
+
+def _apply_training_sample_size(
+    unet_cfg: Dict[str, Any],
+    preset: Dict[str, Any],
+    vae_cfg: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Mirror training-time latent sample-size resolution for sparse run folders."""
+    resolved = dict(unet_cfg)
+    if vae_cfg is None:
+        return resolved
+    image_size = preset.get("data", {}).get("image_size")
+    if image_size is None:
+        return resolved
+    factor = _infer_vae_downsample_factor(vae_cfg)
+    image_size = int(image_size)
+    if image_size % factor != 0:
+        raise ValueError(f"image_size={image_size} is not divisible by VAE downsample factor={factor}")
+    latent_size = image_size // factor
+    if int(resolved.get("sample_size", latent_size)) != latent_size:
+        print(
+            "[info] Adjusting UNET sample_size from "
+            f"{resolved.get('sample_size')} to {latent_size} "
+            f"using image_size={image_size} and VAE downsample factor={factor}."
+        )
+    resolved["sample_size"] = latent_size
+    return resolved
+
+
 def _resolve_vae_config(pipeline_dir: Path, preset: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     saved = pipeline_dir / "VAE" / "config.json"
     if saved.is_file():
@@ -233,8 +322,15 @@ def _resolve_vae_config(pipeline_dir: Path, preset: Dict[str, Any]) -> Optional[
     return None
 
 
-def _build_vae(pipeline_dir: Path, preset: Dict[str, Any], device: str | torch.device):
-    vae_cfg = _resolve_vae_config(pipeline_dir, preset)
+def _build_vae(
+    pipeline_dir: Path,
+    preset: Dict[str, Any],
+    device: str | torch.device,
+    *,
+    vae_cfg: Optional[Dict[str, Any]] = None,
+):
+    if vae_cfg is None:
+        vae_cfg = _resolve_vae_config(pipeline_dir, preset)
     if vae_cfg is None:
         return None
     vae = build_vae_from_config(vae_cfg, device=device)
@@ -252,9 +348,19 @@ def _layout_meta_from_preset(
     preset: Dict[str, Any],
     unet_cfg: Dict[str, Any],
     category_id_to_name: Dict[int, str],
+    checkpoint_state: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict[str, Any]:
     cfg = preset.get("layout_conditioning", {}) or {}
-    num_classes = int(cfg.get("num_classes") or ((max(category_id_to_name) + 1) if category_id_to_name else 1))
+    state_num_classes = 0
+    if checkpoint_state is not None:
+        class_embedding = checkpoint_state.get("object_encoder.class_embedding.weight")
+        if torch.is_tensor(class_embedding) and class_embedding.ndim >= 2:
+            state_num_classes = int(class_embedding.shape[0])
+    num_classes = max(
+        int(cfg.get("num_classes") or 0),
+        int((max(category_id_to_name) + 1) if category_id_to_name else 1),
+        state_num_classes,
+    )
     return {
         "variant": str(cfg.get("variant", "stay_v2")),
         "num_classes": num_classes,
@@ -287,14 +393,21 @@ def _build_fm_sampler(
     layout_variant: str,
     category_id_to_name: Optional[Dict[int, str]] = None,
 ):
-    unet_cfg = _resolve_unet_config(pipeline_dir, preset)
-    vae = _build_vae(pipeline_dir, preset, device)
+    vae_cfg = _resolve_vae_config(pipeline_dir, preset)
+    unet_cfg = _apply_training_sample_size(_resolve_unet_config(pipeline_dir, preset), preset, vae_cfg)
+    vae = _build_vae(pipeline_dir, preset, device, vae_cfg=vae_cfg)
+    checkpoint_state = _state_dict_from_checkpoint(checkpoint_path, map_location=device)
 
     if layout_variant == "stay_v2":
         if (pipeline_dir / "layout_conditioning.json").is_file():
             layout_meta = load_json(pipeline_dir / "layout_conditioning.json")
         else:
-            layout_meta = _layout_meta_from_preset(preset, unet_cfg, category_id_to_name or {})
+            layout_meta = _layout_meta_from_preset(
+                preset,
+                unet_cfg,
+                category_id_to_name or {},
+                checkpoint_state=checkpoint_state,
+            )
         meta_category_names = {
             int(key): value for key, value in layout_meta.get("category_id_to_name", {}).items()
         }
@@ -328,7 +441,7 @@ def _build_fm_sampler(
             backbone_kind="fm_unet2d",
         ).to(device)
 
-    unet.load_state_dict(_state_dict_from_checkpoint(checkpoint_path, map_location=device), strict=True)
+    unet.load_state_dict(checkpoint_state, strict=True)
     unet.eval()
     sampler_cls = LayoutFlowMatchingSampler if layout_variant == "stay_v2" else FlowMatchingSampler
     if vae is not None:
@@ -354,7 +467,8 @@ def _build_sd_sampler(
     checkpoint_path: Path,
     device: str,
 ):
-    unet_cfg = _resolve_unet_config(pipeline_dir, preset)
+    vae_cfg = _resolve_vae_config(pipeline_dir, preset)
+    unet_cfg = _apply_training_sample_size(_resolve_unet_config(pipeline_dir, preset), preset, vae_cfg)
     unet = build_fm_unet_from_config(unet_cfg, device=device)
     unet = _maybe_wrap_regiondiff_unet(
         unet,
@@ -364,7 +478,7 @@ def _build_sd_sampler(
     unet.load_state_dict(_state_dict_from_checkpoint(checkpoint_path, map_location=device), strict=True)
     unet.eval()
 
-    vae = _build_vae(pipeline_dir, preset, device)
+    vae = _build_vae(pipeline_dir, preset, device, vae_cfg=vae_cfg)
     if vae is None:
         raise FileNotFoundError("SD sampling requires a VAE config from the run folder or preset")
 
@@ -390,16 +504,24 @@ def _build_sd_sampler(
 
 
 def tensor_to_output_array(image: torch.Tensor, *, normalization_mode: str) -> np.ndarray:
-    image = image.detach().cpu().to(torch.float32)
-    if image.ndim == 3 and image.shape[0] > 1:
-        image = image.mean(dim=0, keepdim=True)
-    arr = image.numpy()
-    if arr.ndim == 3:
-        arr = arr[0]
-    scaled = ((np.clip(arr, -1.0, 1.0) + 1.0) / 2.0)
-    if normalization_mode == UINT8_LINEAR:
-        return np.clip(np.rint(scaled * 255.0), 0, 255).astype(np.uint8)
-    return np.clip(np.rint(scaled * 2277.0 + 11667.0), 0, 65535).astype(np.uint16)
+    del normalization_mode
+    return image.detach().cpu().to(torch.float32).numpy().astype(np.float32, copy=False)
+
+
+def tensor_array_to_preview_uint8(arr: np.ndarray) -> np.ndarray:
+    """Create a grayscale preview from a generated tensor array."""
+    preview = arr
+    if preview.ndim == 3:
+        preview = preview.mean(axis=0)
+    preview = preview.astype(np.float32, copy=False)
+    if float(np.nanmax(preview)) <= 1.5 and float(np.nanmin(preview)) >= -1.5:
+        preview = (np.clip(preview, -1.0, 1.0) + 1.0) * 127.5
+        return np.clip(preview, 0, 255).astype(np.uint8)
+    lo = float(np.nanpercentile(preview, 1.0))
+    hi = float(np.nanpercentile(preview, 99.0))
+    if hi <= lo:
+        return np.zeros_like(preview, dtype=np.uint8)
+    return np.clip((preview - lo) / (hi - lo) * 255.0, 0, 255).astype(np.uint8)
 
 
 def save_generated_image(
@@ -413,7 +535,7 @@ def save_generated_image(
     file_name = f"sample_{image_id:06d}.npy"
     arr = tensor_to_output_array(image, normalization_mode=normalization_mode)
     np.save(images_dir / file_name, arr)
-    preview = raw_array_to_png_uint8(arr, normalization_mode=normalization_mode)
+    preview = tensor_array_to_preview_uint8(arr)
     Image.fromarray(preview, mode="L").save(previews_dir / f"sample_{image_id:06d}.png")
     return file_name
 
