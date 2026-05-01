@@ -28,6 +28,7 @@ else
 fi
 
 JOB_ID="${SLURM_JOB_ID:-manual}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 echo "Host: $(hostname)"
 echo "Start time: $(date)"
@@ -64,6 +65,9 @@ echo "Configured path mode:"
 grep -n -A4 "^path:" "${CONFIG}" || true
 echo "Configured mixed precision:"
 grep -n "mixed_precision:" "${CONFIG}" | head -n 1 || true
+echo "Configured sampling/debug:"
+grep -n -A6 "^sampling:" "${CONFIG}" || true
+echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
 
 nvidia-smi || true
 

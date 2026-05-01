@@ -26,6 +26,12 @@ from tqdm import tqdm
 
 from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
 from src.conditioning.text_conditioner import TextConditioner
+from src.core.training_utils import (
+    module_state_dict_cpu,
+    optimizer_state_dict_cpu,
+    release_cuda_cache,
+    tensor_tree_to_cpu,
+)
 from src.models.fm_text_unet import load_text_unet_config, build_text_fm_unet, save_text_unet_config
 from src.core.registry import REGISTRIES
 
@@ -365,8 +371,8 @@ class TextFMTrainer(FlowMatchingTrainer):
             ckpt = {
                 "epoch": epoch_idx,
                 "global_step": global_step,
-                "unet_state": self.unet.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
+                "unet_state": module_state_dict_cpu(self.unet),
+                "optimizer_state": optimizer_state_dict_cpu(optimizer),
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
                 "bad_epochs": bad_epochs,
@@ -385,8 +391,9 @@ class TextFMTrainer(FlowMatchingTrainer):
                         "unseen_counts": list(unseen) if unseen is not None else None,
                     }
             if torch.cuda.is_available():
-                ckpt["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
+                ckpt["cuda_rng_state_all"] = tensor_tree_to_cpu(torch.cuda.get_rng_state_all())
             torch.save(ckpt, path)
+            release_cuda_cache()
 
         def _set_epoch(dl: Optional[DataLoader], epoch_idx: int) -> None:
             if dl is None:

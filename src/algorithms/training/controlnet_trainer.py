@@ -24,6 +24,11 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
+from src.core.training_utils import (
+    module_state_dict_cpu,
+    optimizer_state_dict_cpu,
+    release_cuda_cache,
+)
 from src.models.controlnet import (
     ControlNetModel,
     unet_forward_with_controlnet,
@@ -117,7 +122,8 @@ class ControlNetTrainer:
     # ------------------------------------------------------------------
     def save_controlnet_weights(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        torch.save(self.controlnet.state_dict(), path)
+        torch.save(module_state_dict_cpu(self.controlnet), path)
+        release_cuda_cache()
 
     def load_controlnet_weights(
         self, path: str, *, strict: bool = True
@@ -327,8 +333,8 @@ class ControlNetTrainer:
             ckpt = {
                 "epoch": epoch_idx,
                 "global_step": global_step,
-                "controlnet_state": self.controlnet.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
+                "controlnet_state": module_state_dict_cpu(self.controlnet),
+                "optimizer_state": optimizer_state_dict_cpu(optimizer),
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
                 "bad_epochs": bad_epochs,
@@ -336,6 +342,7 @@ class ControlNetTrainer:
                 "conditioning_scale": conditioning_scale,
             }
             torch.save(ckpt, path)
+            release_cuda_cache()
 
         # Grab a small fixed batch of conditioning images for sampling.
         sample_cond = None

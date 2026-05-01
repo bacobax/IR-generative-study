@@ -35,7 +35,7 @@ from src.algorithms.stable_diffusion.models import (
     load_lora_weights_compat,
 )
 from src.core.configs.sd_layout_config import SDLayoutTrainConfig
-from src.core.training_utils import cast_training_params
+from src.core.training_utils import cast_training_params, release_cuda_cache, tensor_tree_to_cpu
 from src.models.regiondiffusion import (
     RegionDiffusionUNetWrapper,
     iter_regiondiff_adapter_parameters,
@@ -118,10 +118,13 @@ def _load_state_dict(path: str | Path) -> Dict[str, torch.Tensor]:
 def _save_state_dict(path: str | Path, state_dict: Dict[str, torch.Tensor]) -> None:
     path = str(path)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    state_dict = tensor_tree_to_cpu(state_dict)
     if path.endswith(".safetensors") and safe_save_file is not None:
         safe_save_file(state_dict, path)
+        release_cuda_cache()
         return
     torch.save(state_dict, path)
+    release_cuda_cache()
 
 
 def _find_stage1_manifest_dir(stage1_dir: str | Path) -> Path:

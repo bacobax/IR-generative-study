@@ -44,6 +44,10 @@ class _FakeDiffusersVAE(torch.nn.Module):
         self.decode_proj = torch.nn.Conv2d(4, 3, kernel_size=1, bias=False)
         self.last_encode_input = None
         self.last_decode_input = None
+        self.slicing_enabled = False
+
+    def enable_slicing(self) -> None:
+        self.slicing_enabled = True
 
     def encode(self, x: torch.Tensor) -> _FakeEncodeOutput:
         self.last_encode_input = x.detach().clone()
@@ -65,6 +69,7 @@ def test_diffusers_adapter_repeats_single_channel_input_and_scales_latents() -> 
     z_mu, z_sigma = adapter.encode(x)
 
     assert autoencoder.last_encode_input is not None
+    assert autoencoder.slicing_enabled is True
     assert autoencoder.last_encode_input.shape == (2, 3, 8, 8)
     assert torch.allclose(autoencoder.last_encode_input[:, 0], x[:, 0])
     assert torch.allclose(autoencoder.last_encode_input[:, 1], x[:, 0])

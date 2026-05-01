@@ -8,6 +8,13 @@ from typing import Any, Dict, Iterable, Optional, Sequence
 import numpy as np
 import torch
 
+from src.core.training_utils import (
+    module_state_dict_cpu,
+    optimizer_state_dict_cpu,
+    release_cuda_cache,
+    tensor_tree_to_cpu,
+)
+
 
 def size_bucket_name(area_ratio: float) -> str:
     """Map normalized source area to the reporting bucket used in logs."""
@@ -147,9 +154,9 @@ def save_training_checkpoint(
         "epoch": int(epoch),
         "global_step": int(global_step),
         "config": dict(config),
-        "model_state": model.state_dict(),
-        "optimizer_state": None if optimizer is None else optimizer.state_dict(),
-        "scheduler_state": None if scheduler is None else scheduler.state_dict(),
+        "model_state": module_state_dict_cpu(model),
+        "optimizer_state": None if optimizer is None else optimizer_state_dict_cpu(optimizer),
+        "scheduler_state": None if scheduler is None else tensor_tree_to_cpu(scheduler.state_dict()),
         "best_val_metric": float(best_val_metric),
         "best_threshold": float(best_threshold),
         "best_val_metrics": {} if best_val_metrics is None else dict(best_val_metrics),
@@ -160,6 +167,7 @@ def save_training_checkpoint(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(payload, path)
+    release_cuda_cache()
 
 
 def load_training_checkpoint(

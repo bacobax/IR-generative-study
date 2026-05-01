@@ -30,8 +30,12 @@ from src.core.training_utils import (
     build_grad_scaler,
     build_scheduler,
     build_summary_writer,
+    module_state_dict_cpu,
     move_optimizer_state_to_device,
+    optimizer_state_dict_cpu,
+    release_cuda_cache,
     resolve_precision_settings,
+    tensor_tree_to_cpu,
 )
 from src.core.visualization.layout_debug import (
     draw_bbox_overlays,
@@ -481,7 +485,8 @@ class FlowMatchingTrainer:
 
     def save_unet_weights(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        torch.save(self.unet.state_dict(), path)
+        torch.save(module_state_dict_cpu(self.unet), path)
+        release_cuda_cache()
 
     def load_vae_weights(self, path: str, *, strict: bool = True) -> None:
         assert self.vae is not None, "VAE not set."
@@ -602,15 +607,16 @@ class FlowMatchingTrainer:
         )
 
         prefix = self._sample_tensorboard_tag()
-        writer.add_images(prefix, generated_display, epoch)
-        writer.add_images(f"{prefix}_boxes", generated_overlay, epoch)
-        writer.add_images(f"{prefix}_layout", layout_canvas, epoch)
+        writer.add_images(prefix, generated_display.detach().cpu(), epoch)
+        writer.add_images(f"{prefix}_boxes", generated_overlay.detach().cpu(), epoch)
+        writer.add_images(f"{prefix}_layout", layout_canvas.detach().cpu(), epoch)
 
         if save_debug_images:
             step_dir = os.path.join(debug_dir, f"epoch_{epoch + 1:04d}")
-            save_image_batch(generated_display, output_dir=step_dir, prefix="generated")
-            save_image_batch(generated_overlay, output_dir=step_dir, prefix="generated_boxes")
-            save_image_batch(layout_canvas, output_dir=step_dir, prefix="layout")
+            save_image_batch(generated_display.detach().cpu(), output_dir=step_dir, prefix="generated")
+            save_image_batch(generated_overlay.detach().cpu(), output_dir=step_dir, prefix="generated_boxes")
+            save_image_batch(layout_canvas.detach().cpu(), output_dir=step_dir, prefix="layout")
+        release_cuda_cache()
 
     def _compute_batch_loss(
         self,
@@ -866,10 +872,10 @@ class FlowMatchingTrainer:
             ckpt = {
                 "epoch": epoch_idx,
                 "global_step": global_step,
-                "unet_state": self.unet.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "scheduler_state": None if scheduler is None else scheduler.state_dict(),
-                "scaler_state": None if scaler is None else scaler.state_dict(),
+                "unet_state": module_state_dict_cpu(self.unet),
+                "optimizer_state": optimizer_state_dict_cpu(optimizer),
+                "scheduler_state": None if scheduler is None else tensor_tree_to_cpu(scheduler.state_dict()),
+                "scaler_state": None if scaler is None else tensor_tree_to_cpu(scaler.state_dict()),
                 "ema_state": None if ema is None else ema.state_dict(),
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
@@ -878,8 +884,9 @@ class FlowMatchingTrainer:
             }
             ckpt.update(self._checkpoint_metadata())
             if torch.cuda.is_available():
-                ckpt["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
+                ckpt["cuda_rng_state_all"] = tensor_tree_to_cpu(torch.cuda.get_rng_state_all())
             torch.save(ckpt, path)
+            release_cuda_cache()
 
         def _set_epoch_for_dataloader(dl: Optional[DataLoader], epoch_idx: int) -> None:
             if dl is None:
@@ -991,6 +998,7 @@ class FlowMatchingTrainer:
                 avg_eval_loss = eval_loss / max(1, n_eval)
                 print(f"  [Eval loss: {avg_eval_loss:.6f}]")
                 writer.add_scalar(f"{self._metric_prefix()}/eval_loss_epoch", avg_eval_loss, epoch)
+                release_cuda_cache()
 
                 improved = (best_eval - avg_eval_loss) > min_delta
                 if improved:
@@ -1044,6 +1052,7 @@ class FlowMatchingTrainer:
                             tag=self._sample_tensorboard_tag(),
                             sample_shape=sample_shape,
                         )
+                release_cuda_cache()
 
         writer.close()
 

@@ -25,7 +25,7 @@ from diffusers.utils import convert_unet_state_dict_to_peft
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
 
-from src.core.training_utils import cast_training_params
+from src.core.training_utils import cast_training_params, release_cuda_cache, tensor_tree_to_cpu
 from src.core.normalization import RAW_UINT16_PERCENTILE
 from src.core.paths import sd_lora_runs_dir, sd_unet_runs_dir
 from src.models.regiondiffusion import iter_regiondiff_adapter_parameters, load_regiondiff_config
@@ -60,10 +60,13 @@ except ImportError:  # pragma: no cover
 
 def _save_state_dict(path: str, state_dict: Dict[str, torch.Tensor]) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    state_dict = tensor_tree_to_cpu(state_dict)
     if path.endswith(".safetensors") and safe_save_file is not None:
         safe_save_file(state_dict, path)
+        release_cuda_cache()
         return
     torch.save(state_dict, path)
+    release_cuda_cache()
 
 
 def _load_state_dict(path: str) -> Dict[str, torch.Tensor]:

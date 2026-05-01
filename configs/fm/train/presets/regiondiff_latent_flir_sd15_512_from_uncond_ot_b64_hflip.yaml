@@ -5,7 +5,7 @@
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
   image_size: 512
-  batch_size: 64
+  batch_size: 32
   num_workers: 4
 
 model:
@@ -84,18 +84,18 @@ precision:
   mixed_precision: "auto"
 
 sampling:
-  sample_every: 20
+  sample_every: 50
   sample_steps: 40
   sample_batch_size: 4
   sample_shape: null
   fixed_validation_examples: 4
-  save_debug_images: true
+  save_debug_images: false
 
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip_last_ckpt"
   log_dir: "./artifacts/runs/main/flow_matching/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip_last_ckpt"
   debug_dir: "./artifacts/debug/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip_last_ckpt"
-  resume: null
+  resume: "./artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip_last_ckpt/UNET/unet_sd_uncond_epoch_25_ckpt.pt"
 
 trainer_name: "default_fm"
 device: null

@@ -26,6 +26,12 @@ from src.algorithms.training.text_fm_trainer import TextFMTrainer
 from src.core.data.annotations import caption_from_count
 from src.core.normalization import fm_output_to_uint16, uint16_to_png_uint8
 from src.core.registry import REGISTRIES
+from src.core.training_utils import (
+    module_state_dict_cpu,
+    optimizer_state_dict_cpu,
+    release_cuda_cache,
+    tensor_tree_to_cpu,
+)
 from src.models.moe_text_unet import TextMOEUNet
 
 
@@ -516,9 +522,9 @@ class MetaFMTrainer(TextFMTrainer):
             "incremental_index": incremental_index,
             "condition": condition,
             "global_step": self._global_step,
-            "unet_state": self.unet.state_dict(),
-            "optimizer_state": optimizer.state_dict(),
-            "scheduler_state": scheduler_state,
+            "unet_state": module_state_dict_cpu(self.unet),
+            "optimizer_state": optimizer_state_dict_cpu(optimizer),
+            "scheduler_state": tensor_tree_to_cpu(scheduler_state),
             "rng_state": torch.random.get_rng_state(),
             "t_scale": self.t_scale,
             "train_target": self.train_target,
@@ -532,10 +538,11 @@ class MetaFMTrainer(TextFMTrainer):
             },
         }
         if torch.cuda.is_available():
-            payload["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
+            payload["cuda_rng_state_all"] = tensor_tree_to_cpu(torch.cuda.get_rng_state_all())
         torch.save(payload, path)
         if save_latest:
             torch.save(payload, os.path.join(checkpoint_dir, latest_filename))
+        release_cuda_cache()
         return path
 
     def _resolve_resume_path(

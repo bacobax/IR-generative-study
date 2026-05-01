@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import math
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Iterable, Optional, Union
 
 import torch
@@ -124,6 +125,38 @@ def move_optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: Uni
                 state[key] = value.to(device)
 
 
+def tensor_tree_to_cpu(value):
+    """Detach tensors in a nested object and move them to CPU for serialization."""
+    if torch.is_tensor(value):
+        return value.detach().cpu()
+    if isinstance(value, Mapping):
+        return type(value)((key, tensor_tree_to_cpu(item)) for key, item in value.items())
+    if isinstance(value, tuple):
+        return tuple(tensor_tree_to_cpu(item) for item in value)
+    if isinstance(value, list):
+        return [tensor_tree_to_cpu(item) for item in value]
+    return value
+
+
+def module_state_dict_cpu(module: torch.nn.Module) -> dict:
+    """Return a CPU snapshot of a module state dict."""
+    return {
+        key: tensor.detach().cpu()
+        for key, tensor in module.state_dict().items()
+    }
+
+
+def optimizer_state_dict_cpu(optimizer: torch.optim.Optimizer) -> dict:
+    """Return a CPU snapshot of an optimizer state dict."""
+    return tensor_tree_to_cpu(optimizer.state_dict())
+
+
+def release_cuda_cache() -> None:
+    """Return unused cached CUDA blocks to the driver after large transient work."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def resolve_warmup_steps(total_steps: int, warmup_ratio: float) -> int:
     """Convert a warmup ratio to an integer warmup step count."""
     total_steps = max(1, int(total_steps))
@@ -240,7 +273,7 @@ class EMAState:
     def average_parameters(self, model: torch.nn.Module):
         """Temporarily swap model parameters with the EMA weights."""
         backup = [
-            param.detach().clone()
+            param.detach().cpu().clone()
             for param in model.parameters()
             if param.requires_grad
         ]
@@ -255,6 +288,8 @@ class EMAState:
                         continue
                     param.copy_(backup[idx].to(device=param.device, dtype=param.dtype))
                     idx += 1
+            del backup
+            release_cuda_cache()
 
 
 def grad_norm(parameters: Iterable[torch.nn.Parameter]) -> float:

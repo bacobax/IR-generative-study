@@ -14,6 +14,7 @@ from generative.networks.nets import AutoencoderKL
 
 from src.core.diffusers_compat import import_diffusers_attr
 from src.core.paths import vae_config_path, vae_config_x4_path, vae_config_x8_path
+from src.core.training_utils import module_state_dict_cpu, release_cuda_cache
 
 
 # ── Known built-in config paths (resolved via src.core.paths) ────────────────
@@ -43,6 +44,9 @@ class DiffusersAutoencoderAdapter(nn.Module):
     def __init__(self, autoencoder: nn.Module):
         super().__init__()
         self.autoencoder = autoencoder
+        enable_slicing = getattr(self.autoencoder, "enable_slicing", None)
+        if callable(enable_slicing):
+            enable_slicing()
 
     @property
     def config(self):
@@ -239,7 +243,8 @@ def load_vae_weights(
 def save_vae_weights(vae: AutoencoderKL, path: str) -> None:
     """Save VAE state-dict to *path*."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    torch.save(vae.state_dict(), path)
+    torch.save(module_state_dict_cpu(vae), path)
+    release_cuda_cache()
 
 
 def freeze_vae(vae):
@@ -268,7 +273,7 @@ def _match_channel_count(x: torch.Tensor, expected_channels: int) -> torch.Tenso
     if int(x.shape[1]) == int(expected_channels):
         return x
     if int(x.shape[1]) == 1 and int(expected_channels) == 3:
-        return x.repeat(1, 3, 1, 1)
+        return x.expand(-1, 3, -1, -1)
     if int(x.shape[1]) == 3 and int(expected_channels) == 1:
         return x.mean(dim=1, keepdim=True)
     raise ValueError(

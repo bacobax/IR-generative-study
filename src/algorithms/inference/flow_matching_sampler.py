@@ -594,7 +594,7 @@ class FlowMatchingSampler:
         z = self.sample_euler(steps=steps, batch_size=batch_size, sample_shape=sample_shape)
         x_gen = self.decode(z)
         x_vis = self.from_norm_to_display(x_gen).clamp(0, 1)
-        writer.add_images(tag, x_vis, epoch)
+        writer.add_images(tag, x_vis.detach().cpu(), epoch)
 
     def log_samples_to_tensorboard_guided(
         self,
@@ -622,7 +622,7 @@ class FlowMatchingSampler:
         with torch.no_grad():
             x_plain = self.decode(z_plain)
         x_plain_vis = self.from_norm_to_display(x_plain).clamp(0, 1)
-        writer.add_images(t_ug, x_plain_vis, epoch)
+        writer.add_images(t_ug, x_plain_vis.detach().cpu(), epoch)
 
         if guidance is not None:
             z_guided = self.sample_euler_guided(
@@ -632,7 +632,7 @@ class FlowMatchingSampler:
             with torch.no_grad():
                 x_guided = self.decode(z_guided)
             x_guided_vis = self.from_norm_to_display(x_guided).clamp(0, 1)
-            writer.add_images(t_g, x_guided_vis, epoch)
+            writer.add_images(t_g, x_guided_vis.detach().cpu(), epoch)
 
             if log_score_scalars:
                 scores_plain = guidance.log_scores(z_plain)

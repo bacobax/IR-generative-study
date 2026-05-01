@@ -24,8 +24,12 @@ from src.core.training_utils import (
     build_scheduler,
     build_summary_writer,
     grad_norm,
+    module_state_dict_cpu,
     move_optimizer_state_to_device,
+    optimizer_state_dict_cpu,
+    release_cuda_cache,
     resolve_precision_settings,
+    tensor_tree_to_cpu,
 )
 from src.core.visualization.layout_debug import (
     draw_bbox_overlays,
@@ -876,10 +880,10 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             ckpt = {
                 "epoch": epoch_idx,
                 "global_step": global_step,
-                "unet_state": self.unet.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "scheduler_state": None if scheduler is None else scheduler.state_dict(),
-                "scaler_state": None if scaler is None else scaler.state_dict(),
+                "unet_state": module_state_dict_cpu(self.unet),
+                "optimizer_state": optimizer_state_dict_cpu(optimizer),
+                "scheduler_state": None if scheduler is None else tensor_tree_to_cpu(scheduler.state_dict()),
+                "scaler_state": None if scaler is None else tensor_tree_to_cpu(scaler.state_dict()),
                 "ema_state": None if ema is None else ema.state_dict(),
                 "best_eval": best_eval,
                 "best_epoch": best_epoch,
@@ -888,6 +892,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 "train_target": self.train_target,
             }
             torch.save(ckpt, path)
+            release_cuda_cache()
 
         for epoch in range(start_epoch, epochs):
             self.unet.train()
@@ -1093,6 +1098,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 avg_eval = eval_loss / max(1, n_eval)
                 writer.add_scalar("layout_fm/eval_loss_epoch", avg_eval, epoch)
                 print(f"  [Eval loss: {avg_eval:.6f}]")
+                release_cuda_cache()
 
                 improved = (best_eval - avg_eval) > min_delta
                 if improved:
@@ -1139,6 +1145,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                             debug_dir=debug_dir,
                             log_internal_maps=log_internal_maps,
                         )
+                release_cuda_cache()
 
             _save_checkpoint(os.path.join(self._unet_dir(), "unet_last_ckpt.pt"), epoch_idx=epoch)
 
