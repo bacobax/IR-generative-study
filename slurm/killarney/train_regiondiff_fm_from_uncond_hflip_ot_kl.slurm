@@ -14,7 +14,7 @@ PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
 ENV_NAME="diffusers-dev"
 CONFIG_REL="configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml"
 CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
-PRETRAINED_UNET="${PROJECT_ROOT}/artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot/UNET/unet_fm_best.pt"
+PRETRAINED_UNET="${PROJECT_ROOT}/artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot/UNET/unet_fm_epoch_300.pt"
 
 cd "${PROJECT_ROOT}"
 mkdir -p "${PROJECT_ROOT}/logs"

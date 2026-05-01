@@ -14,7 +14,7 @@ PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
 ENV_NAME="diffusers-dev"
 CONFIG_REL="configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml"
 CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
-PRETRAINED_UNET="${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET/unet_sd_uncond_best.pt"
+PRETRAINED_UNET="${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET/unet_sd_uncond_epoch_270.pt"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
 
