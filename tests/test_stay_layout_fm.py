@@ -6,11 +6,13 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
 from src.algorithms.training.layout_flow_matching_trainer import LayoutFMTrainer
 from src.cli.train import _FLAT_TO_NESTED, build_parser
 from src.core.configs.config_loader import merge_config_and_cli
@@ -406,6 +408,87 @@ def test_stay_conditional_ot_permutation_keeps_layouts_with_targets() -> None:
     assert torch.allclose(aligned["boxes_xyxy_norm"], cond_kw["boxes_xyxy_norm"].index_select(0, permutation))
 
 
+def test_stay_v2_training_scales_unet_timesteps_from_config_t_scale() -> None:
+    batch = collate_layout_batch([
+        _make_sample(0, n_objects=1),
+        _make_sample(1, n_objects=2),
+    ])
+    cond_kw = {
+        "boxes_xyxy_norm": batch["boxes_xyxy_norm"],
+        "labels": batch["labels"],
+        "object_mask": batch["object_mask"],
+        "style_noise": torch.zeros(2, 2, 8),
+    }
+    seen_timesteps: dict[float, torch.Tensor] = {}
+
+    for t_scale in (100.0, 500.0):
+        unet = _small_stay_layout_unet()
+        recorded: list[torch.Tensor] = []
+
+        def recording_forward(sample, timestep, **kwargs):
+            recorded.append(timestep.detach().cpu())
+            return SimpleNamespace(sample=torch.zeros_like(sample))
+
+        unet.forward = recording_forward
+        trainer = LayoutFMTrainer(
+            unet,
+            layout_config=LayoutConditioningConfig(
+                enabled=True,
+                variant="stay_v2",
+                num_classes=4,
+                category_id_to_name={0: "person", 1: "car", 2: "sign", 3: "light"},
+            ),
+            device="cpu",
+            t_scale=t_scale,
+            model_dir="/tmp/stay_layout_fm_test",
+        )
+
+        torch.manual_seed(123)
+        loss = trainer.flow_matching_step(batch["pixel_values"], cond_kw)
+
+        assert torch.isfinite(loss)
+        assert len(recorded) == 1
+        seen_timesteps[t_scale] = recorded[0]
+
+    assert torch.allclose(seen_timesteps[500.0], seen_timesteps[100.0] * 5.0)
+
+
+def test_stay_v2_sampler_scales_unet_timesteps_from_config_t_scale() -> None:
+    batch = collate_layout_batch([
+        _make_sample(0, n_objects=1),
+        _make_sample(1, n_objects=2),
+    ])
+    batch["style_noise"] = torch.zeros(2, 2, 8)
+    seen_timesteps: dict[float, torch.Tensor] = {}
+
+    for t_scale in (100.0, 500.0):
+        unet = _small_stay_layout_unet()
+        recorded: list[torch.Tensor] = []
+
+        def recording_forward(sample, timestep, **kwargs):
+            recorded.append(timestep.detach().cpu())
+            return SimpleNamespace(sample=torch.zeros_like(sample))
+
+        unet.forward = recording_forward
+        sampler = LayoutFlowMatchingSampler(
+            unet,
+            device="cpu",
+            t_scale=t_scale,
+            sample_shape=(1, 16, 16),
+        )
+
+        z = sampler.sample_euler_layout(batch, steps=2)
+
+        assert z.shape == (2, 1, 16, 16)
+        assert len(recorded) == 2
+        seen_timesteps[t_scale] = torch.stack(recorded)
+
+    expected_100 = torch.tensor([[0.0, 0.0], [50.0, 50.0]])
+    expected_500 = torch.tensor([[0.0, 0.0], [250.0, 250.0]])
+    assert torch.allclose(seen_timesteps[100.0], expected_100)
+    assert torch.allclose(seen_timesteps[500.0], expected_500)
+
+
 def test_stay_v2_trainer_smoke_loop_and_config_loading() -> None:
     parser = build_parser()
     args = parser.parse_args([
@@ -754,3 +837,32 @@ def test_stay_v18_sd15ft_preset_points_to_saved_vae_artifact() -> None:
     assert vae_cfg["pretrained_model_name_or_path"] == "runwayml/stable-diffusion-v1-5"
     assert int(vae_cfg["latent_channels"]) == 4
     assert sample_size == 32
+
+
+def test_stay_flir_sd15_t_scale_sweep_presets_are_isolated_batch8_runs() -> None:
+    parser = build_parser()
+    expected = {
+        "configs/fm/train/presets/stay_layout_latent_flir_sd15_512_t100_b8.yaml": 100.0,
+        "configs/fm/train/presets/stay_layout_latent_flir_sd15_512_t500_b8.yaml": 500.0,
+    }
+
+    for preset_path, t_scale in expected.items():
+        args = parser.parse_args(["--config", preset_path])
+        cfg = merge_config_and_cli(
+            FMTrainConfig,
+            preset_path,
+            parser,
+            args,
+            flat_to_nested=_FLAT_TO_NESTED,
+        )
+
+        suffix = f"t{int(t_scale)}_b8"
+        assert cfg.data.batch_size == 8
+        assert cfg.training.t_scale == t_scale
+        assert cfg.layout_conditioning.enabled is True
+        assert cfg.layout_conditioning.variant == "stay_v2"
+        assert cfg.trainer_name == "layout_fm"
+        assert cfg.output.resume is None
+        assert suffix in cfg.output.model_dir
+        assert suffix in cfg.output.log_dir
+        assert suffix in cfg.output.debug_dir

@@ -236,10 +236,14 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         model_pred: torch.Tensor,
         target: torch.Tensor,
         timesteps: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
         snr_gamma = getattr(self.diffusion_config, "snr_gamma", None)
+        loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
+        loss = self._apply_regiondiff_area_loss_weights(loss, cond_kwargs)
+        loss = loss.mean(dim=list(range(1, len(loss.shape))))
         if snr_gamma is None:
-            return F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+            return loss.mean()
 
         snr = compute_snr(self.noise_scheduler, timesteps)
         mse_loss_weights = torch.stack(
@@ -253,9 +257,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         elif prediction_type == "v_prediction":
             mse_loss_weights = mse_loss_weights / (snr + 1)
 
-        loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
-        loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
-        return loss.mean()
+        return (loss * mse_loss_weights).mean()
 
     def diffusion_step(
         self,
@@ -283,7 +285,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
         target = self._get_prediction_target(latents, noise, timesteps)
         model_pred = self.unet(noisy_latents, timesteps, **cond_kwargs).sample
-        return self._compute_loss(model_pred, target, timesteps)
+        return self._compute_loss(model_pred, target, timesteps, cond_kwargs)
 
     def _compute_batch_loss(
         self,

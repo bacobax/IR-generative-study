@@ -7,6 +7,7 @@ It replaces the inference methods formerly embedded in
 
 from __future__ import annotations
 
+import math
 import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -27,6 +28,14 @@ if TYPE_CHECKING:
 def _default_from_norm_to_display(x: torch.Tensor) -> torch.Tensor:
     """[-1, 1] -> [0, 1] for TensorBoard visualisation."""
     return (x + 1) / 2
+
+
+def validate_t_scale(t_scale: float) -> float:
+    """Return *t_scale* as a positive finite float."""
+    value = float(t_scale)
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError(f"t_scale must be a positive finite float, got {t_scale!r}")
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +158,7 @@ class FlowMatchingSampler:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
         self.unet = unet
-        self.t_scale = float(t_scale)
+        self.t_scale = validate_t_scale(t_scale)
         assert train_target in ("v", "x0")
         self.train_target = train_target
         self.from_norm_to_display = from_norm_to_display or _default_from_norm_to_display

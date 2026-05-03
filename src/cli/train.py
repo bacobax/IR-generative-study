@@ -172,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--partial_backbone_modules", nargs="+", default=None)
     parser.add_argument("--adapter_learning_rate", type=float, default=None)
     parser.add_argument("--backbone_learning_rate", type=float, default=None)
+    parser.add_argument("--area_loss_enabled", type=_str2bool, default=None)
+    parser.add_argument("--area_loss_alpha", type=float, default=None)
+    parser.add_argument("--area_loss_background_weight", type=float, default=None)
+    parser.add_argument("--area_loss_min_weight", type=float, default=None)
+    parser.add_argument("--area_loss_max_weight", type=float, default=None)
 
     # Augmentation schedule
     parser.add_argument("--warmup_frac", type=float, default=0.1)
@@ -265,6 +270,11 @@ _FLAT_TO_NESTED = {
     "partial_backbone_modules": "layout_conditioning.partial_backbone_modules",
     "adapter_learning_rate": "layout_conditioning.adapter_learning_rate",
     "backbone_learning_rate": "layout_conditioning.backbone_learning_rate",
+    "area_loss_enabled": "layout_conditioning.area_loss_enabled",
+    "area_loss_alpha": "layout_conditioning.area_loss_alpha",
+    "area_loss_background_weight": "layout_conditioning.area_loss_background_weight",
+    "area_loss_min_weight": "layout_conditioning.area_loss_min_weight",
+    "area_loss_max_weight": "layout_conditioning.area_loss_max_weight",
     # Augmentation
     "warmup_frac":         "augment.warmup_frac",
     "ramp_frac":           "augment.ramp_frac",

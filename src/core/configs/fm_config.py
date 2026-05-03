@@ -10,6 +10,7 @@ existing CLI defaults.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -134,6 +135,13 @@ class TrainHyperConfig:
     strict_load: bool = True
     max_grad_norm: float = 1.0
 
+    def __post_init__(self) -> None:
+        self.t_scale = float(self.t_scale)
+        if not math.isfinite(self.t_scale) or self.t_scale <= 0.0:
+            raise ValueError(
+                f"training.t_scale must be a positive finite float, got {self.t_scale!r}"
+            )
+
 
 @dataclass
 class OptimizerConfig:
@@ -216,6 +224,11 @@ class LayoutConditioningConfig:
     partial_backbone_modules: List[str] = field(default_factory=lambda: ["mid_block", "up_blocks"])
     adapter_learning_rate: float = 1e-4
     backbone_learning_rate: float = 1e-5
+    area_loss_enabled: bool = False
+    area_loss_alpha: float = 1.0
+    area_loss_background_weight: float = 0.5
+    area_loss_min_weight: float = 0.5
+    area_loss_max_weight: float = 4.0
 
 
 @dataclass

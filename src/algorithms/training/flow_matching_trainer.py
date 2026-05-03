@@ -22,7 +22,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler
+from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler, validate_t_scale
 from src.core.ot import match_target_batch
 from src.core.training_utils import (
     EMAState,
@@ -43,6 +43,7 @@ from src.core.visualization.layout_debug import (
     save_image_batch,
 )
 from src.models.fm_unet import save_unet_config, load_unet_config, build_fm_unet_from_config
+from src.models.regiondiffusion import build_area_weight_map
 from src.models.regiondiffusion_factory import (
     build_regiondiff_wrapper,
     configure_regiondiff_trainability,
@@ -154,7 +155,7 @@ class FlowMatchingTrainer:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
         self.unet = unet
-        self.t_scale = float(t_scale)
+        self.t_scale = validate_t_scale(t_scale)
         assert train_target in ("v", "x0"), f"train_target must be 'v' or 'x0', got '{train_target}'"
         self.train_target = train_target
         self.model_dir = model_dir
@@ -215,6 +216,77 @@ class FlowMatchingTrainer:
             and bool(getattr(self.layout_config, "enabled", False))
             and str(getattr(self.layout_config, "variant", "")) == "regiondiff_v1"
         )
+
+    def _uses_regiondiff_area_loss(self) -> bool:
+        return self._uses_regiondiff_layout() and bool(
+            getattr(self.layout_config, "area_loss_enabled", False)
+        )
+
+    def _apply_regiondiff_area_loss_weights(
+        self,
+        loss: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]],
+    ) -> torch.Tensor:
+        """Apply RegionDiff object-focused spatial weights to unreduced loss."""
+        if not self._uses_regiondiff_area_loss():
+            return loss
+        if cond_kwargs is None:
+            cond_kwargs = {}
+        required = ("boxes_xyxy_norm", "object_mask")
+        missing = [key for key in required if key not in cond_kwargs]
+        if missing:
+            raise KeyError(f"RegionDiff area loss requires conditioning keys: {missing}")
+
+        weights = build_area_weight_map(
+            boxes_xyxy_norm=cond_kwargs["boxes_xyxy_norm"],
+            object_mask=cond_kwargs["object_mask"],
+            latent_height=int(loss.shape[-2]),
+            latent_width=int(loss.shape[-1]),
+            alpha=float(getattr(self.layout_config, "area_loss_alpha", 1.0)),
+            background_weight=float(getattr(self.layout_config, "area_loss_background_weight", 0.5)),
+            min_weight=float(getattr(self.layout_config, "area_loss_min_weight", 0.5)),
+            max_weight=float(getattr(self.layout_config, "area_loss_max_weight", 4.0)),
+        )
+        return loss * weights.to(device=loss.device, dtype=loss.dtype)
+
+    def _validate_resume_checkpoint(self, checkpoint: Dict[str, Any], path: str) -> None:
+        """Reject full-checkpoint resumes from another training family."""
+        if not isinstance(checkpoint, dict) or "unet_state" not in checkpoint:
+            raise ValueError(
+                f"{self._progress_label()} resume expects a full checkpoint with "
+                f"'unet_state', got {path!r}. Use model.pretrained_unet_path for "
+                "weights-only initialization."
+            )
+
+        basename = os.path.basename(path)
+        expected_stem = self._checkpoint_stem()
+        if not basename.startswith(f"{expected_stem}_"):
+            raise ValueError(
+                f"{self._progress_label()} resume checkpoint family mismatch: "
+                f"expected filename starting with {expected_stem!r}, got {basename!r}."
+            )
+
+        if expected_stem == "unet_fm":
+            required = ("t_scale", "train_target")
+            foreign = ("num_train_timesteps", "beta_schedule", "prediction_type")
+        elif expected_stem == "unet_sd_uncond":
+            required = ("num_train_timesteps", "beta_schedule", "prediction_type")
+            foreign = ("t_scale", "train_target")
+        else:
+            return
+
+        missing = [key for key in required if key not in checkpoint]
+        present_foreign = [key for key in foreign if key in checkpoint]
+        if missing or present_foreign:
+            details = []
+            if missing:
+                details.append(f"missing expected metadata {missing}")
+            if present_foreign:
+                details.append(f"found foreign metadata {present_foreign}")
+            raise ValueError(
+                f"{self._progress_label()} resume checkpoint family mismatch for {path!r}: "
+                + "; ".join(details)
+            )
 
     def _best_weights_path(self) -> str:
         return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_best.pt")
@@ -707,7 +779,9 @@ class FlowMatchingTrainer:
         else:
             v_pred = unet_out
 
-        return F.mse_loss(v_pred, v_target)
+        loss = F.mse_loss(v_pred.float(), v_target.float(), reduction="none")
+        loss = self._apply_regiondiff_area_loss_weights(loss, cond_kwargs)
+        return loss.mean()
 
     # ------------------------------------------------------------------
     # Build a sampler for sample-at-epoch
@@ -779,6 +853,7 @@ class FlowMatchingTrainer:
 
         self._ensure_dirs()
         self._save_configs()
+        resume_path = self._resolve_resume_path(resume_from_checkpoint)
 
         # Pre-load weights
         if pretrained_vae_path is not None and self.vae is not None:
@@ -788,7 +863,12 @@ class FlowMatchingTrainer:
             for p in self.vae.parameters():
                 p.requires_grad = False
 
-        if pretrained_unet_path is not None:
+        if resume_path is not None and pretrained_unet_path is not None:
+            print(
+                f"[{self._progress_label()} Resume] Ignoring pretrained_unet_path because "
+                "a full resume checkpoint was provided."
+            )
+        elif pretrained_unet_path is not None:
             self.load_unet_weights(pretrained_unet_path, strict=strict_load)
 
         total_steps = max(1, epochs * len(dataloader))
@@ -823,10 +903,10 @@ class FlowMatchingTrainer:
         bad_epochs = 0
         start_epoch = 0
 
-        resume_path = self._resolve_resume_path(resume_from_checkpoint)
         if resume_path is not None:
             print(f"[{self._progress_label()} Resume] Loading checkpoint from {resume_path}")
             ckpt = torch.load(resume_path, map_location=self.device)
+            self._validate_resume_checkpoint(ckpt, resume_path)
             self.unet.load_state_dict(ckpt["unet_state"])
             optimizer.load_state_dict(ckpt["optimizer_state"])
             move_optimizer_state_to_device(optimizer, self.device)
