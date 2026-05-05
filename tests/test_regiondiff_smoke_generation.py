@@ -134,6 +134,7 @@ def test_production_generation_routes_each_configured_generator_to_own_folder(tm
     assert (output_root / "first" / "images" / "sample_000001.npy").is_file()
     assert (output_root / "second" / "images" / "sample_000002.npy").is_file()
     assert (output_root / "first" / "layout_overlays" / "sample_000001.png").is_file()
+    assert (output_root / "first" / "filtered_layout_overlays" / "sample_000001.png").is_file()
     assert (output_root / "first" / "annotations_unfiltered.json").is_file()
     assert (output_root / "summary.json").is_file()
 
@@ -573,9 +574,21 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
     captured: dict[str, object] = {}
     dummy_wrapper = DummyWrapper()
 
-    monkeypatch.setattr(production_generation, "load_unet_config", lambda _path: {"in_channels": 4})
-    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
-    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(
+        production_generation,
+        "load_unet_config",
+        lambda _path: {"in_channels": 4},
+    )
+    monkeypatch.setattr(
+        production_generation,
+        "build_fm_unet_from_config",
+        lambda _cfg, device: "base_unet",
+    )
+    monkeypatch.setattr(
+        production_generation,
+        "_build_vae_from_preset",
+        lambda _preset, device: "vae",
+    )
 
     def _fake_build_regiondiff(**kwargs):  # noqa: ANN003
         captured["regiondiff_kwargs"] = kwargs
@@ -689,6 +702,99 @@ def test_regiondiff_backend_uses_training_latent_size_with_pretrained_vae(
     assert image_size == 512
     assert label_id_map == {}
     assert captured["unet_cfg"]["sample_size"] == 64
+
+
+def test_regiondiff_sd_backend_reconstructs_from_checkpoint_only_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import yaml
+
+    checkpoint_path = tmp_path / "UNET" / "unet_sd_uncond_epoch_80.pt"
+    checkpoint_path.parent.mkdir(parents=True)
+    torch.save({"unet_state": {"sentinel": torch.ones(1) * 4}}, checkpoint_path)
+    preset_path = tmp_path / "regiondiff_sd_preset.yaml"
+    preset_path.write_text(
+        yaml.safe_dump(
+            {
+                "data": {"image_size": 43},
+                "model": {"unet_config": str(tmp_path / "unet.json")},
+                "layout_conditioning": {
+                    "enabled": True,
+                    "variant": "regiondiff_v1",
+                    "layout_token_dim": 19,
+                    "attachment_kind": "attention",
+                },
+                "diffusion": {
+                    "num_train_timesteps": 111,
+                    "beta_schedule": "linear",
+                    "beta_start": 0.001,
+                    "beta_end": 0.02,
+                    "prediction_type": "epsilon",
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyWrapper(torch.nn.Module):
+        def to(self, device):  # noqa: ANN001
+            self.device = device
+            return self
+
+        def load_state_dict(self, state, strict=True):  # noqa: ANN001
+            self.loaded_state = state
+
+        def eval(self):
+            return self
+
+    class DummyScheduler:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            self.kwargs = kwargs
+
+    captured: dict[str, object] = {}
+    dummy_wrapper = DummyWrapper()
+
+    monkeypatch.setattr(production_generation, "load_unet_config", lambda _path: {"in_channels": 4})
+    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
+    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(production_generation, "import_diffusers_attr", lambda *_args: DummyScheduler)
+
+    def _fake_build_regiondiff(**kwargs):  # noqa: ANN003
+        captured["regiondiff_kwargs"] = kwargs
+        return dummy_wrapper
+
+    def _fake_from_stable(cls, unet, vae, noise_scheduler, **kwargs):  # noqa: ANN001
+        captured["sampler_unet"] = unet
+        captured["sampler_vae"] = vae
+        captured["scheduler"] = noise_scheduler
+        captured["sampler_kwargs"] = kwargs
+        return "regiondiff_sd_sampler"
+
+    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", _fake_build_regiondiff)
+    monkeypatch.setattr(
+        production_generation.UnconditionalStableDiffusionSampler,
+        "from_stable",
+        classmethod(_fake_from_stable),
+    )
+
+    sampler, image_size, label_id_map = production_generation._load_regiondiff_sd_sampler(
+        generator_cfg={"checkpoint_path": str(checkpoint_path), "preset_path": str(preset_path)},
+        dataset_payload={"names": {0: "person", 1: "car"}},
+        device="cpu",
+    )
+
+    assert sampler == "regiondiff_sd_sampler"
+    assert image_size == 43
+    assert label_id_map == {}
+    assert captured["sampler_vae"] == "vae"
+    assert captured["sampler_kwargs"]["device"] == "cpu"
+    assert captured["regiondiff_kwargs"]["backbone_kind"] == "sd_uncond_unet2d"
+    assert captured["regiondiff_kwargs"]["category_id_to_name"] == {0: "person", 1: "car"}
+    assert captured["regiondiff_kwargs"]["num_classes"] == 2
+    assert captured["scheduler"].kwargs["num_train_timesteps"] == 111
+    assert torch.equal(dummy_wrapper.loaded_state["sentinel"], torch.ones(1) * 4)
 
 
 def test_regiondiff_backend_maps_compact_labels_to_checkpoint_classes(
@@ -841,6 +947,21 @@ def test_filtered_annotations_remove_only_invalid_instances_and_keep_images(tmp_
     assert summary["n_annotations"] == 1
     assert len(filtered["images"]) == 2
     assert [ann["id"] for ann in filtered["annotations"]] == [1]
+
+    filtered_overlay_paths = render_layout_overlay_previews(
+        dataset_dir=dataset_dir,
+        max_images=2,
+        annotations_filename="annotations.json",
+        output_dir_name="filtered_layout_overlays",
+    )
+    assert len(filtered_overlay_paths) == 2
+    assert (dataset_dir / "filtered_layout_overlays" / "sample_000001.png").is_file()
+    assert (dataset_dir / "filtered_layout_overlays" / "sample_000002.png").is_file()
+    filtered_overlay_summary = json.loads(
+        (dataset_dir / "filtered_layout_overlays" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert filtered_overlay_summary["annotations_path"] == "annotations.json"
+    assert filtered_overlay_summary["n_annotations"] == 1
 
     audit_dir = dataset_dir / "filter_audit"
     audit_dir.mkdir()

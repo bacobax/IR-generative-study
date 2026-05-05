@@ -129,6 +129,7 @@ def build_regiondiff_wrapper(
         base_model=base_model,
         backbone_kind=backbone_kind,
         attachment_kind=attachment_kind or "attention",
+        use_spatial_adapter=bool(_config_get(region_config, "use_spatial_adapter", False)),
         **common_kwargs,
     )
 
@@ -171,7 +172,7 @@ def configure_regiondiff_trainability(
     elif train_mode != "adapters_only":
         raise ValueError(
             f"Unknown RegionDiff train_mode={train_mode!r}. Expected 'adapters_only' "
-            "or 'adapters_plus_partial_unet'."
+            "or 'adapters_plus_partial_unet'/'adapters_plus_partial_backbone'."
         )
 
     if mixed_precision == "fp16":

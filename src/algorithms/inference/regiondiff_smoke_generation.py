@@ -25,12 +25,14 @@ from tqdm.auto import tqdm
 
 from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler
 from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
+from src.algorithms.inference.unconditional_sd_sampler import UnconditionalStableDiffusionSampler
 from src.algorithms.inference.rare_layout_dataset_tools import (
     audit_generated_layout_dataset,
     export_audit_results,
     load_filter_from_run_or_checkpoint,
     sample_layout_batch,
 )
+from src.core.diffusers_compat import import_diffusers_attr
 from src.algorithms.training.yolo_experiment_b import YOLOTrainSample, load_full_train_samples
 from src.core.data.layout_batching import collate_layout_batch
 from src.core.normalization import RAW_UINT16_PERCENTILE, raw_array_to_png_uint8
@@ -799,6 +801,86 @@ def _load_regiondiff_sampler(
     return sampler, int(preset.get("data", {}).get("image_size", 512)), label_id_map
 
 
+def _build_sd_uncond_noise_scheduler(preset: Mapping[str, Any]):
+    diffusion_cfg = dict(preset.get("diffusion", {}))
+    DDPMScheduler = import_diffusers_attr("diffusers", "DDPMScheduler")
+    return DDPMScheduler(
+        num_train_timesteps=int(diffusion_cfg.get("num_train_timesteps", 1000)),
+        beta_schedule=str(diffusion_cfg.get("beta_schedule", "scaled_linear")),
+        beta_start=float(diffusion_cfg.get("beta_start", 0.00085)),
+        beta_end=float(diffusion_cfg.get("beta_end", 0.012)),
+        prediction_type=str(diffusion_cfg.get("prediction_type", "epsilon")),
+        clip_sample=False,
+    )
+
+
+def _load_regiondiff_sd_sampler(
+    *,
+    generator_cfg: Mapping[str, Any],
+    dataset_payload: Mapping[str, Any],
+    device: str | torch.device,
+) -> tuple[UnconditionalStableDiffusionSampler, int, dict[int, int]]:
+    checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
+    preset_path = _repo_path(generator_cfg["preset_path"])
+    if checkpoint_path is None or not checkpoint_path.is_file():
+        raise FileNotFoundError(
+            f"Missing RegionDiff SD checkpoint: {generator_cfg['checkpoint_path']}"
+        )
+    if preset_path is None or not preset_path.is_file():
+        raise FileNotFoundError(f"Missing RegionDiff SD preset: {generator_cfg['preset_path']}")
+
+    preset = _load_yaml(preset_path)
+    region_cfg = dict(preset.get("layout_conditioning", {}))
+    if not bool(region_cfg.get("enabled", False)):
+        raise ValueError("RegionDiff SD preset must enable layout_conditioning.")
+    if str(region_cfg.get("variant", "")) != "regiondiff_v1":
+        raise ValueError(
+            "RegionDiff SD backend expects layout_conditioning.variant='regiondiff_v1'."
+        )
+
+    vae_cfg = _resolve_vae_config_from_preset(preset)
+    names = _normalise_names(dataset_payload["names"])
+    unet_state = _extract_unet_state(checkpoint_path, device=device)
+    num_classes = _infer_regiondiff_num_classes(state=unet_state, dataset_names=names)
+    checkpoint_names = _regiondiff_checkpoint_category_names(
+        generator_cfg,
+        dataset_names=names,
+        num_classes=num_classes,
+    )
+    label_id_map = _regiondiff_label_id_map(
+        generator_cfg,
+        dataset_names=names,
+        checkpoint_names=checkpoint_names,
+    )
+
+    base_unet = build_fm_unet_from_config(
+        _load_effective_unet_config(
+            checkpoint_path=checkpoint_path,
+            preset=preset,
+            vae_cfg=vae_cfg,
+        ),
+        device=str(device),
+    )
+    unet = build_regiondiff_wrapper(
+        base_model=base_unet,
+        region_config=region_cfg,
+        category_id_to_name=checkpoint_names,
+        num_classes=num_classes,
+        backbone_kind="sd_uncond_unet2d",
+        attachment_kind=str(region_cfg.get("attachment_kind", "attention")),
+    ).to(device)
+    unet.load_state_dict(unet_state, strict=True)
+    unet.eval()
+
+    sampler = UnconditionalStableDiffusionSampler.from_stable(
+        unet,
+        _build_vae_from_preset(preset, device=device),
+        _build_sd_uncond_noise_scheduler(preset),
+        device=device,
+    )
+    return sampler, int(preset.get("data", {}).get("image_size", 512)), label_id_map
+
+
 def generate_stay_fm_arrays(
     *,
     generator_cfg: Mapping[str, Any],
@@ -988,14 +1070,126 @@ def generate_regiondiff_fm_dataset(
     return generated_count
 
 
+def generate_regiondiff_sd_arrays(
+    *,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: Mapping[str, Any],
+    device: str,
+    seed: int,
+) -> list[np.ndarray]:
+    sampler, image_size, label_id_map = _load_regiondiff_sd_sampler(
+        generator_cfg=generator_cfg,
+        dataset_payload=dataset_payload,
+        device=device,
+    )
+    names = _normalise_names(dataset_payload["names"])
+    layout_batches = build_layout_batches(
+        source_samples,
+        image_size=image_size,
+        names=names,
+        batch_size=int(generator_cfg.get("batch_size", 8)),
+    )
+    arrays: list[np.ndarray] = []
+    start_idx = 0
+    for batch in tqdm(
+        layout_batches,
+        desc=f"{generator_cfg.get('name', 'regiondiff_sd')} generation",
+    ):
+        batch = _remap_layout_batch_labels(batch, label_id_map)
+        z = sampler.sample_layout(
+            batch,
+            steps=int(generator_cfg.get("steps", 50)),
+            seed=int(seed) + start_idx,
+        )
+        decoded = sampler.decode(z).detach().cpu()
+        arrays.extend(image.to(torch.float32).numpy() for image in decoded)
+        start_idx += int(batch["pixel_values"].shape[0])
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return arrays
+
+
+def generate_regiondiff_sd_dataset(
+    *,
+    output_dir: str | Path,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
+    device: str,
+    seed: int,
+    image_ids: Sequence[int] | None = None,
+    initialize: bool = True,
+    resume: bool = False,
+) -> int:
+    sampler, image_size, label_id_map = _load_regiondiff_sd_sampler(
+        generator_cfg=generator_cfg,
+        dataset_payload=dataset_payload,
+        device=device,
+    )
+    if initialize:
+        initialize_generated_candidate_dataset(
+            output_dir=output_dir,
+            source_samples=source_samples,
+            dataset_payload=dataset_payload,
+            generator_kind=str(generator_cfg.get("backend", "regiondiff_sd")),
+            generator_config=generator_cfg,
+            image_size=image_size,
+        )
+    names = _normalise_names(dataset_payload["names"])
+    ids = list(image_ids) if image_ids is not None else list(range(1, len(source_samples) + 1))
+    batch_size = max(1, int(generator_cfg.get("batch_size", 8)))
+    generated_count = 0
+    for start_idx in tqdm(
+        range(0, len(source_samples), batch_size),
+        desc=f"{generator_cfg.get('name', 'regiondiff_sd')} generation",
+    ):
+        chunk_samples = source_samples[start_idx : start_idx + batch_size]
+        chunk_ids = ids[start_idx : start_idx + batch_size]
+        pending = [
+            (sample, image_id)
+            for sample, image_id in zip(chunk_samples, chunk_ids)
+            if not (resume and _generated_sample_exists(output_dir, image_id=int(image_id)))
+        ]
+        generated_count += len(chunk_samples) - len(pending)
+        if not pending:
+            continue
+        batch = collate_layout_batch([
+            _sample_to_layout_dict(sample, image_size=image_size, names=names)
+            for sample, _image_id in pending
+        ])
+        batch = _remap_layout_batch_labels(batch, label_id_map)
+        z = sampler.sample_layout(
+            batch,
+            steps=int(generator_cfg.get("steps", 50)),
+            seed=int(seed) + start_idx,
+        )
+        decoded = sampler.decode(z).detach().cpu()
+        for (_sample, image_id), image in zip(pending, decoded):
+            _save_generated_array(
+                output_dir,
+                image_id=int(image_id),
+                array=image.to(torch.float32).numpy(),
+            )
+            generated_count += 1
+        del decoded
+        del z
+        del batch
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return generated_count
+
+
 GENERATOR_BACKENDS: dict[str, Callable[..., list[np.ndarray]]] = {
     "stay_fm": generate_stay_fm_arrays,
     "regiondiff_fm": generate_regiondiff_fm_arrays,
+    "regiondiff_sd": generate_regiondiff_sd_arrays,
 }
 
 STREAMING_GENERATOR_BACKENDS: dict[str, Callable[..., int]] = {
     "stay_fm": generate_stay_fm_dataset,
     "regiondiff_fm": generate_regiondiff_fm_dataset,
+    "regiondiff_sd": generate_regiondiff_sd_dataset,
 }
 
 
@@ -1220,6 +1414,7 @@ def render_layout_overlay_previews(
     dataset_dir: str | Path,
     max_images: int = 24,
     annotations_filename: str = "annotations_unfiltered.json",
+    output_dir_name: str = "layout_overlays",
 ) -> list[str]:
     """Render generated images with the source layout boxes used for conditioning."""
 
@@ -1236,7 +1431,7 @@ def render_layout_overlay_previews(
     for annotation in payload.get("annotations", []):
         annotations_by_image[int(annotation["image_id"])].append(annotation)
 
-    output_dir = dataset_dir / "layout_overlays"
+    output_dir = dataset_dir / str(output_dir_name)
     output_dir.mkdir(parents=True, exist_ok=True)
     saved_paths: list[str] = []
     selected_images = sorted(
@@ -1270,7 +1465,9 @@ def render_layout_overlay_previews(
         {
             "paths": saved_paths,
             "n_images": len(saved_paths),
+            "n_annotations": len(payload.get("annotations", [])),
             "annotations_path": annotations_filename,
+            "output_dir": str(output_dir),
         },
     )
     return saved_paths
@@ -1833,6 +2030,14 @@ def generate_production_synthetic_datasets(
         layout_overlay_paths = render_layout_overlay_previews(
             dataset_dir=output_dir,
             max_images=max_layout_overlays,
+            annotations_filename="annotations_unfiltered.json",
+            output_dir_name="layout_overlays",
+        )
+        filtered_layout_overlay_paths = render_layout_overlay_previews(
+            dataset_dir=output_dir,
+            max_images=max_layout_overlays,
+            annotations_filename="annotations.json",
+            output_dir_name="filtered_layout_overlays",
         )
         sanity_paths = render_sanity_check_images(
             dataset_dir=output_dir,
@@ -1865,6 +2070,7 @@ def generate_production_synthetic_datasets(
             "audit": audit_summary,
             "retry": retry_summary,
             "layout_overlay_paths": layout_overlay_paths,
+            "filtered_layout_overlay_paths": filtered_layout_overlay_paths,
             "sanity_check_paths": sanity_paths,
             "metrics": metrics_summary,
         }

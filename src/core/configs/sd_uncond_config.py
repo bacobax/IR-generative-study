@@ -180,6 +180,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Number of diffusion steps for validation sampling.")
     parser.add_argument("--sample_batch_size", type=int, default=4,
                         help="Batch size for validation sampling")
+    parser.add_argument("--early_sanity_sample_epoch", type=int, default=0,
+                        help="Log an extra validation sample batch every N epochs. Set <= 0 to disable.")
     parser.add_argument("--max_grad_norm", type=float, default=1.0,
                         help="Gradient clipping norm.")
     parser.add_argument("--weight_decay", type=float, default=0.01,
@@ -238,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--area_loss_background_weight", type=float, default=None)
     parser.add_argument("--area_loss_min_weight", type=float, default=None)
     parser.add_argument("--area_loss_max_weight", type=float, default=None)
+    parser.add_argument("--area_x0_loss_weight", type=float, default=None)
 
     parser.add_argument("--warmup_frac", type=float, default=0.1)
     parser.add_argument("--ramp_frac", type=float, default=0.3)
@@ -315,6 +318,7 @@ _FLAT_TO_NESTED = {
     "area_loss_background_weight": "layout_conditioning.area_loss_background_weight",
     "area_loss_min_weight": "layout_conditioning.area_loss_min_weight",
     "area_loss_max_weight": "layout_conditioning.area_loss_max_weight",
+    "area_x0_loss_weight": "layout_conditioning.area_x0_loss_weight",
     "warmup_frac": "augment.warmup_frac",
     "ramp_frac": "augment.ramp_frac",
     "p_crop_warmup": "augment.p_crop_warmup",
@@ -329,6 +333,7 @@ _FLAT_TO_NESTED = {
     "sample_every": "sampling.sample_every",
     "sample_steps": "sampling.sample_steps",
     "sample_batch_size": "sampling.sample_batch_size",
+    "early_sanity_sample_epoch": "sampling.early_sanity_sample_epoch",
     "device": "device",
 }
 

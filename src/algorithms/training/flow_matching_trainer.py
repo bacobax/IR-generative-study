@@ -459,6 +459,7 @@ class FlowMatchingTrainer:
             mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
             max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
             fixed_validation_examples=getattr(config.sampling, "fixed_validation_examples", 0),
+            early_sanity_sample_epoch=getattr(config.sampling, "early_sanity_sample_epoch", 0),
             save_debug_images=getattr(config.sampling, "save_debug_images", False),
             debug_dir=config.output.resolved_debug_dir(),
         )
@@ -644,6 +645,7 @@ class FlowMatchingTrainer:
         max_logged_images: int,
         save_debug_images: bool,
         debug_dir: str,
+        tag: Optional[str] = None,
     ) -> None:
         vis_batch = self._slice_batch(fixed_batch, max_logged_images)
         if hasattr(sampler, "sample_euler_layout"):
@@ -665,27 +667,35 @@ class FlowMatchingTrainer:
 
         generated_images = sampler.decode(generated_latents)
         generated_display = self.from_norm_to_display(generated_images).clamp(0.0, 1.0)
+        image_h, image_w = generated_display.shape[-2:]
+        overlay_boxes = vis_batch["boxes_xyxy_norm"].detach().cpu().to(torch.float32).clone()
+        overlay_boxes[..., 0::2] *= float(image_w)
+        overlay_boxes[..., 1::2] *= float(image_h)
+        overlay_line_width = max(2, int(round(min(image_h, image_w) / 128.0)))
         generated_overlay = draw_bbox_overlays(
             generated_display,
-            boxes_xyxy=vis_batch["boxes_xyxy"],
+            boxes_xyxy=overlay_boxes,
             labels=vis_batch["labels"],
             object_mask=vis_batch["object_mask"],
+            line_width=overlay_line_width,
         )
         layout_canvas = render_class_layout(
-            boxes_xyxy=vis_batch["boxes_xyxy"],
+            boxes_xyxy=overlay_boxes,
             labels=vis_batch["labels"],
             object_mask=vis_batch["object_mask"],
-            image_size=int(vis_batch["pixel_values"].shape[-1]),
+            image_size=int(image_h),
         )
 
-        prefix = self._sample_tensorboard_tag()
-        writer.add_images(prefix, generated_display.detach().cpu(), epoch)
+        prefix = tag or self._sample_tensorboard_tag()
+        writer.add_images(prefix, generated_overlay.detach().cpu(), epoch)
+        writer.add_images(f"{prefix}_clean", generated_display.detach().cpu(), epoch)
         writer.add_images(f"{prefix}_boxes", generated_overlay.detach().cpu(), epoch)
         writer.add_images(f"{prefix}_layout", layout_canvas.detach().cpu(), epoch)
 
         if save_debug_images:
             step_dir = os.path.join(debug_dir, f"epoch_{epoch + 1:04d}")
-            save_image_batch(generated_display.detach().cpu(), output_dir=step_dir, prefix="generated")
+            save_image_batch(generated_display.detach().cpu(), output_dir=step_dir, prefix="generated_clean")
+            save_image_batch(generated_overlay.detach().cpu(), output_dir=step_dir, prefix="generated")
             save_image_batch(generated_overlay.detach().cpu(), output_dir=step_dir, prefix="generated_boxes")
             save_image_batch(layout_canvas.detach().cpu(), output_dir=step_dir, prefix="layout")
         release_cuda_cache()
@@ -840,6 +850,7 @@ class FlowMatchingTrainer:
         mixed_precision: str = "auto",
         max_grad_norm: float = 1.0,
         fixed_validation_examples: int = 0,
+        early_sanity_sample_epoch: int = 0,
         save_debug_images: bool = False,
         debug_dir: str = "./artifacts/debug/flow_matching",
     ) -> None:
@@ -980,7 +991,8 @@ class FlowMatchingTrainer:
                     transform.set_epoch(epoch_idx)
                 current = getattr(current, "dataset", None)
 
-        sampler_obj = self._make_sampler() if sample_every > 0 else None
+        early_sanity_sample_epoch = int(early_sanity_sample_epoch)
+        sampler_obj = self._make_sampler() if sample_every > 0 or early_sanity_sample_epoch > 0 else None
         fixed_batch = None
         if sampler_obj is not None and self._uses_regiondiff_layout():
             fixed_batch = self._build_fixed_validation_batch(
@@ -1101,8 +1113,46 @@ class FlowMatchingTrainer:
                         print(f"🛑 Early stopping triggered. Best epoch: {best_epoch+1} (eval_loss={best_eval:.6f})")
                         break
 
+            should_run_early_sanity_sample = (
+                sampler_obj is not None
+                and early_sanity_sample_epoch > 0
+                and (epoch + 1) % early_sanity_sample_epoch == 0
+            )
+            if should_run_early_sanity_sample:
+                ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
+                with ema_context:
+                    if self._uses_regiondiff_layout():
+                        if fixed_batch is None:
+                            print(
+                                "[RegionDiff Sampling] Skipping early sanity layout sample logging because "
+                                "sampling.fixed_validation_examples <= 0 or no validation samples are available."
+                            )
+                        else:
+                            self._log_regiondiff_validation_samples(
+                                writer,
+                                sampler=sampler_obj,
+                                fixed_batch=fixed_batch,
+                                epoch=epoch,
+                                steps=sample_steps,
+                                sample_shape=sample_shape,
+                                max_logged_images=sample_batch_size,
+                                save_debug_images=save_debug_images,
+                                debug_dir=debug_dir,
+                                tag=f"{self._sample_tensorboard_tag()}_early_sanity",
+                            )
+                    else:
+                        sampler_obj.log_samples_to_tensorboard(
+                            writer=writer,
+                            epoch=epoch,
+                            steps=sample_steps,
+                            batch_size=sample_batch_size,
+                            tag=f"{self._sample_tensorboard_tag()}_early_sanity",
+                            sample_shape=sample_shape,
+                        )
+                release_cuda_cache()
+
             # Sampling
-            if sampler_obj is not None and (epoch + 1) % sample_every == 0:
+            if sampler_obj is not None and sample_every > 0 and (epoch + 1) % sample_every == 0:
                 ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
                 with ema_context:
                     if self._uses_regiondiff_layout():

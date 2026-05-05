@@ -220,6 +220,7 @@ class LayoutConditioningConfig:
     bbox_fourier_dim: int = 64
     same_class_position_slots: int = 128
     use_background_token: bool = True
+    use_spatial_adapter: bool = False
     train_mode: str = "adapters_only"
     partial_backbone_modules: List[str] = field(default_factory=lambda: ["mid_block", "up_blocks"])
     adapter_learning_rate: float = 1e-4
@@ -229,6 +230,7 @@ class LayoutConditioningConfig:
     area_loss_background_weight: float = 0.5
     area_loss_min_weight: float = 0.5
     area_loss_max_weight: float = 4.0
+    area_x0_loss_weight: float = 1.0
 
 
 @dataclass
@@ -250,6 +252,7 @@ class SampleConfig:
     sample_shape: Optional[Tuple[int, int, int]] = None
     fixed_validation_examples: int = 4
     sample_every_steps: int = 0
+    early_sanity_sample_epoch: int = 0
     save_debug_images: bool = False
 
 

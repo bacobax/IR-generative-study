@@ -287,6 +287,73 @@ class RegionSelfAttentionAdapter(nn.Module):
         return self.to_out(attended).to(dtype=residual_dtype)
 
 
+class RegionSpatialAdapter(nn.Module):
+    """Inject RegionDiff layout tokens as a full-resolution latent residual."""
+
+    def __init__(
+        self,
+        *,
+        sample_channels: int,
+        layout_token_dim: int,
+    ) -> None:
+        super().__init__()
+        self.sample_channels = int(sample_channels)
+        self.layout_token_dim = int(layout_token_dim)
+        self.norm = nn.GroupNorm(num_groups=1, num_channels=self.layout_token_dim)
+        self.proj = nn.Sequential(
+            nn.Conv2d(self.layout_token_dim, self.layout_token_dim, kernel_size=1),
+            nn.SiLU(),
+            nn.Conv2d(self.layout_token_dim, self.sample_channels, kernel_size=1, bias=False),
+        )
+        nn.init.zeros_(self.proj[-1].weight)
+
+    @staticmethod
+    def _layout_map_from_context(
+        *,
+        regiondiff_context: Dict[str, Any],
+        height: int,
+        width: int,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        if height != width:
+            raise ValueError(
+                "RegionSpatialAdapter currently expects square latent maps, "
+                f"got height={height}, width={width}."
+            )
+
+        mask_cache = regiondiff_context.setdefault("region_token_masks", {})
+        region_token_mask = mask_cache.get(height)
+        if region_token_mask is None:
+            region_token_mask = build_region_token_mask(
+                boxes_xyxy_norm=regiondiff_context["boxes_xyxy_norm"],
+                object_mask=regiondiff_context["object_mask"],
+                resolution=height,
+                use_background_token=bool(regiondiff_context["use_background_token"]),
+            )
+            mask_cache[height] = region_token_mask
+
+        layout_tokens = regiondiff_context["layout_tokens"].to(dtype=dtype)
+        weights = region_token_mask.to(dtype=layout_tokens.dtype)
+        weights = weights / weights.sum(dim=-1, keepdim=True).clamp(min=1.0)
+        spatial_tokens = torch.bmm(weights, layout_tokens)
+        batch_size, _, channels = spatial_tokens.shape
+        return spatial_tokens.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
+
+    def forward(
+        self,
+        sample: torch.Tensor,
+        *,
+        regiondiff_context: Dict[str, Any],
+    ) -> torch.Tensor:
+        layout_map = self._layout_map_from_context(
+            regiondiff_context=regiondiff_context,
+            height=int(sample.shape[-2]),
+            width=int(sample.shape[-1]),
+            dtype=sample.dtype,
+        )
+        return self.proj(self.norm(layout_map)).to(dtype=sample.dtype)
+
+
 class RegionDiffTransformerBlock(nn.Module):
     """Wrap a diffusers transformer block and insert Region Self-Attention."""
 
@@ -653,6 +720,9 @@ def iter_regiondiff_adapter_parameters(module: nn.Module) -> Iterable[nn.Paramet
     """Yield trainable RegionDiff parameters only."""
     if isinstance(module, (RegionDiffusionUNetWrapper, RegionDiffusionModelWrapper)):
         yield from module.layout_tokenizer.parameters()
+        layout_input_adapter = getattr(module, "layout_input_adapter", None)
+        if layout_input_adapter is not None:
+            yield from layout_input_adapter.parameters()
     for block in iter_regiondiff_transformer_blocks(module):
         yield from block.region_adapter.parameters()
     for block in iter_regiondiff_attention_blocks(module):
@@ -668,6 +738,7 @@ def regiondiff_config_dict(wrapper: "RegionDiffusionUNetWrapper") -> Dict[str, A
         "bbox_fourier_dim": int(wrapper.layout_tokenizer.bbox_fourier_dim),
         "same_class_position_slots": int(wrapper.layout_tokenizer.same_class_position_slots),
         "use_background_token": bool(wrapper.layout_tokenizer.use_background_token),
+        "use_spatial_adapter": bool(getattr(wrapper, "use_spatial_adapter", False)),
         "active_region_resolutions": list(wrapper.active_region_resolutions),
         "category_id_to_name": {
             str(key): value for key, value in wrapper.category_id_to_name.items()
@@ -856,12 +927,14 @@ class RegionDiffusionModelWrapper(nn.Module):
         active_region_resolutions: Iterable[int],
         backbone_kind: str = "unet2d",
         attachment_kind: str = "attention",
+        use_spatial_adapter: bool = False,
     ) -> None:
         super().__init__()
         self.base_model = base_model
         object.__setattr__(self, "base_unet", base_model)
         self.backbone_kind = str(backbone_kind)
         self.attachment_kind = str(attachment_kind)
+        self.use_spatial_adapter = bool(use_spatial_adapter)
         self.category_id_to_name = dict(category_id_to_name)
         self.active_region_resolutions = tuple(sorted(int(value) for value in active_region_resolutions))
         self.layout_tokenizer = LayoutTokenizer(
@@ -890,6 +963,20 @@ class RegionDiffusionModelWrapper(nn.Module):
             "config",
             SimpleNamespace(in_channels=None, out_channels=None, sample_size=None),
         )
+        sample_channels = int(
+            getattr(self.config, "in_channels", 0)
+            or getattr(getattr(self.base_model, "conv_in", None), "in_channels", 0)
+            or 0
+        )
+        if self.use_spatial_adapter:
+            if sample_channels <= 0:
+                raise ValueError("Could not infer sample channel count for RegionDiff spatial adapter.")
+            self.layout_input_adapter = RegionSpatialAdapter(
+                sample_channels=sample_channels,
+                layout_token_dim=layout_token_dim,
+            )
+        else:
+            self.layout_input_adapter = None
 
     @property
     def device(self) -> torch.device:
@@ -965,6 +1052,12 @@ class RegionDiffusionModelWrapper(nn.Module):
                 boxes_xyxy_norm=boxes_xyxy_norm.to(device=sample.device, dtype=sample.dtype),
                 labels=labels.to(device=sample.device),
                 object_mask=object_mask.to(device=sample.device),
+            )
+
+        if context is not None and self.layout_input_adapter is not None:
+            sample = sample + self.layout_input_adapter(
+                sample,
+                regiondiff_context=context,
             )
 
         with self._regiondiff_context_scope(context):

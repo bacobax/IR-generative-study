@@ -87,6 +87,7 @@ sampling:
   sample_shape: null
   fixed_validation_examples: 4
   sample_every_steps: 0
+  early_sanity_sample_epoch: 0
   save_debug_images: false
 
 output:

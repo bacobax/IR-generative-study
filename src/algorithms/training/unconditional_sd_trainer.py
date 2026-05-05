@@ -205,6 +205,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
             mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
             max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
             fixed_validation_examples=getattr(config.sampling, "fixed_validation_examples", 0),
+            early_sanity_sample_epoch=getattr(config.sampling, "early_sanity_sample_epoch", 0),
             save_debug_images=getattr(config.sampling, "save_debug_images", False),
             debug_dir=config.output.resolved_debug_dir(),
         )
@@ -259,6 +260,52 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
 
         return (loss * mse_loss_weights).mean()
 
+    def _predict_x0_from_model_pred(
+        self,
+        noisy_latents: torch.Tensor,
+        model_pred: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
+        """Recover the clean latent implied by the diffusion prediction."""
+        alphas_cumprod = self.noise_scheduler.alphas_cumprod.to(
+            device=noisy_latents.device,
+            dtype=noisy_latents.dtype,
+        )
+        timesteps = timesteps.long()
+        alpha_prod_t = alphas_cumprod[timesteps]
+        beta_prod_t = 1.0 - alpha_prod_t
+        while alpha_prod_t.ndim < noisy_latents.ndim:
+            alpha_prod_t = alpha_prod_t[..., None]
+            beta_prod_t = beta_prod_t[..., None]
+
+        sqrt_alpha_prod = alpha_prod_t.sqrt()
+        sqrt_beta_prod = beta_prod_t.clamp(min=0.0).sqrt()
+        prediction_type = self.noise_scheduler.config.prediction_type
+        if prediction_type == "epsilon":
+            return (noisy_latents - sqrt_beta_prod * model_pred) / sqrt_alpha_prod.clamp(min=1e-8)
+        if prediction_type == "v_prediction":
+            return sqrt_alpha_prod * noisy_latents - sqrt_beta_prod * model_pred
+        if prediction_type == "sample":
+            return model_pred
+        raise ValueError(f"Unknown prediction_type={prediction_type!r}")
+
+    def _compute_regiondiff_x0_area_loss(
+        self,
+        *,
+        noisy_latents: torch.Tensor,
+        clean_latents: torch.Tensor,
+        model_pred: torch.Tensor,
+        timesteps: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]],
+    ) -> torch.Tensor:
+        """Apply RegionDiff area weighting to clean-latent reconstruction."""
+        if not self._uses_regiondiff_area_loss():
+            return model_pred.new_zeros(())
+        pred_x0 = self._predict_x0_from_model_pred(noisy_latents, model_pred, timesteps)
+        loss = F.mse_loss(pred_x0.float(), clean_latents.float(), reduction="none")
+        loss = self._apply_regiondiff_area_loss_weights(loss, cond_kwargs)
+        return loss.mean()
+
     def diffusion_step(
         self,
         latents: torch.Tensor,
@@ -285,7 +332,17 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
         target = self._get_prediction_target(latents, noise, timesteps)
         model_pred = self.unet(noisy_latents, timesteps, **cond_kwargs).sample
-        return self._compute_loss(model_pred, target, timesteps, cond_kwargs)
+        loss = self._compute_loss(model_pred, target, timesteps, cond_kwargs)
+        x0_loss_weight = float(getattr(self.layout_config, "area_x0_loss_weight", 1.0))
+        if x0_loss_weight:
+            loss = loss + x0_loss_weight * self._compute_regiondiff_x0_area_loss(
+                noisy_latents=noisy_latents,
+                clean_latents=latents,
+                model_pred=model_pred,
+                timesteps=timesteps,
+                cond_kwargs=cond_kwargs,
+            )
+        return loss
 
     def _compute_batch_loss(
         self,

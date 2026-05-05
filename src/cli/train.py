@@ -177,6 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--area_loss_background_weight", type=float, default=None)
     parser.add_argument("--area_loss_min_weight", type=float, default=None)
     parser.add_argument("--area_loss_max_weight", type=float, default=None)
+    parser.add_argument("--area_x0_loss_weight", type=float, default=None)
 
     # Augmentation schedule
     parser.add_argument("--warmup_frac", type=float, default=0.1)
@@ -275,6 +276,7 @@ _FLAT_TO_NESTED = {
     "area_loss_background_weight": "layout_conditioning.area_loss_background_weight",
     "area_loss_min_weight": "layout_conditioning.area_loss_min_weight",
     "area_loss_max_weight": "layout_conditioning.area_loss_max_weight",
+    "area_x0_loss_weight": "layout_conditioning.area_x0_loss_weight",
     # Augmentation
     "warmup_frac":         "augment.warmup_frac",
     "ramp_frac":           "augment.ramp_frac",
