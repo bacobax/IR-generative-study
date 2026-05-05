@@ -15,6 +15,7 @@ from src.algorithms.inference.regiondiff_smoke_generation import (
     compute_metric_summary_from_features,
     export_generated_candidate_dataset,
     generate_production_synthetic_datasets,
+    render_layout_overlay_previews,
     render_sanity_check_images,
     write_filtered_annotations_from_audit,
 )
@@ -97,6 +98,12 @@ def test_export_generated_candidate_dataset_writes_experiment_b_shape(tmp_path: 
     assert summary["generator_kind"] == "regiondiff_test"
     assert summary["n_generated_samples"] == 1
 
+    overlay_paths = render_layout_overlay_previews(dataset_dir=output_dir, max_images=1)
+    assert len(overlay_paths) == 1
+    assert (output_dir / "layout_overlays" / "sample_000001.png").is_file()
+    overlay_summary = json.loads((output_dir / "layout_overlays" / "summary.json").read_text(encoding="utf-8"))
+    assert overlay_summary["n_images"] == 1
+
 
 def test_production_generation_routes_each_configured_generator_to_own_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     dataset_yaml = _make_yolo_dataset(tmp_path)
@@ -126,6 +133,7 @@ def test_production_generation_routes_each_configured_generator_to_own_folder(tm
     assert summary["n_source_images"] == 2
     assert (output_root / "first" / "images" / "sample_000001.npy").is_file()
     assert (output_root / "second" / "images" / "sample_000002.npy").is_file()
+    assert (output_root / "first" / "layout_overlays" / "sample_000001.png").is_file()
     assert (output_root / "first" / "annotations_unfiltered.json").is_file()
     assert (output_root / "summary.json").is_file()
 
@@ -260,8 +268,9 @@ def test_generation_retries_images_above_invalid_instance_ratio_threshold(
         context_ratio,
         resolved_run_dir,
         write_filtered_annotations,
+        export_results=True,
     ):
-        del config, device, model, summary, threshold, input_size, context_ratio, resolved_run_dir
+        del config, device, model, summary, threshold, input_size, context_ratio, resolved_run_dir, export_results
         payload = json.loads((Path(dataset_dir) / "annotations_unfiltered.json").read_text(encoding="utf-8"))
         images_by_id = {int(row["id"]): row for row in payload["images"]}
         instance_rows = []
@@ -326,6 +335,7 @@ def test_generation_retries_images_above_invalid_instance_ratio_threshold(
     monkeypatch.setitem(production_generation.GENERATOR_BACKENDS, "retry_fake", _fake_backend)
     monkeypatch.setattr(production_generation, "_load_filter", _fake_load_filter)
     monkeypatch.setattr(production_generation, "_audit_dataset_with_loaded_filter", _fake_audit_dataset_with_loaded_filter)
+    monkeypatch.setattr(production_generation, "_export_loaded_filter_audit_results", lambda **_kwargs: None)
     config = {
         "yolo_dataset_yaml": str(dataset_yaml),
         "output_root": str(output_root),
@@ -429,6 +439,98 @@ def test_stay_backend_reconstructs_from_checkpoint_only_artifact(tmp_path: Path,
     assert torch.equal(dummy_unet.loaded_state["sentinel"], torch.ones(1))
 
 
+def test_stay_backend_uses_training_latent_size_with_pretrained_vae(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import yaml
+
+    checkpoint_path = tmp_path / "UNET" / "unet_fm_epoch_120.pt"
+    checkpoint_path.parent.mkdir(parents=True)
+    torch.save(
+        {
+            "unet_state": {
+                "sentinel": torch.ones(1),
+                "object_encoder.class_embedding.weight": torch.ones(80, 12),
+            }
+        },
+        checkpoint_path,
+    )
+    preset_path = tmp_path / "stay_preset.yaml"
+    preset_path.write_text(
+        yaml.safe_dump(
+            {
+                "data": {"image_size": 512},
+                "model": {
+                    "unet_config": str(tmp_path / "unet.json"),
+                    "vae_config": None,
+                    "vae_pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+                    "vae_pretrained_subfolder": "vae",
+                },
+                "layout_conditioning": {
+                    "class_embed_dim": 12,
+                    "bbox_embed_dim": 13,
+                    "object_embed_dim": 14,
+                    "use_style_latent": False,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyUnet(torch.nn.Module):
+        def load_state_dict(self, state, strict=True):  # noqa: ANN001
+            self.loaded_state = state
+
+        def eval(self):
+            return self
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        production_generation,
+        "load_unet_config",
+        lambda _path: {"sample_size": 128, "in_channels": 4, "out_channels": 4},
+    )
+    monkeypatch.setattr(
+        production_generation,
+        "load_diffusers_vae_config",
+        lambda *_args, **_kwargs: {
+            "_backend": "diffusers_autoencoder_kl",
+            "latent_channels": 4,
+            "down_block_types": [
+                "DownEncoderBlock2D",
+                "DownEncoderBlock2D",
+                "DownEncoderBlock2D",
+                "DownEncoderBlock2D",
+            ],
+        },
+    )
+    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+
+    def _fake_build_stay(unet_cfg, **kwargs):  # noqa: ANN001
+        captured["unet_cfg"] = unet_cfg
+        return DummyUnet()
+
+    monkeypatch.setattr(production_generation, "build_stay_layout_conditioned_unet", _fake_build_stay)
+    monkeypatch.setattr(
+        production_generation.LayoutFlowMatchingSampler,
+        "from_stable",
+        classmethod(lambda cls, unet, vae, **kwargs: "stay_sampler"),
+    )
+
+    sampler, image_size = production_generation._load_stay_sampler(
+        generator_cfg={"checkpoint_path": str(checkpoint_path), "preset_path": str(preset_path)},
+        dataset_payload={"names": {0: "person"}},
+        device="cpu",
+    )
+
+    assert sampler == "stay_sampler"
+    assert image_size == 512
+    assert captured["unet_cfg"]["sample_size"] == 64
+
+
 def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import yaml
 
@@ -503,6 +605,90 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
     assert captured["regiondiff_kwargs"]["backbone_kind"] == "fm_unet2d"
     assert captured["regiondiff_kwargs"]["attachment_kind"] == "residual"
     assert torch.equal(dummy_wrapper.loaded_state["sentinel"], torch.ones(1) * 2)
+
+
+def test_regiondiff_backend_uses_training_latent_size_with_pretrained_vae(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import yaml
+
+    checkpoint_path = tmp_path / "UNET" / "unet_fm_epoch_80.pt"
+    checkpoint_path.parent.mkdir(parents=True)
+    torch.save({"unet_state": {"sentinel": torch.ones(1) * 2}}, checkpoint_path)
+    preset_path = tmp_path / "regiondiff_preset.yaml"
+    preset_path.write_text(
+        yaml.safe_dump(
+            {
+                "data": {"image_size": 512},
+                "model": {
+                    "unet_config": str(tmp_path / "unet.json"),
+                    "vae_config": None,
+                    "vae_pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+                    "vae_pretrained_subfolder": "vae",
+                },
+                "layout_conditioning": {"layout_token_dim": 17},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyWrapper(torch.nn.Module):
+        def to(self, device):  # noqa: ANN001
+            return self
+
+        def load_state_dict(self, state, strict=True):  # noqa: ANN001
+            self.loaded_state = state
+
+        def eval(self):
+            return self
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        production_generation,
+        "load_unet_config",
+        lambda _path: {"sample_size": 128, "in_channels": 4, "out_channels": 4},
+    )
+    monkeypatch.setattr(
+        production_generation,
+        "load_diffusers_vae_config",
+        lambda *_args, **_kwargs: {
+            "_backend": "diffusers_autoencoder_kl",
+            "latent_channels": 4,
+            "down_block_types": [
+                "DownEncoderBlock2D",
+                "DownEncoderBlock2D",
+                "DownEncoderBlock2D",
+                "DownEncoderBlock2D",
+            ],
+        },
+    )
+
+    def _fake_build_fm(unet_cfg, device):  # noqa: ANN001
+        captured["unet_cfg"] = unet_cfg
+        return "base_unet"
+
+    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", _fake_build_fm)
+    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", lambda **_kwargs: DummyWrapper())
+    monkeypatch.setattr(
+        production_generation.FlowMatchingSampler,
+        "from_stable",
+        classmethod(lambda cls, unet, vae, **kwargs: "regiondiff_sampler"),
+    )
+
+    sampler, image_size, label_id_map = production_generation._load_regiondiff_sampler(
+        generator_cfg={"checkpoint_path": str(checkpoint_path), "preset_path": str(preset_path)},
+        dataset_payload={"names": {0: "person", 1: "car"}},
+        device="cpu",
+    )
+
+    assert sampler == "regiondiff_sampler"
+    assert image_size == 512
+    assert label_id_map == {}
+    assert captured["unet_cfg"]["sample_size"] == 64
 
 
 def test_regiondiff_backend_maps_compact_labels_to_checkpoint_classes(

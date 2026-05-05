@@ -797,8 +797,17 @@ def build_instance_confusion_matrix(
     }
     for row in instance_rows:
         category_id_to_name.setdefault(str(row["expected_category_id"]), str(row.get("expected_category_name", row["expected_category_id"])))
-    expected_category_ids = sorted({str(row["expected_category_id"]) for row in instance_rows}, key=lambda value: int(value) if value.isdigit() else value)
-    labels = [category_id_to_name.get(category_id, category_id) for category_id in expected_category_ids] + ["background"]
+    category_ids = {str(row["expected_category_id"]) for row in instance_rows}
+    category_ids.update(
+        str(row["predicted_category_id"])
+        for row in instance_rows
+        if row.get("predicted_category_id") is not None
+    )
+    sorted_category_ids = sorted(
+        category_ids,
+        key=lambda value: int(value) if value.isdigit() else value,
+    )
+    labels = [category_id_to_name.get(category_id, category_id) for category_id in sorted_category_ids] + ["background"]
     label_to_index = {label: idx for idx, label in enumerate(labels)}
     matrix = np.zeros((len(labels), len(labels)), dtype=np.int32)
     for row in instance_rows:

@@ -20,6 +20,7 @@ from scripts.standalone.generate_rare_layout_dataset import main as generate_rar
 from src.algorithms.inference.rare_layout_dataset_tools import (
     LayoutRarityRecord,
     audit_generated_layout_dataset,
+    build_instance_confusion_matrix,
     build_layout_dataset,
     build_layout_rarity_records,
     compute_size_bin_thresholds,
@@ -27,6 +28,28 @@ from src.algorithms.inference.rare_layout_dataset_tools import (
     summarize_instance_statistics,
 )
 from src.models.foreground_background_classifier import ForegroundBackgroundClassifier
+
+
+def test_confusion_matrix_keeps_predicted_only_multiclass_labels() -> None:
+    matrix = build_instance_confusion_matrix(
+        [
+            {
+                "expected_category_id": 0,
+                "expected_category_name": "person",
+                "predicted_category_id": 3,
+                "predicted_category_name": "other vehicle",
+            }
+        ],
+        checkpoint_summary={
+            "category_id_to_name": {
+                "0": "person",
+                "3": "other vehicle",
+            }
+        },
+    )
+
+    assert matrix["labels"] == ["person", "other vehicle", "background"]
+    assert matrix["matrix_counts"][0][1] == 1
 
 
 def _write_split(split_dir: Path, *, split_name: str) -> None:

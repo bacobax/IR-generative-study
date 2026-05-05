@@ -142,6 +142,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Repository root used as subprocess working directory.",
     )
     parser.add_argument(
+        "--stage1-num-workers",
+        type=int,
+        default=None,
+        help="Optional Stage-1 dataloader worker override.",
+    )
+    parser.add_argument(
+        "--stage2-num-workers",
+        type=int,
+        default=None,
+        help="Optional Stage-2 dataloader worker override.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the commands that would run without launching training.",
@@ -190,6 +202,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.mixed_precision is not None:
         stage1_command.extend(["--mixed_precision", args.mixed_precision])
         stage2_command.extend(["--mixed_precision", args.mixed_precision])
+    if args.stage1_num_workers is not None:
+        stage1_command.extend(["--dataloader_num_workers", str(args.stage1_num_workers)])
+    if args.stage2_num_workers is not None:
+        stage2_command.extend(["--num_workers", str(args.stage2_num_workers)])
 
     if _all_exist(stage1_final_paths):
         print("[chain] Stage-1 final artifacts found; skipping Stage-1.")

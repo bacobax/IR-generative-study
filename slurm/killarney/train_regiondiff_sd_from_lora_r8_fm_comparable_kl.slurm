@@ -17,9 +17,22 @@ CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 STAGE1_DIR="${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8"
 STAGE1_MANIFEST="${STAGE1_DIR}/stage1_manifest.json"
 STAGE1_LORA_WEIGHTS="${STAGE1_DIR}/pytorch_lora_weights.safetensors"
+MIXED_PRECISION="${MIXED_PRECISION:-bf16}"
+NUM_WORKERS="${NUM_WORKERS:-0}"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256}"
+export PYTHONFAULTHANDLER="${PYTHONFAULTHANDLER:-1}"
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-1}}"
+
+if [ "${DEBUG_SEGFAULT:-0}" = "1" ]; then
+    export CUDA_LAUNCH_BLOCKING=1
+    export TORCH_SHOW_CPP_STACKTRACES=1
+    NUM_WORKERS=0
+fi
 
 cd "${PROJECT_ROOT}"
 mkdir -p "${PROJECT_ROOT}/logs"
@@ -44,6 +57,10 @@ echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
 echo "SLURM_CPUS_PER_TASK: ${SLURM_CPUS_PER_TASK:-<unset>}"
 echo "Config: ${CONFIG}"
 echo "Stage-1 LoRA dir: ${STAGE1_DIR}"
+echo "MIXED_PRECISION: ${MIXED_PRECISION}"
+echo "NUM_WORKERS: ${NUM_WORKERS}"
+echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
+echo "DEBUG_SEGFAULT: ${DEBUG_SEGFAULT:-0}"
 which python
 python --version
 
@@ -64,6 +81,8 @@ fi
 
 echo "Configured batch size:"
 grep -n "batch_size:" "${CONFIG}" | head -n 1 || true
+echo "Configured num workers:"
+grep -n "num_workers:" "${CONFIG}" | head -n 1 || true
 echo "Configured Stage-1 source:"
 grep -n "stage1_dir:\\|stage1_checkpoint:" "${CONFIG}" || true
 echo "Configured train mode and epochs:"
@@ -76,7 +95,8 @@ nvidia-smi || true
 set +e
 /usr/bin/time -v python -m src.cli.train_sd_layout \
   --config "${CONFIG}" \
-  --mixed_precision fp16 \
+  --mixed_precision "${MIXED_PRECISION}" \
+  --num_workers "${NUM_WORKERS}" \
   > "${PROJECT_ROOT}/logs/regiondiff-sd-lora-r8-fm-comparable-${JOB_ID}.out" \
   2> "${PROJECT_ROOT}/logs/regiondiff-sd-lora-r8-fm-comparable-${JOB_ID}.err"
 STATUS=$?

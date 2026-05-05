@@ -1,6 +1,6 @@
 yolo_dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
 output_root: artifacts/generated/yolo/exp_b/precomputed_candidates
-max_samples: null
+max_samples: 10
 seed: 7
 device: null
 overwrite: true

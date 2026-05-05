@@ -599,19 +599,81 @@ def _remap_layout_batch_labels(
     return remapped
 
 
-def _build_vae_from_preset(preset: Mapping[str, Any], *, device: str | torch.device) -> torch.nn.Module:
+def _resolve_vae_config_from_preset(preset: Mapping[str, Any]) -> dict[str, Any] | None:
     model_cfg = dict(preset.get("model", {}))
     pretrained_name = model_cfg.get("vae_pretrained_model_name_or_path")
     if pretrained_name:
-        vae_cfg = load_diffusers_vae_config(
+        return load_diffusers_vae_config(
             str(pretrained_name),
             subfolder=model_cfg.get("vae_pretrained_subfolder", "vae"),
             revision=model_cfg.get("vae_revision"),
             variant=model_cfg.get("vae_variant"),
         )
-    elif model_cfg.get("vae_config"):
-        vae_cfg = load_vae_config(str(_repo_path(model_cfg["vae_config"])))
+    if model_cfg.get("vae_config"):
+        return load_vae_config(str(_repo_path(model_cfg["vae_config"])))
+    return None
+
+
+def _infer_vae_downsample_factor(vae_config: Mapping[str, Any]) -> int:
+    for key in ("num_channels", "block_out_channels", "down_block_types"):
+        values = vae_config.get(key)
+        if isinstance(values, (list, tuple)) and values:
+            return 2 ** max(0, len(values) - 1)
+    raise ValueError(
+        "VAE config must define a non-empty num_channels, block_out_channels, "
+        "or down_block_types sequence to infer latent sample_size."
+    )
+
+
+def _apply_training_sample_size(
+    unet_cfg: Mapping[str, Any],
+    preset: Mapping[str, Any],
+    vae_cfg: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Mirror training-time latent UNet sample-size resolution."""
+
+    resolved = dict(unet_cfg)
+    if vae_cfg is None:
+        return resolved
+    image_size = dict(preset.get("data", {})).get("image_size")
+    if image_size is None:
+        return resolved
+    image_size = int(image_size)
+    downsample_factor = _infer_vae_downsample_factor(vae_cfg)
+    if image_size % downsample_factor != 0:
+        raise ValueError(
+            f"image_size={image_size} is not divisible by VAE downsample factor "
+            f"{downsample_factor}"
+        )
+    latent_size = image_size // downsample_factor
+    resolved["sample_size"] = latent_size
+    return resolved
+
+
+def _load_effective_unet_config(
+    *,
+    checkpoint_path: Path,
+    preset: Mapping[str, Any],
+    vae_cfg: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    saved_config_path = checkpoint_path.parent / "config.json"
+    if saved_config_path.is_file():
+        unet_cfg = load_unet_config(str(saved_config_path))
     else:
+        model_cfg = dict(preset.get("model", {}))
+        unet_config = model_cfg.get("unet_config")
+        if not unet_config:
+            raise FileNotFoundError(
+                f"No saved UNET config at {saved_config_path} and no model.unet_config in preset."
+            )
+        unet_cfg = load_unet_config(str(_repo_path(unet_config)))
+    return _apply_training_sample_size(unet_cfg, preset, vae_cfg)
+
+
+def _build_vae_from_preset(preset: Mapping[str, Any], *, device: str | torch.device) -> torch.nn.Module:
+    model_cfg = dict(preset.get("model", {}))
+    vae_cfg = _resolve_vae_config_from_preset(preset)
+    if vae_cfg is None:
         raise ValueError("Generator preset must define either a VAE config or a pretrained diffusers VAE.")
 
     vae = build_vae_from_config(vae_cfg, device=device)
@@ -636,12 +698,16 @@ def _load_stay_sampler(
         raise FileNotFoundError(f"Missing STAY preset: {generator_cfg['preset_path']}")
 
     preset = _load_yaml(preset_path)
-    model_cfg = dict(preset.get("model", {}))
     layout_cfg = dict(preset.get("layout_conditioning", {}))
+    vae_cfg = _resolve_vae_config_from_preset(preset)
     names = _normalise_names(dataset_payload["names"])
     unet_state = _extract_unet_state(checkpoint_path, device=device)
     num_classes = _infer_stay_num_classes(state=unet_state, dataset_names=names)
-    unet_cfg = load_unet_config(str(_repo_path(model_cfg["unet_config"])))
+    unet_cfg = _load_effective_unet_config(
+        checkpoint_path=checkpoint_path,
+        preset=preset,
+        vae_cfg=vae_cfg,
+    )
     image_in_channels = int(unet_cfg.get("in_channels", 4))
     unet = build_stay_layout_conditioned_unet(
         unet_cfg,
@@ -691,8 +757,8 @@ def _load_regiondiff_sampler(
         raise FileNotFoundError(f"Missing RegionDiff preset: {generator_cfg['preset_path']}")
 
     preset = _load_yaml(preset_path)
-    model_cfg = dict(preset.get("model", {}))
     region_cfg = dict(preset.get("layout_conditioning", {}))
+    vae_cfg = _resolve_vae_config_from_preset(preset)
     names = _normalise_names(dataset_payload["names"])
     unet_state = _extract_unet_state(checkpoint_path, device=device)
     num_classes = _infer_regiondiff_num_classes(state=unet_state, dataset_names=names)
@@ -707,7 +773,11 @@ def _load_regiondiff_sampler(
         checkpoint_names=checkpoint_names,
     )
     base_unet = build_fm_unet_from_config(
-        load_unet_config(str(_repo_path(model_cfg["unet_config"]))),
+        _load_effective_unet_config(
+            checkpoint_path=checkpoint_path,
+            preset=preset,
+            vae_cfg=vae_cfg,
+        ),
         device=str(device),
     )
     unet = build_regiondiff_wrapper(
@@ -1026,6 +1096,7 @@ def _audit_dataset_with_loaded_filter(
     context_ratio: float,
     resolved_run_dir: Path | None,
     write_filtered_annotations: bool,
+    export_results: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     filter_cfg = dict(config.get("filter", {}))
     instance_rows, image_rows, stats = audit_generated_layout_dataset(
@@ -1040,6 +1111,45 @@ def _audit_dataset_with_loaded_filter(
         classifier_summary=summary,
     )
     audit_dir = Path(dataset_dir) / "filter_audit"
+    if export_results:
+        _export_loaded_filter_audit_results(
+            audit_dir=audit_dir,
+            dataset_dir=dataset_dir,
+            resolved_run_dir=resolved_run_dir,
+            summary=summary,
+            threshold=threshold,
+            input_size=input_size,
+            context_ratio=context_ratio,
+            stats=stats,
+            instance_rows=instance_rows,
+            image_rows=image_rows,
+        )
+    filtered_summary = (
+        write_filtered_annotations_from_audit(dataset_dir=dataset_dir, instance_rows=instance_rows)
+        if write_filtered_annotations
+        else {"enabled": False}
+    )
+    return {
+        "audit_dir": str(audit_dir),
+        "filter_run_dir": None if resolved_run_dir is None else str(resolved_run_dir),
+        "filter_stats": stats,
+        "filtered_annotation_summary": filtered_summary,
+    }, instance_rows, image_rows
+
+
+def _export_loaded_filter_audit_results(
+    *,
+    audit_dir: Path,
+    dataset_dir: str | Path,
+    resolved_run_dir: Path | None,
+    summary: Mapping[str, Any],
+    threshold: Any,
+    input_size: int,
+    context_ratio: float,
+    stats: Mapping[str, Any],
+    instance_rows: Sequence[dict[str, Any]],
+    image_rows: Sequence[dict[str, Any]],
+) -> None:
     export_audit_results(
         output_dir=audit_dir,
         summary={
@@ -1052,23 +1162,12 @@ def _audit_dataset_with_loaded_filter(
             "max_discarded_valid_threshold": 1.0,
             "score_alpha": 1.0,
             "score_beta": 1.0,
-            "stats": stats,
+            "stats": dict(stats),
             "min_valid_object_fraction_sweep": "",
         },
         instance_rows=instance_rows,
         image_rows=image_rows,
     )
-    filtered_summary = (
-        write_filtered_annotations_from_audit(dataset_dir=dataset_dir, instance_rows=instance_rows)
-        if write_filtered_annotations
-        else {"enabled": False}
-    )
-    return {
-        "audit_dir": str(audit_dir),
-        "filter_run_dir": None if resolved_run_dir is None else str(resolved_run_dir),
-        "filter_stats": stats,
-        "filtered_annotation_summary": filtered_summary,
-    }, instance_rows, image_rows
 
 
 def render_sanity_check_images(
@@ -1114,6 +1213,81 @@ def render_sanity_check_images(
         saved_paths.append(str(output_path))
     _write_json(output_dir / "summary.json", {"paths": saved_paths, "n_images": len(saved_paths)})
     return saved_paths
+
+
+def render_layout_overlay_previews(
+    *,
+    dataset_dir: str | Path,
+    max_images: int = 24,
+    annotations_filename: str = "annotations_unfiltered.json",
+) -> list[str]:
+    """Render generated images with the source layout boxes used for conditioning."""
+
+    dataset_dir = Path(dataset_dir)
+    annotations_path = dataset_dir / annotations_filename
+    if not annotations_path.is_file():
+        return []
+    payload = json.loads(annotations_path.read_text(encoding="utf-8"))
+    categories = {
+        int(category["id"]): str(category.get("name", category["id"]))
+        for category in payload.get("categories", [])
+    }
+    annotations_by_image: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for annotation in payload.get("annotations", []):
+        annotations_by_image[int(annotation["image_id"])].append(annotation)
+
+    output_dir = dataset_dir / "layout_overlays"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths: list[str] = []
+    selected_images = sorted(
+        payload.get("images", []),
+        key=lambda item: int(item.get("id", 0)),
+    )[: max(0, int(max_images))]
+    for image_info in selected_images:
+        image_id = int(image_info["id"])
+        image_path = dataset_dir / "images" / str(image_info["file_name"])
+        if not image_path.is_file():
+            continue
+        canvas = Image.fromarray(_array_to_png_uint8(np.load(image_path)), mode="L").convert("RGB")
+        draw = ImageDraw.Draw(canvas)
+        for annotation in annotations_by_image.get(image_id, []):
+            x, y, width, height = [float(value) for value in annotation["bbox"]]
+            x2 = x + max(0.0, width)
+            y2 = y + max(0.0, height)
+            category_id = int(annotation["category_id"])
+            color = _category_color(category_id)
+            draw.rectangle((x, y, x2, y2), outline=color, width=2)
+            label = categories.get(category_id, str(category_id))
+            tx = max(0, int(x))
+            ty = max(0, int(y) - 12)
+            draw.rectangle((tx, ty, tx + min(160, 7 * len(label) + 4), ty + 11), fill=(0, 0, 0))
+            draw.text((tx + 2, ty), label, fill=color)
+        output_path = output_dir / f"sample_{image_id:06d}.png"
+        canvas.save(output_path)
+        saved_paths.append(str(output_path))
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "paths": saved_paths,
+            "n_images": len(saved_paths),
+            "annotations_path": annotations_filename,
+        },
+    )
+    return saved_paths
+
+
+def _category_color(category_id: int) -> tuple[int, int, int]:
+    palette = [
+        (24, 165, 88),
+        (58, 120, 194),
+        (229, 126, 49),
+        (190, 77, 179),
+        (223, 196, 55),
+        (61, 174, 194),
+        (215, 73, 91),
+        (134, 94, 201),
+    ]
+    return palette[int(category_id) % len(palette)]
 
 
 def render_filter_crop_contact_sheets(
@@ -1330,6 +1504,8 @@ def _retry_generation_with_filter(
     seed_stride = int(retry_cfg["seed_stride"])
     retry_rows: list[dict[str, Any]] = []
     final_audit: dict[str, Any] = {"enabled": False}
+    final_instance_rows: list[dict[str, Any]] = []
+    final_image_rows: list[dict[str, Any]] = []
 
     for attempt_idx in range(1, max_tries + 1):
         export_generated_candidate_dataset(
@@ -1340,7 +1516,7 @@ def _retry_generation_with_filter(
             generator_kind=generator_kind,
             generator_config=generator_config,
         )
-        final_audit, _instance_rows, image_rows = _audit_dataset_with_loaded_filter(
+        final_audit, final_instance_rows, final_image_rows = _audit_dataset_with_loaded_filter(
             dataset_dir=output_dir,
             config=active_config,
             device=device,
@@ -1350,10 +1526,11 @@ def _retry_generation_with_filter(
             input_size=input_size,
             context_ratio=context_ratio,
             resolved_run_dir=resolved_run_dir,
-            write_filtered_annotations=True,
+            write_filtered_annotations=False,
+            export_results=False,
         )
         failed_image_ids: list[int] = []
-        for row in image_rows:
+        for row in final_image_rows:
             image_id = int(row["generated_image_id"])
             invalid_ratio = _invalid_ratio_from_image_row(row)
             should_retry = bool(invalid_ratio > invalid_threshold and attempt_idx < max_tries)
@@ -1392,6 +1569,24 @@ def _retry_generation_with_filter(
         for image_id, regenerated_array in zip(failed_image_ids, regenerated_arrays):
             arrays[image_id - 1] = np.asarray(regenerated_array)
 
+    filtered_summary = write_filtered_annotations_from_audit(
+        dataset_dir=output_dir,
+        instance_rows=final_instance_rows,
+    )
+    _export_loaded_filter_audit_results(
+        audit_dir=output_dir / "filter_audit",
+        dataset_dir=output_dir,
+        resolved_run_dir=resolved_run_dir,
+        summary=summary,
+        threshold=threshold,
+        input_size=input_size,
+        context_ratio=context_ratio,
+        stats=final_audit.get("filter_stats", {}),
+        instance_rows=final_instance_rows,
+        image_rows=final_image_rows,
+    )
+    final_audit["filtered_annotation_summary"] = filtered_summary
+
     final_by_image: dict[int, dict[str, Any]] = {}
     for row in retry_rows:
         final_by_image[int(row["generated_image_id"])] = row
@@ -1428,9 +1623,11 @@ def _retry_streamed_generation_with_filter(
     seed_stride = int(retry_cfg["seed_stride"])
     retry_rows: list[dict[str, Any]] = []
     final_audit: dict[str, Any] = {"enabled": False}
+    final_instance_rows: list[dict[str, Any]] = []
+    final_image_rows: list[dict[str, Any]] = []
 
     for attempt_idx in range(1, max_tries + 1):
-        final_audit, _instance_rows, image_rows = _audit_dataset_with_loaded_filter(
+        final_audit, final_instance_rows, final_image_rows = _audit_dataset_with_loaded_filter(
             dataset_dir=output_dir,
             config=active_config,
             device=device,
@@ -1440,10 +1637,11 @@ def _retry_streamed_generation_with_filter(
             input_size=input_size,
             context_ratio=context_ratio,
             resolved_run_dir=resolved_run_dir,
-            write_filtered_annotations=True,
+            write_filtered_annotations=False,
+            export_results=False,
         )
         failed_image_ids: list[int] = []
-        for row in image_rows:
+        for row in final_image_rows:
             image_id = int(row["generated_image_id"])
             invalid_ratio = _invalid_ratio_from_image_row(row)
             should_retry = bool(invalid_ratio > invalid_threshold and attempt_idx < max_tries)
@@ -1483,6 +1681,24 @@ def _retry_streamed_generation_with_filter(
             raise RuntimeError(
                 f"Retry generated {regenerated_count} images for {len(failed_image_ids)} failed source images."
             )
+
+    filtered_summary = write_filtered_annotations_from_audit(
+        dataset_dir=output_dir,
+        instance_rows=final_instance_rows,
+    )
+    _export_loaded_filter_audit_results(
+        audit_dir=output_dir / "filter_audit",
+        dataset_dir=output_dir,
+        resolved_run_dir=resolved_run_dir,
+        summary=summary,
+        threshold=threshold,
+        input_size=input_size,
+        context_ratio=context_ratio,
+        stats=final_audit.get("filter_stats", {}),
+        instance_rows=final_instance_rows,
+        image_rows=final_image_rows,
+    )
+    final_audit["filtered_annotation_summary"] = filtered_summary
 
     final_by_image: dict[int, dict[str, Any]] = {}
     for row in retry_rows:
@@ -1608,6 +1824,16 @@ def generate_production_synthetic_datasets(
                     seed=active_seed,
                 )
                 n_generated = len(arrays)
+        max_layout_overlays = int(
+            active_config.get("sanity", {}).get(
+                "max_layout_overlays",
+                active_config.get("sanity", {}).get("max_images", 24),
+            )
+        )
+        layout_overlay_paths = render_layout_overlay_previews(
+            dataset_dir=output_dir,
+            max_images=max_layout_overlays,
+        )
         sanity_paths = render_sanity_check_images(
             dataset_dir=output_dir,
             max_images=int(active_config.get("sanity", {}).get("max_images", 24)),
@@ -1638,6 +1864,7 @@ def generate_production_synthetic_datasets(
             "n_generated_images": int(n_generated),
             "audit": audit_summary,
             "retry": retry_summary,
+            "layout_overlay_paths": layout_overlay_paths,
             "sanity_check_paths": sanity_paths,
             "metrics": metrics_summary,
         }
