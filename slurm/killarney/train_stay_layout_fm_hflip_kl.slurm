@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=stay-fm-hf
 #SBATCH --account=aip-mpederso
-#SBATCH --time=6:00:00
-#SBATCH --cpus-per-task=15
-#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=20
+#SBATCH --mem=40G
 #SBATCH --gpus-per-node=h100:1
 #SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out
 #SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err

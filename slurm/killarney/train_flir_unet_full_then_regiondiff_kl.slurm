@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sd-unet-rdiff
 #SBATCH --account=aip-mpederso
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=32G
 #SBATCH --gpus-per-node=h100:1
