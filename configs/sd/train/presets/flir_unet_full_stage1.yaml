@@ -15,6 +15,6 @@ freeze_vae: true
 freeze_text_encoder: true
 validation_prompt: "thermal image"
 validation_num_inference_steps: 100
-checkpointing_epochs: 1
+checkpointing_epochs: 10
 output_dir: ./artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_stage1
 seed: 42
