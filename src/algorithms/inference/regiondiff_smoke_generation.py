@@ -150,6 +150,49 @@ def _save_preview_png(array: np.ndarray, path: str | Path) -> Path:
     return path
 
 
+def _should_save_limited_artifact(image_id: int, max_images: int | None) -> bool:
+    if max_images is None:
+        return True
+    return int(image_id) <= max(0, int(max_images))
+
+
+def _draw_layout_overlay(
+    *,
+    array: np.ndarray,
+    sample: YOLOTrainSample,
+    names: Mapping[int, str],
+) -> Image.Image:
+    canvas = Image.fromarray(_array_to_png_uint8(array), mode="L").convert("RGB")
+    draw = ImageDraw.Draw(canvas)
+    image_w, image_h = canvas.size
+    for box in sample.boxes:
+        x, y, x2, y2 = box.xyxy_abs(image_w=image_w, image_h=image_h)
+        category_id = int(box.class_id)
+        color = _category_color(category_id)
+        draw.rectangle((x, y, x2, y2), outline=color, width=2)
+        label = str(names.get(category_id, category_id))
+        tx = max(0, int(x))
+        ty = max(0, int(y) - 12)
+        draw.rectangle((tx, ty, tx + min(160, 7 * len(label) + 4), ty + 11), fill=(0, 0, 0))
+        draw.text((tx + 2, ty), label, fill=color)
+    return canvas
+
+
+def _save_layout_overlay_png(
+    *,
+    output_dir: str | Path,
+    image_id: int,
+    array: np.ndarray,
+    sample: YOLOTrainSample,
+    names: Mapping[int, str],
+    output_dir_name: str = "layout_overlays",
+) -> Path:
+    output_path = Path(output_dir) / output_dir_name / f"sample_{int(image_id):06d}.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _draw_layout_overlay(array=array, sample=sample, names=names).save(output_path)
+    return output_path
+
+
 def _size_bin_thresholds_from_samples(samples: Sequence[YOLOTrainSample]) -> list[float]:
     areas = [float(box.width * box.height) for sample in samples for box in sample.boxes]
     if not areas:
@@ -290,12 +333,35 @@ def initialize_generated_candidate_dataset(
     return output
 
 
-def _save_generated_array(output_dir: str | Path, *, image_id: int, array: np.ndarray) -> None:
+def _save_generated_array(
+    output_dir: str | Path,
+    *,
+    image_id: int,
+    array: np.ndarray,
+    max_preview_images: int | None = None,
+    overlay_sample: YOLOTrainSample | None = None,
+    overlay_names: Mapping[int, str] | None = None,
+    max_layout_overlay_images: int | None = None,
+) -> None:
     output = Path(output_dir)
     file_name = f"sample_{int(image_id):06d}.npy"
     preview_name = f"sample_{int(image_id):06d}.png"
-    np.save(output / "images" / file_name, np.asarray(array))
-    _save_preview_png(np.asarray(array), output / "previews" / preview_name)
+    generated_array = np.asarray(array)
+    np.save(output / "images" / file_name, generated_array)
+    if _should_save_limited_artifact(int(image_id), max_preview_images):
+        _save_preview_png(generated_array, output / "previews" / preview_name)
+    if (
+        overlay_sample is not None
+        and overlay_names is not None
+        and _should_save_limited_artifact(int(image_id), max_layout_overlay_images)
+    ):
+        _save_layout_overlay_png(
+            output_dir=output,
+            image_id=int(image_id),
+            array=generated_array,
+            sample=overlay_sample,
+            names=overlay_names,
+        )
 
 
 def _generated_sample_exists(output_dir: str | Path, *, image_id: int) -> bool:
@@ -311,6 +377,8 @@ def export_generated_candidate_dataset(
     dataset_payload: dict[str, Any],
     generator_kind: str,
     generator_config: Mapping[str, Any] | None = None,
+    max_preview_images: int | None = None,
+    max_layout_overlay_images: int | None = None,
 ) -> Path:
     """Write generated arrays in the candidate format consumed by Experiment B."""
 
@@ -327,12 +395,23 @@ def export_generated_candidate_dataset(
     provenance_rows: list[dict[str, Any]] = []
     annotation_id = 1
 
+    names = _normalise_names(dataset_payload["names"])
     for image_id, (sample, generated_array) in enumerate(zip(source_samples, generated_arrays), start=1):
         file_name = f"sample_{image_id:06d}.npy"
         preview_name = f"sample_{image_id:06d}.png"
-        np.save(images_dir / file_name, np.asarray(generated_array))
-        _save_preview_png(np.asarray(generated_array), previews_dir / preview_name)
-        image_w, image_h = _image_size_from_array(np.asarray(generated_array))
+        generated_array = np.asarray(generated_array)
+        np.save(images_dir / file_name, generated_array)
+        if _should_save_limited_artifact(image_id, max_preview_images):
+            _save_preview_png(generated_array, previews_dir / preview_name)
+        if _should_save_limited_artifact(image_id, max_layout_overlay_images):
+            _save_layout_overlay_png(
+                output_dir=output,
+                image_id=image_id,
+                array=generated_array,
+                sample=sample,
+                names=names,
+            )
+        image_w, image_h = _image_size_from_array(generated_array)
         coco_images.append({"id": image_id, "file_name": file_name, "width": image_w, "height": image_h})
         for object_index, box in enumerate(sample.boxes):
             bbox = box.coco_bbox_abs(image_w=image_w, image_h=image_h)
@@ -924,6 +1003,8 @@ def generate_stay_fm_dataset(
     image_ids: Sequence[int] | None = None,
     initialize: bool = True,
     resume: bool = False,
+    max_preview_images: int | None = None,
+    max_layout_overlay_images: int | None = None,
 ) -> int:
     sampler, image_size = _load_stay_sampler(generator_cfg=generator_cfg, dataset_payload=dataset_payload, device=device)
     if initialize:
@@ -960,8 +1041,16 @@ def generate_stay_fm_dataset(
             steps=int(generator_cfg.get("steps", 50)),
             seed=int(seed) + start_idx,
         )
-        for (_sample, image_id), image in zip(pending, generated):
-            _save_generated_array(output_dir, image_id=int(image_id), array=image.detach().cpu().to(torch.float32).numpy())
+        for (sample, image_id), image in zip(pending, generated):
+            _save_generated_array(
+                output_dir,
+                image_id=int(image_id),
+                array=image.detach().cpu().to(torch.float32).numpy(),
+                max_preview_images=max_preview_images,
+                overlay_sample=sample,
+                overlay_names=names,
+                max_layout_overlay_images=max_layout_overlay_images,
+            )
             generated_count += 1
         del generated
         del batch
@@ -1018,6 +1107,8 @@ def generate_regiondiff_fm_dataset(
     image_ids: Sequence[int] | None = None,
     initialize: bool = True,
     resume: bool = False,
+    max_preview_images: int | None = None,
+    max_layout_overlay_images: int | None = None,
 ) -> int:
     sampler, image_size, label_id_map = _load_regiondiff_sampler(
         generator_cfg=generator_cfg,
@@ -1059,8 +1150,16 @@ def generate_regiondiff_fm_dataset(
             seed=int(seed) + start_idx,
         )
         decoded = sampler.decode(z).detach().cpu()
-        for (_sample, image_id), image in zip(pending, decoded):
-            _save_generated_array(output_dir, image_id=int(image_id), array=image.to(torch.float32).numpy())
+        for (sample, image_id), image in zip(pending, decoded):
+            _save_generated_array(
+                output_dir,
+                image_id=int(image_id),
+                array=image.to(torch.float32).numpy(),
+                max_preview_images=max_preview_images,
+                overlay_sample=sample,
+                overlay_names=names,
+                max_layout_overlay_images=max_layout_overlay_images,
+            )
             generated_count += 1
         del decoded
         del z
@@ -1121,6 +1220,8 @@ def generate_regiondiff_sd_dataset(
     image_ids: Sequence[int] | None = None,
     initialize: bool = True,
     resume: bool = False,
+    max_preview_images: int | None = None,
+    max_layout_overlay_images: int | None = None,
 ) -> int:
     sampler, image_size, label_id_map = _load_regiondiff_sd_sampler(
         generator_cfg=generator_cfg,
@@ -1165,11 +1266,15 @@ def generate_regiondiff_sd_dataset(
             seed=int(seed) + start_idx,
         )
         decoded = sampler.decode(z).detach().cpu()
-        for (_sample, image_id), image in zip(pending, decoded):
+        for (sample, image_id), image in zip(pending, decoded):
             _save_generated_array(
                 output_dir,
                 image_id=int(image_id),
                 array=image.to(torch.float32).numpy(),
+                max_preview_images=max_preview_images,
+                overlay_sample=sample,
+                overlay_names=names,
+                max_layout_overlay_images=max_layout_overlay_images,
             )
             generated_count += 1
         del decoded
@@ -1586,7 +1691,7 @@ def compute_distribution_metrics(
     metrics_dir = dataset_dir / "metrics"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     real_paths = [sample.image_path for sample in source_samples]
-    generated_paths = sorted((dataset_dir / "previews").glob("sample_*.png"))
+    generated_paths = sorted((dataset_dir / "images").glob("sample_*.npy"))
     if min(len(real_paths), len(generated_paths)) < 2:
         summary = {
             "enabled": True,
@@ -1703,6 +1808,13 @@ def _retry_generation_with_filter(
     final_audit: dict[str, Any] = {"enabled": False}
     final_instance_rows: list[dict[str, Any]] = []
     final_image_rows: list[dict[str, Any]] = []
+    max_preview_images = int(active_config.get("sanity", {}).get("max_images", 24))
+    max_layout_overlays = int(
+        active_config.get("sanity", {}).get(
+            "max_layout_overlays",
+            active_config.get("sanity", {}).get("max_images", 24),
+        )
+    )
 
     for attempt_idx in range(1, max_tries + 1):
         export_generated_candidate_dataset(
@@ -1712,6 +1824,8 @@ def _retry_generation_with_filter(
             dataset_payload=dataset_payload,
             generator_kind=generator_kind,
             generator_config=generator_config,
+            max_preview_images=max_preview_images,
+            max_layout_overlay_images=max_layout_overlays,
         )
         final_audit, final_instance_rows, final_image_rows = _audit_dataset_with_loaded_filter(
             dataset_dir=output_dir,
@@ -1873,6 +1987,13 @@ def _retry_streamed_generation_with_filter(
             image_ids=failed_image_ids,
             initialize=False,
             resume=False,
+            max_preview_images=int(active_config.get("sanity", {}).get("max_images", 24)),
+            max_layout_overlay_images=int(
+                active_config.get("sanity", {}).get(
+                    "max_layout_overlays",
+                    active_config.get("sanity", {}).get("max_images", 24),
+                )
+            ),
         )
         if int(regenerated_count) != len(failed_image_ids):
             raise RuntimeError(
@@ -1961,6 +2082,13 @@ def generate_production_synthetic_datasets(
         output_dir.mkdir(parents=True, exist_ok=True)
 
         active_seed = seed + int(generator_cfg.get("seed_offset", 0))
+        max_preview_images = int(active_config.get("sanity", {}).get("max_images", 24))
+        max_layout_overlays = int(
+            active_config.get("sanity", {}).get(
+                "max_layout_overlays",
+                active_config.get("sanity", {}).get("max_images", 24),
+            )
+        )
         if streaming_backend is not None:
             n_generated = streaming_backend(
                 output_dir=output_dir,
@@ -1971,6 +2099,8 @@ def generate_production_synthetic_datasets(
                 seed=active_seed,
                 initialize=True,
                 resume=resume,
+                max_preview_images=max_preview_images,
+                max_layout_overlay_images=max_layout_overlays,
             )
             if int(n_generated) != len(source_samples):
                 raise RuntimeError(f"{name} generated {n_generated} images for {len(source_samples)} source images.")
@@ -1991,6 +2121,8 @@ def generate_production_synthetic_datasets(
                 dataset_payload=dataset_payload,
                 generator_kind=backend_name,
                 generator_config=generator_cfg,
+                max_preview_images=max_preview_images,
+                max_layout_overlay_images=max_layout_overlays,
             )
             n_generated = len(arrays)
         audit_summary: dict[str, Any] = {"enabled": False}
@@ -2021,12 +2153,6 @@ def generate_production_synthetic_datasets(
                     seed=active_seed,
                 )
                 n_generated = len(arrays)
-        max_layout_overlays = int(
-            active_config.get("sanity", {}).get(
-                "max_layout_overlays",
-                active_config.get("sanity", {}).get("max_images", 24),
-            )
-        )
         layout_overlay_paths = render_layout_overlay_previews(
             dataset_dir=output_dir,
             max_images=max_layout_overlays,

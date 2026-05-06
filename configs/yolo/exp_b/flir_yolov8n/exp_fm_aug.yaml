@@ -4,10 +4,10 @@ data:
   test_dataset_yaml: data/derived/yolo-test-ds/test.yaml
   batch_size: 16
   workers: 4
-  image_size: 640
+  image_size: 512
 
 model:
-  weights: yolov8n.pt
+  weights: yolov8m.pt
   task: detect
 
 training:

@@ -1,8 +1,8 @@
 yolo_dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
 output_root: artifacts/generated/yolo/exp_b/precomputed_candidates
-max_samples: 10
+max_samples: 10745
 seed: 7
-device: null
+device: cuda:1
 overwrite: true
 
 filter:
@@ -20,7 +20,7 @@ metrics:
   enabled: true
   feature_extractor: inception
   batch_size: 16
-  force: false
+  force: true
   inception:
     resize_to: 299
     normalize: true
@@ -44,18 +44,18 @@ generators:
     batch_size: 8
     seed_offset: 0
 
-  - name: regiondiff_fm_ot_hflip
-    backend: regiondiff_fm
-    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip/UNET/unet_fm_epoch_80.pt
-    preset_path: configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
-    steps: 20
-    batch_size: 8
-    seed_offset: 100000
+  # - name: regiondiff_fm_ot_hflip
+  #   backend: regiondiff_fm
+  #   checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip/UNET/unet_fm_epoch_80.pt
+  #   preset_path: configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
+  #   steps: 20
+  #   batch_size: 8
+  #   seed_offset: 100000
   
-  - name: regiondiff_sd_hflip
-    backend: regiondiff_sd
-    checkpoint_path: artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip/UNET/unet_sd_uncond_epoch_80.pt
-    preset_path: configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml
-    steps: 80
-    batch_size: 8
-    seed_offset: 100000
+  # - name: regiondiff_sd_hflip
+  #   backend: regiondiff_sd
+  #   checkpoint_path: artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip/UNET/unet_sd_uncond_epoch_80.pt
+  #   preset_path: configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml
+  #   steps: 80
+  #   batch_size: 8
+  #   seed_offset: 100000

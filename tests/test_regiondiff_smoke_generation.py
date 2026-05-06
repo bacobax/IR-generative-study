@@ -120,6 +120,7 @@ def test_production_generation_routes_each_configured_generator_to_own_folder(tm
         "yolo_dataset_yaml": str(dataset_yaml),
         "output_root": str(output_root),
         "seed": 11,
+        "sanity": {"max_images": 1},
         "filter": {"enabled": False},
         "metrics": {"enabled": False},
         "generators": [
@@ -133,7 +134,10 @@ def test_production_generation_routes_each_configured_generator_to_own_folder(tm
     assert summary["n_source_images"] == 2
     assert (output_root / "first" / "images" / "sample_000001.npy").is_file()
     assert (output_root / "second" / "images" / "sample_000002.npy").is_file()
+    assert (output_root / "first" / "previews" / "sample_000001.png").is_file()
+    assert not (output_root / "first" / "previews" / "sample_000002.png").exists()
     assert (output_root / "first" / "layout_overlays" / "sample_000001.png").is_file()
+    assert not (output_root / "first" / "layout_overlays" / "sample_000002.png").exists()
     assert (output_root / "first" / "filtered_layout_overlays" / "sample_000001.png").is_file()
     assert (output_root / "first" / "annotations_unfiltered.json").is_file()
     assert (output_root / "summary.json").is_file()
