@@ -3,13 +3,9 @@ output:
 
 launcher:
   ordered_config_paths:
+    - configs/yolo/exp_b/flir_yolov8m/exp_precomputed_stay_fm_hflip.yaml
     - configs/yolo/exp_b/flir_yolov8m/exp_plain.yaml
-    - configs/yolo/exp_b/flir_yolov8m/exp_fm_aug.yaml
-    - configs/yolo/exp_b/flir_yolov8m/exp_sd_aug_lora.yaml
-    - configs/yolo/exp_b/flir_yolov8m/exp_sd_aug_unet.yaml
   ordered_labels:
     - plain
-    - fm_aug
-    - sd_aug_lora
-    - sd_aug_unet
+    - fm_aug_stay
   notes: "Run with python3 -m src.cli.train_yolo --action run_exp_b_all --config configs/yolo/exp_b/flir_yolov8m/run_exp_b_all.yaml"

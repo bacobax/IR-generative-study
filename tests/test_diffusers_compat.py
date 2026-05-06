@@ -76,6 +76,39 @@ def test_generative_metrics_import_survives_scipy_stub() -> None:
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.skipif(importlib.util.find_spec("scipy") is None, reason="scipy is not installed")
+def test_restore_real_scipy_if_available_replaces_local_stub() -> None:
+    code = textwrap.dedent(
+        """
+        from src.core.diffusers_compat import (
+            disable_diffusers_optional_scipy,
+            restore_real_scipy_if_available,
+        )
+
+        disable_diffusers_optional_scipy()
+        assert getattr(__import__("scipy"), "_flow_matching_stub", False) is True
+
+        restored = restore_real_scipy_if_available()
+        assert restored is True
+
+        import scipy
+        from scipy.ndimage import gaussian_filter1d
+
+        assert getattr(scipy, "_flow_matching_stub", False) is False
+        assert callable(gaussian_filter1d)
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers is not installed")
 def test_sd_unet_imports_do_not_require_peft() -> None:
     code = textwrap.dedent(

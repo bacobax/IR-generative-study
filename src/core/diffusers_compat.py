@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import types
+import importlib
 from importlib.machinery import ModuleSpec
 
 
@@ -28,6 +29,35 @@ def disable_diffusers_optional_scipy(*, lightweight_diffusers_imports: bool = Tr
     _install_scipy_optimize_stub()
     _disable_transformers_optional_scipy()
     _disable_diffusers_optional_scipy(lightweight_imports=lightweight_diffusers_imports)
+
+
+def restore_real_scipy_if_available() -> bool:
+    """Replace the local SciPy stub with the real SciPy package when installed."""
+    scipy_module = sys.modules.get("scipy")
+    scipy_optimize = sys.modules.get("scipy.optimize")
+    has_stubbed_scipy = bool(getattr(scipy_module, "_flow_matching_stub", False))
+    has_stubbed_optimize = bool(getattr(scipy_optimize, "_flow_matching_stub", False))
+    if not has_stubbed_scipy and not has_stubbed_optimize:
+        return scipy_module is not None
+
+    stubbed_names = [
+        name
+        for name, module in list(sys.modules.items())
+        if name == "scipy" or name.startswith("scipy.")
+        if getattr(module, "_flow_matching_stub", False)
+    ]
+    for name in stubbed_names:
+        sys.modules.pop(name, None)
+
+    try:
+        importlib.import_module("scipy")
+        return True
+    except ModuleNotFoundError:
+        for name in stubbed_names:
+            sys.modules.pop(name, None)
+        if has_stubbed_scipy:
+            _install_scipy_optimize_stub()
+        return False
 
 
 def _disabled_linear_sum_assignment(*_args, **_kwargs):

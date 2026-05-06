@@ -316,6 +316,36 @@ def test_ir_preprocessing_respects_v18_and_flir_normalization():
     assert int(flir_arr[0, 1, 0]) == 255
 
 
+def test_npy_preprocessing_accepts_channel_first_normalized_rgb():
+    rgb_chw = np.array(
+        [
+            [[-1.0, 0.0], [1.0, 0.5]],
+            [[-1.0, 0.0], [1.0, 0.5]],
+            [[-1.0, 0.0], [1.0, 0.5]],
+        ],
+        dtype=np.float32,
+    )
+
+    image = ir_npy_to_normalized_rgb(rgb_chw, normalization_mode=UINT8_LINEAR)
+    arr = np.asarray(image)
+
+    assert arr.shape == (2, 2, 3)
+    assert int(arr[0, 0, 0]) == 0
+    assert int(arr[0, 1, 0]) == 128
+    assert int(arr[1, 0, 0]) == 255
+
+
+def test_npy_preprocessing_accepts_channel_last_rgb_and_rgba():
+    rgb = np.array([[[0, 127, 255], [255, 127, 0]]], dtype=np.uint8)
+    rgba = np.concatenate([rgb, np.full((1, 2, 1), 255, dtype=np.uint8)], axis=-1)
+
+    rgb_image = ir_npy_to_normalized_rgb(rgb, normalization_mode=UINT8_LINEAR)
+    rgba_image = ir_npy_to_normalized_rgb(rgba, normalization_mode=UINT8_LINEAR)
+
+    np.testing.assert_array_equal(np.asarray(rgb_image), rgb)
+    np.testing.assert_array_equal(np.asarray(rgba_image), rgb)
+
+
 def test_constant_prompt_dataset_works_without_metadata(tmp_path: Path):
     image_path = tmp_path / "sample.npy"
     np.save(image_path, np.zeros((8, 8), dtype=np.uint8))

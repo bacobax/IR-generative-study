@@ -240,6 +240,40 @@ def test_streaming_generation_resume_skips_existing_images(tmp_path: Path, monke
     assert np.load(output_dir / "images" / "sample_000002.npy").mean() == pytest.approx(11.0)
 
 
+def test_metrics_only_uses_existing_images_without_generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dataset_yaml = _make_yolo_dataset(tmp_path)
+    output_root = tmp_path / "generated"
+    output_dir = output_root / "existing"
+    (output_dir / "images").mkdir(parents=True)
+    for image_id in (1, 2):
+        np.save(output_dir / "images" / f"sample_{image_id:06d}.npy", np.zeros((3, 8, 8), dtype=np.float32))
+
+    monkeypatch.setitem(
+        production_generation.GENERATOR_BACKENDS,
+        "fake",
+        lambda **_kwargs: pytest.fail("metrics-only must not call the generator backend"),
+    )
+    monkeypatch.setattr(
+        production_generation,
+        "compute_distribution_metrics",
+        lambda **_kwargs: {"enabled": True, "sentinel": "metrics"},
+    )
+    config = {
+        "yolo_dataset_yaml": str(dataset_yaml),
+        "output_root": str(output_root),
+        "metrics": {"enabled": True},
+        "generators": [{"name": "existing", "backend": "fake"}],
+    }
+
+    summary = generate_production_synthetic_datasets(config=config, metrics_only=True)
+
+    result = summary["generators"][0]
+    assert result["n_generated_images"] == 2
+    assert result["metrics"] == {"enabled": True, "sentinel": "metrics"}
+    assert result["audit"]["reason"] == "metrics_only"
+    assert (output_dir / "metadata" / "production_summary.json").is_file()
+
+
 def test_generation_retries_images_above_invalid_instance_ratio_threshold(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -2046,6 +2046,7 @@ def generate_production_synthetic_datasets(
     device: str | None = None,
     skip_filter: bool = False,
     skip_metrics: bool = False,
+    metrics_only: bool = False,
 ) -> dict[str, Any]:
     active_config: dict[str, Any] = dict(config)
     resume = bool(active_config.get("resume", False))
@@ -2077,6 +2078,38 @@ def generate_production_synthetic_datasets(
         if backend is None:
             raise ValueError(f"Unsupported generator backend={backend_name!r}.")
         output_dir = root / name
+        if metrics_only:
+            if not output_dir.exists():
+                raise FileNotFoundError(f"Cannot compute metrics for missing generated dataset: {output_dir}")
+            generated_paths = sorted((output_dir / "images").glob("sample_*.npy"))
+            metrics_config = dict(active_config)
+            if skip_metrics:
+                metrics_config["metrics"] = {**dict(metrics_config.get("metrics", {})), "enabled": False}
+            metrics_summary = compute_distribution_metrics(
+                dataset_dir=output_dir,
+                source_samples=source_samples,
+                config=metrics_config,
+                device=active_device,
+                seed=seed,
+            )
+            result = {
+                "name": name,
+                "backend": backend_name,
+                "output_dir": str(output_dir),
+                "annotations_path": str(output_dir / "annotations.json"),
+                "unfiltered_annotations_path": str(output_dir / "annotations_unfiltered.json"),
+                "n_source_images": len(source_samples),
+                "n_generated_images": len(generated_paths),
+                "audit": {"enabled": False, "skipped": True, "reason": "metrics_only"},
+                "retry": {"enabled": False, "skipped": True, "reason": "metrics_only"},
+                "layout_overlay_paths": [],
+                "filtered_layout_overlay_paths": [],
+                "sanity_check_paths": [],
+                "metrics": metrics_summary,
+            }
+            _write_json(output_dir / "metadata" / "production_summary.json", result)
+            results.append(result)
+            continue
         if bool(active_config.get("overwrite", True)) and not resume and output_dir.exists():
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)

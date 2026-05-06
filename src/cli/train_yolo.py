@@ -40,6 +40,7 @@ from src.algorithms.training.yolo_experiment_b import (
 )
 from src.core.configs.config_loader import load_yaml, merge_config_and_cli
 from src.core.configs.yolo_experiment_config import YOLOExperimentConfig
+from src.core.diffusers_compat import restore_real_scipy_if_available
 from src.core.paths import repo_root, yolo_analysis_root
 
 
@@ -982,6 +983,7 @@ def _stage_train_kwargs(
 
 def run_train(cfg: YOLOExperimentConfig) -> dict[str, Any]:
     YOLO = _require_ultralytics()
+    restore_real_scipy_if_available()
     _set_seed(cfg.training.seed, cfg.training.deterministic)
     run_dir, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
     _save_resolved_config(cfg, analysis_dir / "resolved_config.json")

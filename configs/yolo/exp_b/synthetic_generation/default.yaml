@@ -20,7 +20,7 @@ metrics:
   enabled: true
   feature_extractor: inception
   batch_size: 16
-  force: true
+  force: false
   inception:
     resize_to: 299
     normalize: true

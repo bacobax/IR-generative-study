@@ -152,24 +152,66 @@ def _normalized_ir_to_pil_rgb(norm_tensor: torch.Tensor) -> Image.Image:
     return Image.fromarray(x8).convert("RGB")
 
 
+def _image_array_to_pil_rgb(arr: np.ndarray, *, normalization_mode: str) -> Image.Image:
+    """Convert an already image-shaped array to RGB.
+
+    Generated datasets may store decoder output as ``(C, H, W)`` float arrays
+    in ``[-1, 1]``.  Real IR datasets still flow through the single-channel
+    normalization path below.
+    """
+    if arr.ndim == 3 and arr.shape[0] in {3, 4}:
+        arr = np.moveaxis(arr, 0, -1)
+    if arr.ndim == 3 and arr.shape[-1] == 4:
+        arr = arr[..., :3]
+    if arr.ndim != 3 or arr.shape[-1] != 3:
+        raise ValueError(f"Expected RGB image array, got shape {arr.shape}")
+
+    if arr.dtype == np.uint8:
+        return Image.fromarray(arr).convert("RGB")
+
+    if np.issubdtype(arr.dtype, np.integer):
+        tensor = torch.from_numpy(arr).permute(2, 0, 1).float()
+        normalized = normalize_image_tensor(tensor, normalization_mode=normalization_mode)
+        x01 = (normalized.clamp(-1.0, 1.0) + 1.0) / 2.0
+    else:
+        tensor = torch.from_numpy(arr.astype(np.float32, copy=False))
+        finite = tensor[torch.isfinite(tensor)]
+        if finite.numel() == 0:
+            x01 = torch.zeros_like(tensor)
+        elif float(finite.min()) < 0.0:
+            x01 = (tensor.clamp(-1.0, 1.0) + 1.0) / 2.0
+        elif float(finite.max()) <= 1.0:
+            x01 = tensor.clamp(0.0, 1.0)
+        else:
+            x01 = (tensor / 255.0).clamp(0.0, 1.0)
+        x01 = x01.permute(2, 0, 1)
+
+    x8 = np.clip(np.rint(x01.permute(1, 2, 0).cpu().numpy() * 255.0), 0, 255).astype(np.uint8)
+    return Image.fromarray(x8).convert("RGB")
+
+
 def ir_npy_to_normalized_rgb(
     npy_or_path,
     *,
     normalization_mode: str,
 ) -> Image.Image:
-    """Load a local IR `.npy`, normalize to [-1,1], then convert to RGB."""
+    """Load a local `.npy`, normalize if needed, then convert to RGB."""
     if isinstance(npy_or_path, (str, os.PathLike)):
         arr = np.load(npy_or_path)
     else:
         arr = np.asarray(npy_or_path)
 
     if arr.ndim == 3:
+        if arr.shape[-1] in {3, 4}:
+            return _image_array_to_pil_rgb(arr, normalization_mode=normalization_mode)
+        if arr.shape[0] in {3, 4}:
+            return _image_array_to_pil_rgb(arr, normalization_mode=normalization_mode)
         if arr.shape[0] == 1:
             arr = arr[0]
         elif arr.shape[-1] == 1:
             arr = arr[..., 0]
         else:
-            raise ValueError(f"Expected 1-channel .npy, got shape {arr.shape}")
+            raise ValueError(f"Expected 1-channel or RGB/RGBA .npy, got shape {arr.shape}")
     elif arr.ndim != 2:
         raise ValueError(f"Expected 2D or 3D 1-channel .npy, got {arr.ndim}D")
 

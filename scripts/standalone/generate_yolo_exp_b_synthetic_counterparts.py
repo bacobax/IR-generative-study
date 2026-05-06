@@ -53,6 +53,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-filter", action="store_true")
     parser.add_argument("--skip-metrics", action="store_true")
     parser.add_argument(
+        "--metrics-only",
+        action="store_true",
+        help="Compute metrics for existing generated datasets without generating, filtering, or rendering sanity images.",
+    )
+    parser.add_argument(
         "--skip-invalid-generators",
         action="store_true",
         help="Deprecated: invalid generator checkpoints are skipped by default.",
@@ -114,6 +119,9 @@ def _preflight_configured_checkpoints(
 def main() -> None:
     args = parse_args()
     config = load_generation_config(args.config)
+    if args.metrics_only:
+        config["resume"] = True
+        config["overwrite"] = False
     if args.max_tries is not None or args.invalid_ratio_threshold is not None:
         retry_cfg = dict(config.get("retry", {}))
         if args.max_tries is not None:
@@ -126,11 +134,12 @@ def main() -> None:
         config["resume"] = True
         config["overwrite"] = False
     generator_names = _requested_generator_names(args)
-    config = _preflight_configured_checkpoints(
-        config,
-        requested_names=generator_names,
-        fail_on_invalid_generators=args.fail_on_invalid_generators,
-    )
+    if not args.metrics_only:
+        config = _preflight_configured_checkpoints(
+            config,
+            requested_names=generator_names,
+            fail_on_invalid_generators=args.fail_on_invalid_generators,
+        )
     summary = generate_production_synthetic_datasets(
         config=config,
         yolo_dataset_yaml=args.yolo_dataset_yaml,
@@ -140,6 +149,7 @@ def main() -> None:
         device=args.device,
         skip_filter=args.skip_filter,
         skip_metrics=args.skip_metrics,
+        metrics_only=args.metrics_only,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
 
