@@ -123,6 +123,9 @@ class SDLayoutTrainingConfig:
     mixed_precision: Optional[str] = None
     allow_tf32: bool = False
     enable_xformers_memory_efficient_attention: bool = False
+    enable_vae_slicing: bool = False
+    vae_encode_batch_size: Optional[int] = None
+    vae_encode_dtype: str = "model"
     checkpointing_steps: int = 1000
     checkpoints_total_limit: Optional[int] = None
     resume_from_checkpoint: Optional[str] = None
@@ -206,6 +209,13 @@ class SDLayoutTrainConfig:
             raise ValueError("max_train_steps must be positive when set.")
         if self.training.checkpointing_steps <= 0:
             raise ValueError("checkpointing_steps must be positive.")
+        if (
+            self.training.vae_encode_batch_size is not None
+            and self.training.vae_encode_batch_size <= 0
+        ):
+            raise ValueError("vae_encode_batch_size must be positive when set.")
+        if self.training.vae_encode_dtype not in {"model", "float32"}:
+            raise ValueError("vae_encode_dtype must be 'model' or 'float32'.")
         if self.validation.num_validation_images <= 0:
             raise ValueError("num_validation_images must be positive.")
         if self.validation.validation_num_inference_steps <= 0:
@@ -269,6 +279,9 @@ _FLAT_TO_NESTED = {
     "mixed_precision": "training.mixed_precision",
     "allow_tf32": "training.allow_tf32",
     "enable_xformers_memory_efficient_attention": "training.enable_xformers_memory_efficient_attention",
+    "enable_vae_slicing": "training.enable_vae_slicing",
+    "vae_encode_batch_size": "training.vae_encode_batch_size",
+    "vae_encode_dtype": "training.vae_encode_dtype",
     "checkpointing_steps": "training.checkpointing_steps",
     "checkpoints_total_limit": "training.checkpoints_total_limit",
     "resume_from_checkpoint": "training.resume_from_checkpoint",
@@ -412,6 +425,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--enable_xformers_memory_efficient_attention",
         type=_str2bool,
         default=SDLayoutTrainingConfig.enable_xformers_memory_efficient_attention,
+    )
+    train_group.add_argument(
+        "--enable_vae_slicing",
+        type=_str2bool,
+        default=SDLayoutTrainingConfig.enable_vae_slicing,
+    )
+    train_group.add_argument("--vae_encode_batch_size", type=int, default=None)
+    train_group.add_argument(
+        "--vae_encode_dtype",
+        type=str,
+        default=SDLayoutTrainingConfig.vae_encode_dtype,
+        choices=["model", "float32"],
     )
     train_group.add_argument(
         "--checkpointing_steps",

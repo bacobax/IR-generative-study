@@ -164,6 +164,27 @@ class _FakeResumeAccelerator:
         self.loaded_path = path
 
 
+class _FakeLatentDist:
+    def __init__(self, pixel_values: torch.Tensor):
+        self.pixel_values = pixel_values
+
+    def sample(self) -> torch.Tensor:
+        pooled = self.pixel_values.mean(dim=1, keepdim=True)[:, :, ::8, ::8]
+        return pooled.repeat(1, 4, 1, 1)
+
+
+class _FakeVAE(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.probe = torch.nn.Parameter(torch.zeros((), dtype=torch.float32))
+        self.config = SimpleNamespace(scaling_factor=0.5)
+        self.encode_batch_sizes = []
+
+    def encode(self, pixel_values: torch.Tensor):
+        self.encode_batch_sizes.append(pixel_values.shape[0])
+        return SimpleNamespace(latent_dist=_FakeLatentDist(pixel_values + self.probe))
+
+
 def _tiny_unet() -> UNet2DConditionModel:
     return UNet2DConditionModel(
         sample_size=16,
@@ -716,6 +737,28 @@ def test_layout_trainer_validation_builds_pipeline_before_swapping_wrapped_unet(
     trainer._run_validation(epoch=0)
 
     assert captured["pipeline"].unet is wrapper
+
+
+def test_layout_trainer_vae_encoding_microbatches_without_grad() -> None:
+    cfg = SDLayoutTrainConfig()
+    cfg.training.vae_encode_batch_size = 2
+    fake_vae = _FakeVAE()
+    trainer = LayoutTrainer(
+        config=cfg,
+        models=SimpleNamespace(vae=fake_vae, weight_dtype=torch.float32),
+        train_dataloader=None,
+        validation_batch=None,
+        init_info={},
+        trainability_info={},
+        accelerator=None,
+    )
+    pixel_values = torch.randn(5, 3, 16, 16, requires_grad=True)
+
+    latents = trainer._encode_latents(pixel_values)
+
+    assert fake_vae.encode_batch_sizes == [2, 2, 1]
+    assert latents.shape == (5, 4, 2, 2)
+    assert latents.requires_grad is False
 
 
 def test_stage2_save_and_load_hooks_round_trip(tmp_path: Path) -> None:

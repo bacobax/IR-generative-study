@@ -534,9 +534,14 @@ def load_layout_model_components(
     pipeline.unet.requires_grad_(False)
     pipeline.vae.requires_grad_(False)
     pipeline.text_encoder.requires_grad_(False)
+    vae_dtype = torch.float32 if config.training.vae_encode_dtype == "float32" else weight_dtype
     pipeline.unet.to(device=device, dtype=weight_dtype)
-    pipeline.vae.to(device=device, dtype=weight_dtype)
+    pipeline.vae.to(device=device, dtype=vae_dtype)
     pipeline.text_encoder.to(device=device, dtype=weight_dtype)
+
+    if config.training.enable_vae_slicing and hasattr(pipeline.vae, "enable_slicing"):
+        pipeline.vae.enable_slicing()
+        logger.info("VAE slicing enabled for stage-2 layout latent encoding")
 
     wrapped_unet = build_regiondiff_unet_wrapper(
         base_unet=pipeline.unet,

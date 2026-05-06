@@ -19,6 +19,7 @@ STAGE1_MANIFEST="${STAGE1_DIR}/stage1_manifest.json"
 STAGE1_LORA_WEIGHTS="${STAGE1_DIR}/pytorch_lora_weights.safetensors"
 MIXED_PRECISION="${MIXED_PRECISION:-bf16}"
 NUM_WORKERS="${NUM_WORKERS:-0}"
+RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-latest}"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256}"
@@ -59,6 +60,7 @@ echo "Config: ${CONFIG}"
 echo "Stage-1 LoRA dir: ${STAGE1_DIR}"
 echo "MIXED_PRECISION: ${MIXED_PRECISION}"
 echo "NUM_WORKERS: ${NUM_WORKERS}"
+echo "RESUME_FROM_CHECKPOINT: ${RESUME_FROM_CHECKPOINT:-<disabled>}"
 echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
 echo "DEBUG_SEGFAULT: ${DEBUG_SEGFAULT:-0}"
 which python
@@ -92,11 +94,17 @@ grep -n "mixed_precision:" "${CONFIG}" | head -n 1 || true
 
 nvidia-smi || true
 
+RESUME_ARGS=()
+if [ -n "${RESUME_FROM_CHECKPOINT}" ]; then
+  RESUME_ARGS=(--resume_from_checkpoint "${RESUME_FROM_CHECKPOINT}")
+fi
+
 set +e
 /usr/bin/time -v python -m src.cli.train_sd_layout \
   --config "${CONFIG}" \
   --mixed_precision "${MIXED_PRECISION}" \
   --num_workers "${NUM_WORKERS}" \
+  "${RESUME_ARGS[@]}" \
   > "${PROJECT_ROOT}/logs/regiondiff-sd-lora-r8-fm-comparable-${JOB_ID}.out" \
   2> "${PROJECT_ROOT}/logs/regiondiff-sd-lora-r8-fm-comparable-${JOB_ID}.err"
 STATUS=$?

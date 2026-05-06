@@ -47,6 +47,9 @@ training:
   checkpointing_steps: 1000
   checkpoints_total_limit: 5
   mixed_precision: fp16
+  enable_vae_slicing: true
+  vae_encode_batch_size: 4
+  vae_encode_dtype: float32
   report_to: tensorboard
 
 validation:

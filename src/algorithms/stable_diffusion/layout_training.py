@@ -346,6 +346,8 @@ class LayoutTrainer:
     def _train_epoch(self, epoch: int, progress_bar) -> float:
         del epoch
         self.models.unet.train()
+        self.models.vae.eval()
+        self.models.text_encoder.eval()
         train_loss = 0.0
 
         for step, batch in enumerate(self.train_dataloader):
@@ -379,10 +381,7 @@ class LayoutTrainer:
     def _train_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         with self.accelerator.accumulate(self.models.unet):
             pixel_values = batch["pixel_values"].to(device=self.accelerator.device)
-            latents = self.models.vae.encode(
-                pixel_values.to(dtype=next(self.models.vae.parameters()).dtype)
-            ).latent_dist.sample()
-            latents = latents * self.models.vae.config.scaling_factor
+            latents = self._encode_latents(pixel_values)
 
             noise = torch.randn_like(latents)
             if self.config.training.noise_offset:
@@ -400,10 +399,12 @@ class LayoutTrainer:
             ).long()
             noisy_latents = self.models.noise_scheduler.add_noise(latents, noise, timesteps)
 
-            encoder_hidden_states = self.models.text_encoder(
-                batch["input_ids"].to(device=self.accelerator.device),
-                return_dict=False,
-            )[0]
+            with torch.no_grad():
+                encoder_hidden_states = self.models.text_encoder(
+                    batch["input_ids"].to(device=self.accelerator.device),
+                    return_dict=False,
+                )[0]
+            encoder_hidden_states = encoder_hidden_states.to(dtype=self.models.weight_dtype)
 
             target = self._get_prediction_target(latents, noise, timesteps)
             model_pred = self.models.unet(
@@ -438,6 +439,22 @@ class LayoutTrainer:
             self.optimizer.zero_grad()
 
         return loss
+
+    def _encode_latents(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """Encode image batches through the frozen VAE without building a graph."""
+        vae_dtype = next(self.models.vae.parameters()).dtype
+        encode_batch_size = self.config.training.vae_encode_batch_size or pixel_values.shape[0]
+        latent_chunks = []
+
+        with torch.no_grad():
+            for pixel_chunk in pixel_values.split(encode_batch_size):
+                pixel_chunk = pixel_chunk.to(dtype=vae_dtype).contiguous()
+                latent_chunk = self.models.vae.encode(pixel_chunk).latent_dist.sample()
+                latent_chunks.append(latent_chunk)
+
+        latents = torch.cat(latent_chunks, dim=0)
+        latents = latents * self.models.vae.config.scaling_factor
+        return latents.detach().to(dtype=self.models.weight_dtype)
 
     def _get_prediction_target(
         self,
