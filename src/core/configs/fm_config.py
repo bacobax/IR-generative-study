@@ -234,6 +234,91 @@ class LayoutConditioningConfig:
 
 
 @dataclass
+class DistillationConfig:
+    """Optional RegionDiff attention-map distillation settings for FM training."""
+
+    enabled: bool = False
+    teacher_checkpoint: Optional[str] = None
+    teacher_model_type: str = "sd15_regiondiff"
+    loss_type: str = "attention_kl"
+    lambda_attn: float = 0.05
+    warmup_epochs: int = 80
+    selected_categories: List[str] = field(default_factory=list)
+    selected_region_layers: List[str] = field(default_factory=list)
+    timestep_range: Tuple[float, float] = (0.2, 0.8)
+    detach_teacher: bool = True
+    normalize_attention: bool = True
+    bbox_mask_only: bool = True
+    log_attention_maps_every: int = 1000
+
+    def __post_init__(self) -> None:
+        self.enabled = bool(self.enabled)
+        self.detach_teacher = bool(self.detach_teacher)
+        self.normalize_attention = bool(self.normalize_attention)
+        self.bbox_mask_only = bool(self.bbox_mask_only)
+
+        self.teacher_model_type = str(self.teacher_model_type)
+        if self.teacher_model_type not in {"sd15_regiondiff"}:
+            raise ValueError(
+                "distillation.teacher_model_type must be 'sd15_regiondiff', "
+                f"got {self.teacher_model_type!r}"
+            )
+
+        self.loss_type = str(self.loss_type)
+        if self.loss_type not in {"attention_kl", "attention_l2"}:
+            raise ValueError(
+                "distillation.loss_type must be 'attention_kl' or 'attention_l2', "
+                f"got {self.loss_type!r}"
+            )
+
+        self.lambda_attn = float(self.lambda_attn)
+        if not math.isfinite(self.lambda_attn) or self.lambda_attn < 0.0:
+            raise ValueError(
+                "distillation.lambda_attn must be a finite non-negative float, "
+                f"got {self.lambda_attn!r}"
+            )
+
+        self.warmup_epochs = int(self.warmup_epochs)
+        if self.warmup_epochs < 0:
+            raise ValueError(
+                "distillation.warmup_epochs must be non-negative, "
+                f"got {self.warmup_epochs!r}"
+            )
+
+        if len(self.timestep_range) != 2:
+            raise ValueError(
+                "distillation.timestep_range must contain exactly two values, "
+                f"got {self.timestep_range!r}"
+            )
+        start, end = (float(self.timestep_range[0]), float(self.timestep_range[1]))
+        if not (math.isfinite(start) and math.isfinite(end)):
+            raise ValueError(
+                "distillation.timestep_range values must be finite, "
+                f"got {self.timestep_range!r}"
+            )
+        if start < 0.0 or end > 1.0 or start > end:
+            raise ValueError(
+                "distillation.timestep_range must satisfy 0 <= start <= end <= 1, "
+                f"got {(start, end)!r}"
+            )
+        self.timestep_range = (start, end)
+
+        self.log_attention_maps_every = int(self.log_attention_maps_every)
+        if self.log_attention_maps_every < 0:
+            raise ValueError(
+                "distillation.log_attention_maps_every must be non-negative, "
+                f"got {self.log_attention_maps_every!r}"
+            )
+
+        self.selected_categories = [
+            str(item) for item in (self.selected_categories or [])
+        ]
+        self.selected_region_layers = [
+            str(item) for item in (self.selected_region_layers or [])
+        ]
+
+
+@dataclass
 class LoggingConfig:
     """Scalar cadence plus legacy step-based image logging for layout FM."""
 
@@ -298,6 +383,7 @@ class FMTrainConfig:
     precision: PrecisionConfig = field(default_factory=PrecisionConfig)
     path: PathConfig = field(default_factory=PathConfig)
     layout_conditioning: LayoutConditioningConfig = field(default_factory=LayoutConditioningConfig)
+    distillation: DistillationConfig = field(default_factory=DistillationConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     sampling: SampleConfig = field(default_factory=SampleConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
@@ -390,6 +476,30 @@ class FMTrainConfig:
                 solver=getattr(args, "path_solver", "hungarian"),
                 layout_cost_resolution=getattr(args, "layout_cost_resolution", 16),
                 condition_weight=getattr(args, "condition_weight", 1.0),
+            ),
+            distillation=DistillationConfig(
+                enabled=getattr(args, "distillation_enabled", False),
+                teacher_checkpoint=getattr(args, "distillation_teacher_checkpoint", None),
+                teacher_model_type=(
+                    getattr(args, "distillation_teacher_model_type", None)
+                    or "sd15_regiondiff"
+                ),
+                loss_type=getattr(args, "distillation_loss_type", None) or "attention_kl",
+                lambda_attn=(
+                    getattr(args, "distillation_lambda_attn", None)
+                    if getattr(args, "distillation_lambda_attn", None) is not None
+                    else 0.05
+                ),
+                warmup_epochs=(
+                    getattr(args, "distillation_warmup_epochs", None)
+                    if getattr(args, "distillation_warmup_epochs", None) is not None
+                    else 80
+                ),
+                selected_categories=getattr(args, "distillation_selected_categories", None) or [],
+                selected_region_layers=getattr(args, "distillation_selected_region_layers", None) or [],
+                timestep_range=tuple(
+                    getattr(args, "distillation_timestep_range", None) or (0.2, 0.8)
+                ),
             ),
             sampling=SampleConfig(
                 sample_batch_size=args.sample_batch_size,

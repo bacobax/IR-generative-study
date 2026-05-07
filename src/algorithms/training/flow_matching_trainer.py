@@ -23,6 +23,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler, validate_t_scale
+from src.algorithms.training.regiondiff_attention_distillation import (
+    RegionDiffAttentionRecorder,
+    compute_region_attention_distillation_loss,
+    load_regiondiff_attention_teacher,
+)
 from src.core.ot import match_target_batch
 from src.core.training_utils import (
     EMAState,
@@ -150,6 +155,7 @@ class FlowMatchingTrainer:
         condition_weight: float = 1.0,
         layout_config=None,
         regiondiff_trainability_info: Optional[Dict[str, Any]] = None,
+        distillation_config=None,
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -170,6 +176,12 @@ class FlowMatchingTrainer:
         self.condition_weight = float(condition_weight)
         self.layout_config = layout_config
         self.regiondiff_trainability_info = dict(regiondiff_trainability_info or {})
+        self.distillation_config = distillation_config
+        self._attention_teacher = None
+        self._current_epoch = 0
+        self._current_global_step = 0
+        self._kd_training_enabled = False
+        self._last_loss_components: Dict[str, Any] = {}
 
         # Freeze VAE if present
         if self.vae is not None:
@@ -221,6 +233,34 @@ class FlowMatchingTrainer:
         return self._uses_regiondiff_layout() and bool(
             getattr(self.layout_config, "area_loss_enabled", False)
         )
+
+    def _uses_attention_distillation(self) -> bool:
+        return bool(
+            self.distillation_config is not None
+            and getattr(self.distillation_config, "enabled", False)
+        )
+
+    def _ensure_attention_teacher(self, *, torch_dtype: Optional[torch.dtype] = None):
+        if not self._uses_attention_distillation():
+            return None
+        if not self._uses_regiondiff_layout():
+            raise ValueError(
+                "RegionDiff attention distillation requires "
+                "layout_conditioning.variant='regiondiff_v1'."
+            )
+        checkpoint = getattr(self.distillation_config, "teacher_checkpoint", None)
+        if checkpoint is None or not str(checkpoint).strip():
+            raise ValueError(
+                "distillation.teacher_checkpoint must be set when "
+                "distillation.enabled=true."
+            )
+        if self._attention_teacher is None:
+            self._attention_teacher = load_regiondiff_attention_teacher(
+                str(checkpoint),
+                device=self.device,
+                torch_dtype=torch_dtype,
+            )
+        return self._attention_teacher
 
     def _apply_regiondiff_area_loss_weights(
         self,
@@ -415,6 +455,7 @@ class FlowMatchingTrainer:
             condition_weight=getattr(config.path, "condition_weight", 1.0),
             layout_config=layout_config,
             regiondiff_trainability_info=regiondiff_trainability_info,
+            distillation_config=getattr(config, "distillation", None),
         )
 
     def train_from_config(
@@ -705,7 +746,74 @@ class FlowMatchingTrainer:
         x_fm: torch.Tensor,
         cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
-        return self.flow_matching_step(x_fm, cond_kwargs)
+        if not self._uses_attention_distillation():
+            return self.flow_matching_step(x_fm, cond_kwargs)
+
+        state = self._sample_flow_matching_state(x_fm, cond_kwargs)
+        kd_enabled = self._should_apply_attention_kd(state["t"])
+        student_recorder = (
+            RegionDiffAttentionRecorder(
+                self.unet,
+                selected_layers=getattr(self.distillation_config, "selected_region_layers", []),
+                detach=False,
+            )
+            if kd_enabled
+            else None
+        )
+
+        if student_recorder is None:
+            unet_out = self._forward_flow_matching_unet(state)
+        else:
+            with student_recorder:
+                unet_out = self._forward_flow_matching_unet(state)
+        base_loss = self._compute_flow_matching_loss_from_prediction(unet_out, state)
+
+        kd_loss = base_loss.new_zeros(())
+        kd_diagnostics: Dict[str, Any] = {
+            "matched_layers": 0,
+            "selected_instances": 0,
+            "skipped_layers_shape": 0,
+            "skipped_layers_missing": 0,
+            "loss_by_layer": {},
+        }
+        if kd_enabled and student_recorder is not None:
+            teacher = self._ensure_attention_teacher(
+                torch_dtype=getattr(self, "_distillation_teacher_torch_dtype", None)
+            )
+            teacher_recorder = RegionDiffAttentionRecorder(
+                teacher.unet,
+                selected_layers=getattr(self.distillation_config, "selected_region_layers", []),
+                detach=bool(getattr(self.distillation_config, "detach_teacher", True)),
+            )
+            with teacher_recorder:
+                teacher.forward_attention(
+                    noisy_latents=state["zt"],
+                    fm_t=state["t"],
+                    cond_kwargs=state["cond_kwargs"],
+                    detach_teacher=bool(getattr(self.distillation_config, "detach_teacher", True)),
+                )
+            kd_loss, kd_diagnostics = compute_region_attention_distillation_loss(
+                teacher_attention_maps=teacher_recorder.records,
+                student_attention_maps=student_recorder.records,
+                boxes_xyxy_norm=state["cond_kwargs"]["boxes_xyxy_norm"],
+                labels=state["cond_kwargs"]["labels"],
+                object_mask=state["cond_kwargs"]["object_mask"],
+                timesteps=state["t"],
+                distillation_config=self.distillation_config,
+                category_id_to_name=getattr(self.layout_config, "category_id_to_name", {}),
+            )
+
+        kd_weight = float(getattr(self.distillation_config, "lambda_attn", 0.0))
+        weighted_kd = kd_loss * kd_weight
+        total_loss = base_loss + weighted_kd
+        self._last_loss_components = {
+            "base_loss": base_loss.detach(),
+            "attention_kd_loss": kd_loss.detach(),
+            "attention_kd_weighted": weighted_kd.detach(),
+            "total_loss": total_loss.detach(),
+            "attention_kd_diagnostics": kd_diagnostics,
+        }
+        return total_loss
 
     # ------------------------------------------------------------------
     # Flow-matching loss
@@ -767,8 +875,12 @@ class FlowMatchingTrainer:
         matched, _ = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
         return matched
 
-    def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
-        """Compute a single flow-matching loss on encoded input *x_fm*."""
+    def _sample_flow_matching_state(
+        self,
+        x_fm: torch.Tensor,
+        cond_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Sample FM path variables and keep layout kwargs aligned to targets."""
         if cond_kwargs is None:
             cond_kwargs = {}
         B = x_fm.shape[0]
@@ -780,18 +892,67 @@ class FlowMatchingTrainer:
 
         zt = (1 - t_expanded) * z0 + t_expanded * x_target
         v_target = x_target - z0
+        return {
+            "z0": z0,
+            "t": t,
+            "t_expanded": t_expanded,
+            "x_target": x_target,
+            "target_permutation": target_permutation,
+            "cond_kwargs": cond_kwargs,
+            "zt": zt,
+            "v_target": v_target,
+        }
 
-        unet_out = self.unet(zt, t * self.t_scale, **cond_kwargs).sample
+    def _forward_flow_matching_unet(self, state: Dict[str, Any]) -> torch.Tensor:
+        return self.unet(
+            state["zt"],
+            state["t"] * self.t_scale,
+            **state["cond_kwargs"],
+        ).sample
 
+    def _compute_flow_matching_loss_from_prediction(
+        self,
+        unet_out: torch.Tensor,
+        state: Dict[str, Any],
+    ) -> torch.Tensor:
+        t_expanded = state["t_expanded"]
         if self.train_target == "x0":
             x0_pred = unet_out
-            v_pred = (x0_pred - zt) / (1 - t_expanded).clamp(min=1e-5)
+            v_pred = (x0_pred - state["zt"]) / (1 - t_expanded).clamp(min=1e-5)
         else:
             v_pred = unet_out
 
-        loss = F.mse_loss(v_pred.float(), v_target.float(), reduction="none")
-        loss = self._apply_regiondiff_area_loss_weights(loss, cond_kwargs)
+        loss = F.mse_loss(v_pred.float(), state["v_target"].float(), reduction="none")
+        loss = self._apply_regiondiff_area_loss_weights(loss, state["cond_kwargs"])
         return loss.mean()
+
+    def _should_apply_attention_kd(self, t: torch.Tensor) -> bool:
+        if not self._uses_attention_distillation() or not self._kd_training_enabled:
+            return False
+        if int(self._current_epoch) < int(getattr(self.distillation_config, "warmup_epochs", 0)):
+            return False
+        start, end = getattr(self.distillation_config, "timestep_range", (0.0, 1.0))
+        in_range = (t.detach() >= float(start)) & (t.detach() <= float(end))
+        return bool(in_range.any().item())
+
+    def flow_matching_step(self, x_fm: torch.Tensor, cond_kwargs: Optional[Dict[str, Any]] = None) -> torch.Tensor:
+        """Compute a single flow-matching loss on encoded input *x_fm*."""
+        state = self._sample_flow_matching_state(x_fm, cond_kwargs)
+        unet_out = self._forward_flow_matching_unet(state)
+        loss = self._compute_flow_matching_loss_from_prediction(unet_out, state)
+        self._last_loss_components = {
+            "base_loss": loss.detach(),
+            "attention_kd_loss": loss.detach() * 0.0,
+            "attention_kd_weighted": loss.detach() * 0.0,
+            "total_loss": loss.detach(),
+            "attention_kd_diagnostics": {
+                "matched_layers": 0,
+                "selected_instances": 0,
+                "skipped_layers_shape": 0,
+                "skipped_layers_missing": 0,
+            },
+        }
+        return loss
 
     # ------------------------------------------------------------------
     # Build a sampler for sample-at-epoch
@@ -884,6 +1045,7 @@ class FlowMatchingTrainer:
 
         total_steps = max(1, epochs * len(dataloader))
         precision = resolve_precision_settings(self.device, mixed_precision)
+        self._distillation_teacher_torch_dtype = precision.dtype if precision.enabled else None
         scaler = build_grad_scaler(precision)
         optimizer_params = self.unet.parameters()
         if self._uses_regiondiff_layout():
@@ -906,6 +1068,8 @@ class FlowMatchingTrainer:
             min_lr_ratio=min_lr_ratio,
         )
         ema = EMAState(self.unet, decay=ema_decay) if ema_enabled and ema_decay > 0.0 else None
+        if self._uses_attention_distillation():
+            self._ensure_attention_teacher(torch_dtype=self._distillation_teacher_torch_dtype)
 
         # Resume state
         global_step = 0
@@ -1021,6 +1185,9 @@ class FlowMatchingTrainer:
                 if self.conditioner is not None:
                     cond_kw.update(self.conditioner.prepare_for_training(x, self.device))
                 optimizer.zero_grad(set_to_none=True)
+                self._current_epoch = epoch
+                self._current_global_step = global_step
+                self._kd_training_enabled = True
                 with autocast_context(precision):
                     loss = self._compute_batch_loss(x_fm, cond_kw)
 
@@ -1045,7 +1212,56 @@ class FlowMatchingTrainer:
                     ema.update(self.unet)
 
                 total_loss += loss.item()
+                components = getattr(self, "_last_loss_components", {})
+                kd_diag = components.get("attention_kd_diagnostics", {}) if isinstance(components, dict) else {}
+
+                def _scalar_component(name: str, default: float) -> float:
+                    value = components.get(name, default) if isinstance(components, dict) else default
+                    if torch.is_tensor(value):
+                        return float(value.detach().float().cpu().item())
+                    return float(value)
+
                 writer.add_scalar(f"{self._metric_prefix()}/loss_step", loss.item(), global_step)
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/base_loss_step",
+                    _scalar_component("base_loss", loss.item()),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/attention_kd_loss_step",
+                    _scalar_component("attention_kd_loss", 0.0),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/attention_kd_weighted_step",
+                    _scalar_component("attention_kd_weighted", 0.0),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/total_loss_step",
+                    _scalar_component("total_loss", loss.item()),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/attention_kd_matched_layers",
+                    float(kd_diag.get("matched_layers", 0)),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/attention_kd_selected_instances",
+                    float(kd_diag.get("selected_instances", 0)),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/attention_kd_skipped_shape",
+                    float(kd_diag.get("skipped_layers_shape", 0)),
+                    global_step,
+                )
+                writer.add_scalar(
+                    f"{self._metric_prefix()}/attention_kd_skipped_missing",
+                    float(kd_diag.get("skipped_layers_missing", 0)),
+                    global_step,
+                )
                 writer.add_scalar(
                     f"{self._metric_prefix()}/lr",
                     float(optimizer.param_groups[0]["lr"]),
@@ -1080,6 +1296,9 @@ class FlowMatchingTrainer:
                             x_fm = self.encode_fm_input(x)
                             if self.conditioner is not None:
                                 cond_kw.update(self.conditioner.prepare_for_training(x, self.device))
+                            self._current_epoch = epoch
+                            self._current_global_step = global_step
+                            self._kd_training_enabled = False
                             with autocast_context(precision):
                                 loss = self._compute_batch_loss(x_fm, cond_kw)
 

@@ -62,6 +62,14 @@ def _csv_ints(value: str) -> list[int]:
     return [int(item.strip()) for item in str(value).split(",") if item.strip()]
 
 
+def _csv_floats(value: str) -> list[float]:
+    return [float(item.strip()) for item in str(value).split(",") if item.strip()]
+
+
+def _csv_strings(value: str) -> list[str]:
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser for FM training.
 
@@ -179,6 +187,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--area_loss_max_weight", type=float, default=None)
     parser.add_argument("--area_x0_loss_weight", type=float, default=None)
 
+    # RegionDiff attention distillation (opt-in; defaults preserve FM behavior)
+    parser.add_argument("--distillation_enabled", type=_str2bool, default=None,
+                        help="Enable RegionDiff attention-map distillation.")
+    parser.add_argument("--distillation_teacher_checkpoint", type=str, default=None,
+                        help="Path to SD1.5+RegionDiff teacher artifact/checkpoint.")
+    parser.add_argument("--distillation_teacher_model_type", type=str, default=None,
+                        choices=["sd15_regiondiff"],
+                        help="Teacher model family.")
+    parser.add_argument("--distillation_loss_type", type=str, default=None,
+                        choices=["attention_kl", "attention_l2"],
+                        help="Attention-map distillation loss.")
+    parser.add_argument("--distillation_lambda_attn", type=float, default=None,
+                        help="Weight for RegionDiff attention KD loss.")
+    parser.add_argument("--distillation_warmup_epochs", type=int, default=None,
+                        help="Epochs to wait before enabling attention KD.")
+    parser.add_argument("--distillation_selected_categories", type=_csv_strings, default=None,
+                        help="Comma-separated category names/ids to distill; empty means all.")
+    parser.add_argument("--distillation_selected_region_layers", type=_csv_strings, default=None,
+                        help="Comma-separated RegionDiff layer names/aliases/substrings.")
+    parser.add_argument("--distillation_timestep_range", type=_csv_floats, default=None,
+                        help="Comma-separated FM timestep range, e.g. 0.2,0.8.")
+    parser.add_argument("--distillation_bbox_mask_only", type=_str2bool, default=None,
+                        help="Restrict attention KD to object bbox regions.")
+
     # Augmentation schedule
     parser.add_argument("--warmup_frac", type=float, default=0.1)
     parser.add_argument("--ramp_frac", type=float, default=0.3)
@@ -277,6 +309,16 @@ _FLAT_TO_NESTED = {
     "area_loss_min_weight": "layout_conditioning.area_loss_min_weight",
     "area_loss_max_weight": "layout_conditioning.area_loss_max_weight",
     "area_x0_loss_weight": "layout_conditioning.area_x0_loss_weight",
+    "distillation_enabled": "distillation.enabled",
+    "distillation_teacher_checkpoint": "distillation.teacher_checkpoint",
+    "distillation_teacher_model_type": "distillation.teacher_model_type",
+    "distillation_loss_type": "distillation.loss_type",
+    "distillation_lambda_attn": "distillation.lambda_attn",
+    "distillation_warmup_epochs": "distillation.warmup_epochs",
+    "distillation_selected_categories": "distillation.selected_categories",
+    "distillation_selected_region_layers": "distillation.selected_region_layers",
+    "distillation_timestep_range": "distillation.timestep_range",
+    "distillation_bbox_mask_only": "distillation.bbox_mask_only",
     # Augmentation
     "warmup_frac":         "augment.warmup_frac",
     "ramp_frac":           "augment.ramp_frac",

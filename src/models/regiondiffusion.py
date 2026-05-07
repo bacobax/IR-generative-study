@@ -251,6 +251,7 @@ class RegionSelfAttentionAdapter(nn.Module):
         self.to_k = nn.Linear(self.layout_token_dim, self.hidden_dim, bias=False)
         self.to_v = nn.Linear(self.layout_token_dim, self.hidden_dim, bias=False)
         self.to_out = nn.Linear(self.hidden_dim, self.hidden_dim, bias=False)
+        self._attention_recorder = None
         nn.init.zeros_(self.to_out.weight)
 
     def forward(
@@ -281,6 +282,15 @@ class RegionSelfAttentionAdapter(nn.Module):
         scores = scores.masked_fill(~access_mask, -1e4)
         attention = torch.softmax(scores, dim=-1)
         attention = attention * access_mask.to(dtype=attention.dtype)
+        recorder = getattr(self, "_attention_recorder", None)
+        if recorder is not None:
+            recorder.record(
+                self,
+                attention,
+                region_token_mask=region_token_mask,
+                layout_tokens=layout_tokens,
+                hidden_states=hidden_states,
+            )
 
         attended = torch.matmul(attention, value)
         attended = attended.transpose(1, 2).reshape(batch_size, seq_len, self.hidden_dim)
