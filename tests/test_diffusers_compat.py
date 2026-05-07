@@ -6,6 +6,7 @@ import importlib.util
 import subprocess
 import sys
 import textwrap
+import types
 
 import pytest
 
@@ -107,6 +108,30 @@ def test_restore_real_scipy_if_available_replaces_local_stub() -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_non_lightweight_diffusers_imports_remove_local_loader_shims(monkeypatch) -> None:
+    from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+    diffusers = types.ModuleType("diffusers")
+    diffusers.__path__ = []
+    utils = types.ModuleType("diffusers.utils")
+    utils.__path__ = []
+    import_utils = types.ModuleType("diffusers.utils.import_utils")
+    import_utils._scipy_available = True
+    import_utils._scipy_version = "fake"
+
+    monkeypatch.setitem(sys.modules, "diffusers", diffusers)
+    monkeypatch.setitem(sys.modules, "diffusers.utils", utils)
+    monkeypatch.setitem(sys.modules, "diffusers.utils.import_utils", import_utils)
+
+    disable_diffusers_optional_scipy(lightweight_diffusers_imports=True)
+    assert getattr(sys.modules["diffusers.loaders"], "_flow_matching_lightweight_stub", False)
+    assert sys.modules["diffusers.loaders"].__spec__.origin is None
+
+    disable_diffusers_optional_scipy(lightweight_diffusers_imports=False)
+    assert "diffusers.loaders" not in sys.modules
+    assert "diffusers.loaders.single_file_model" not in sys.modules
 
 
 @pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers is not installed")

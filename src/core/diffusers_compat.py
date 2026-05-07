@@ -117,6 +117,7 @@ def _disable_diffusers_optional_scipy(*, lightweight_imports: bool) -> None:
     import_utils._scipy_version = "unavailable"
 
     if not lightweight_imports:
+        _remove_lightweight_diffusers_shims()
         return
 
     _install_lightweight_loaders_package()
@@ -135,6 +136,7 @@ def _install_lightweight_loaders_package() -> None:
     loaders.__package__ = package_name
     loaders.__spec__ = ModuleSpec(package_name, loader=None, is_package=True)
     loaders.__path__ = []
+    loaders._flow_matching_lightweight_stub = True
     peft_mixin = type("PeftAdapterMixin", (), {})
     original_mixin = type("FromOriginalModelMixin", (), {})
     unet_condition_mixin = type("UNet2DConditionLoadersMixin", (), {})
@@ -147,6 +149,7 @@ def _install_lightweight_loaders_package() -> None:
     single_file = types.ModuleType(single_file_name)
     single_file.__package__ = package_name
     single_file.__spec__ = ModuleSpec(single_file_name, loader=None)
+    single_file._flow_matching_lightweight_stub = True
     single_file.FromOriginalModelMixin = original_mixin
     sys.modules[single_file_name] = single_file
 
@@ -176,7 +179,35 @@ def _install_lightweight_model_package(package_leaf: str) -> None:
     package.__path__ = [package_path]
     package.__package__ = package_name
     package.__spec__ = ModuleSpec(package_name, loader=None, is_package=True)
+    package._flow_matching_lightweight_stub = True
     sys.modules[package_name] = package
+
+
+def _remove_lightweight_diffusers_shims() -> None:
+    """Remove local Diffusers shims before importing Stable Diffusion pipelines.
+
+    FM model imports install tiny ``diffusers.loaders`` and model-package shims
+    to avoid optional PEFT/single-file loader stacks.  SD pipeline imports need
+    the real loader package, including ``FromSingleFileMixin``.  If the FM path
+    runs first in the same process, remove only the shims created here and let
+    Python resolve the real Diffusers modules on the next import.
+    """
+    shim_names = (
+        "diffusers.loaders.single_file_model",
+        "diffusers.loaders",
+        "diffusers.models.autoencoders",
+        "diffusers.models.unets",
+        "diffusers.models.transformers",
+    )
+    for name in shim_names:
+        module = sys.modules.get(name)
+        if module is None or not getattr(module, "_flow_matching_lightweight_stub", False):
+            continue
+        sys.modules.pop(name, None)
+        parent_name, _, attr_name = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None and getattr(parent, attr_name, None) is module:
+            delattr(parent, attr_name)
 
 
 def import_diffusers_attr(module_name: str, attr_name: str):
