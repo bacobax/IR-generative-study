@@ -11,6 +11,7 @@ from diffusers import UNet2DModel
 from src.algorithms.training.regiondiff_attention_distillation import (
     AttentionMapRecord,
     RegionDiffAttentionRecorder,
+    _resolve_stage2_teacher_source,
     compute_region_attention_distillation_loss,
     load_regiondiff_attention_teacher,
 )
@@ -266,3 +267,24 @@ def test_teacher_loader_freezes_pipeline_modules(monkeypatch, tmp_path) -> None:
         assert module.training is False
         assert all(not parameter.requires_grad for parameter in module.parameters())
 
+
+def test_teacher_source_resolves_latest_ongoing_stage2_checkpoint(monkeypatch, tmp_path) -> None:
+    run_dir = tmp_path / "flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable"
+    ckpt_1000 = run_dir / "checkpoint-1000"
+    ckpt_2000 = run_dir / "checkpoint-2000"
+    ckpt_1000.mkdir(parents=True)
+    ckpt_2000.mkdir()
+    (ckpt_1000 / "regiondiff_unet_checkpoint.safetensors").write_bytes(b"old")
+    (ckpt_2000 / "regiondiff_unet_checkpoint.safetensors").write_bytes(b"new")
+
+    config_path = tmp_path / "config.yaml"
+    monkeypatch.setattr(
+        "src.algorithms.training.regiondiff_attention_distillation._infer_stage2_config_path",
+        lambda path: config_path if path == run_dir else None,
+    )
+
+    source = _resolve_stage2_teacher_source(run_dir)
+
+    assert source.artifact_dir == run_dir
+    assert source.weights == ckpt_2000 / "regiondiff_unet_checkpoint.safetensors"
+    assert source.config_path == config_path

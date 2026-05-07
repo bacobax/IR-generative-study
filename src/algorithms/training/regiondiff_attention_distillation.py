@@ -32,6 +32,13 @@ class AttentionMapRecord:
     resolution: Optional[int]
 
 
+@dataclass(frozen=True)
+class _Stage2TeacherSource:
+    artifact_dir: Path
+    weights: Optional[Path]
+    config_path: Optional[Path]
+
+
 def _infer_square_resolution(seq_len: int) -> Optional[int]:
     resolution = int(round(float(seq_len) ** 0.5))
     if resolution * resolution != int(seq_len):
@@ -177,7 +184,68 @@ def fm_timesteps_to_sd_timesteps(
     return torch.round((1.0 - fm_t.detach().float()).clamp(0.0, 1.0) * max_timestep).long()
 
 
-def _find_stage2_artifact_dir(path: str | Path) -> tuple[Path, Optional[Path]]:
+def _checkpoint_step(path: Path) -> int:
+    match = re.fullmatch(r"checkpoint-(\d+)", path.name)
+    return int(match.group(1)) if match else -1
+
+
+def _latest_stage2_checkpoint_weights(run_dir: Path) -> Optional[Path]:
+    from src.algorithms.stable_diffusion.layout_models import (
+        STAGE2_CHECKPOINT_UNET_WEIGHTS,
+    )
+
+    if not run_dir.is_dir():
+        return None
+    checkpoint_dirs = sorted(
+        (
+            path
+            for path in run_dir.iterdir()
+            if path.is_dir()
+            and path.name.startswith("checkpoint-")
+            and (path / STAGE2_CHECKPOINT_UNET_WEIGHTS).is_file()
+        ),
+        key=_checkpoint_step,
+    )
+    if not checkpoint_dirs:
+        return None
+    return checkpoint_dirs[-1] / STAGE2_CHECKPOINT_UNET_WEIGHTS
+
+
+def _paths_equivalent(configured: str | Path, target: Path) -> bool:
+    configured_path = Path(configured)
+    candidates = [configured_path]
+    if not configured_path.is_absolute():
+        candidates.append(Path.cwd() / configured_path)
+    target_abs = target if target.is_absolute() else Path.cwd() / target
+    target_norm = os.path.normpath(str(target_abs))
+    return any(os.path.normpath(str(candidate)) == target_norm for candidate in candidates)
+
+
+def _infer_stage2_config_path(run_dir: Path) -> Optional[Path]:
+    from src.core.configs.config_loader import load_yaml
+
+    exact_matches: list[Path] = []
+    basename_matches: list[Path] = []
+    for config_path in sorted(Path("configs/sd_layout").glob("**/*.yaml")):
+        try:
+            data = load_yaml(config_path)
+        except OSError:
+            continue
+        output_dir = data.get("output", {}).get("output_dir") if isinstance(data, dict) else None
+        if not output_dir:
+            continue
+        if _paths_equivalent(str(output_dir), run_dir):
+            exact_matches.append(config_path)
+        elif Path(str(output_dir)).name == run_dir.name:
+            basename_matches.append(config_path)
+    if exact_matches:
+        return exact_matches[0]
+    if len(basename_matches) == 1:
+        return basename_matches[0]
+    return None
+
+
+def _resolve_stage2_teacher_source(path: str | Path) -> _Stage2TeacherSource:
     from src.algorithms.stable_diffusion.layout_models import (
         STAGE2_CHECKPOINT_UNET_WEIGHTS,
         STAGE2_MANIFEST_NAME,
@@ -186,23 +254,47 @@ def _find_stage2_artifact_dir(path: str | Path) -> tuple[Path, Optional[Path]]:
 
     candidate = Path(path)
     if candidate.is_dir() and (candidate / STAGE2_MANIFEST_NAME).is_file():
-        return candidate, None
+        return _Stage2TeacherSource(candidate, None, None)
     if candidate.is_dir() and (candidate / STAGE2_CHECKPOINT_UNET_WEIGHTS).is_file():
-        return _find_stage2_artifact_dir(candidate.parent)[0], candidate / STAGE2_CHECKPOINT_UNET_WEIGHTS
+        source = _resolve_stage2_teacher_source(candidate.parent)
+        return _Stage2TeacherSource(source.artifact_dir, candidate / STAGE2_CHECKPOINT_UNET_WEIGHTS, source.config_path)
     if candidate.is_file() and candidate.name == STAGE2_UNET_WEIGHTS:
-        return candidate.parent, None
+        return _Stage2TeacherSource(candidate.parent, None, None)
     if candidate.is_file() and candidate.name == STAGE2_CHECKPOINT_UNET_WEIGHTS:
-        return _find_stage2_artifact_dir(candidate.parent.parent)[0], candidate
+        source = _resolve_stage2_teacher_source(candidate.parent.parent)
+        return _Stage2TeacherSource(source.artifact_dir, candidate, source.config_path)
 
     current = candidate if candidate.is_dir() else candidate.parent
     for parent in [current, *current.parents]:
         if (parent / STAGE2_MANIFEST_NAME).is_file():
             weights = candidate if candidate.is_file() else None
-            return parent, weights
+            return _Stage2TeacherSource(parent, weights, None)
+
+    latest_weights = _latest_stage2_checkpoint_weights(current)
+    if latest_weights is not None:
+        config_path = _infer_stage2_config_path(current)
+        if config_path is None:
+            raise FileNotFoundError(
+                "Found ongoing SD RegionDiff checkpoints under "
+                f"{str(current)!r}, but could not infer the matching "
+                "configs/sd_layout YAML from output.output_dir. Pass a specific "
+                "final stage-2 artifact after training completes, or add a config "
+                "whose output.output_dir matches this run directory."
+            )
+        return _Stage2TeacherSource(current, latest_weights, config_path)
+
     raise FileNotFoundError(
         "Could not resolve an SD RegionDiff stage-2 artifact from "
-        f"{str(path)!r}."
+        f"{str(path)!r}. Expected a finalized artifact with "
+        f"{STAGE2_MANIFEST_NAME!r}, a checkpoint-* directory containing "
+        f"{STAGE2_CHECKPOINT_UNET_WEIGHTS!r}, or an ongoing run directory "
+        "with checkpoint-* children."
     )
+
+
+def _find_stage2_artifact_dir(path: str | Path) -> tuple[Path, Optional[Path]]:
+    source = _resolve_stage2_teacher_source(path)
+    return source.artifact_dir, source.weights
 
 
 def _load_state_dict(path: str | Path) -> Dict[str, torch.Tensor]:
@@ -217,6 +309,88 @@ def _load_state_dict(path: str | Path) -> Dict[str, torch.Tensor]:
     if isinstance(state, dict) and "state_dict" in state:
         state = state["state_dict"]
     return state
+
+
+def _load_sd_layout_config(config_path: Path):
+    from src.core.configs.config_loader import _deep_merge, dataclass_to_dict, dict_to_dataclass, load_yaml
+    from src.core.configs.sd_layout_config import SDLayoutTrainConfig
+
+    data = dataclass_to_dict(SDLayoutTrainConfig())
+    _deep_merge(data, load_yaml(config_path))
+    config = dict_to_dataclass(SDLayoutTrainConfig, data)
+    config.validate()
+    return config
+
+
+def _load_category_id_to_name_from_sd_layout_config(config) -> Dict[int, str]:
+    from src.algorithms.stable_diffusion.layout_data import resolve_layout_split
+    from src.core.data.annotations import build_category_id_to_name, load_coco_annotations
+
+    split = resolve_layout_split(
+        dataset_id=config.data.dataset_id,
+        split=config.data.train_split,
+        root_dir=config.data.train_data_dir,
+        annotations_path=config.data.train_annotations,
+    )
+    return build_category_id_to_name(load_coco_annotations(split.annotations_path))
+
+
+def _load_ongoing_stage2_layout_pipeline(
+    *,
+    config_path: Path,
+    checkpoint_weights: Path,
+    device: torch.device | str,
+    torch_dtype: Optional[torch.dtype],
+):
+    from src.algorithms.stable_diffusion.layout_models import (
+        build_regiondiff_unet_wrapper,
+        load_stage1_pipeline_for_stage2,
+    )
+
+    config = _load_sd_layout_config(config_path)
+    pipeline, init_info = load_stage1_pipeline_for_stage2(config=config, device=torch.device(device))
+    category_id_to_name = _load_category_id_to_name_from_sd_layout_config(config)
+
+    device = next(pipeline.text_encoder.parameters()).device
+    wrapped_unet = build_regiondiff_unet_wrapper(
+        base_unet=pipeline.unet,
+        tokenizer=pipeline.tokenizer,
+        text_encoder=pipeline.text_encoder,
+        category_id_to_name=category_id_to_name,
+        config=config,
+        device=device,
+    )
+    state_dict = _load_state_dict(checkpoint_weights)
+    missing, unexpected = wrapped_unet.load_state_dict(state_dict, strict=False)
+    if missing or unexpected:
+        raise RuntimeError(
+            "Ongoing Stage-2 RegionDiff checkpoint did not load cleanly. "
+            f"Missing keys={missing[:5]}, unexpected keys={unexpected[:5]}"
+        )
+    if torch_dtype is not None:
+        wrapped_unet.to(dtype=torch_dtype)
+    pipeline.unet = wrapped_unet
+    manifest = {
+        "pretrained_model_name_or_path": config.stage1.pretrained_model_name_or_path,
+        "revision": config.stage1.revision,
+        "variant": config.stage1.variant,
+        "prompt_mode": config.prompt.prompt_mode,
+        "constant_prompt": config.prompt.constant_prompt,
+        "thermal_scene_suffix": config.prompt.thermal_scene_suffix,
+        "use_captions_if_available": config.prompt.use_captions_if_available,
+        "category_id_to_name": {str(key): value for key, value in category_id_to_name.items()},
+        "region": {
+            "active_region_resolutions": list(config.region.active_region_resolutions),
+            "layout_token_dim": config.region.layout_token_dim,
+            "bbox_fourier_dim": config.region.bbox_fourier_dim,
+            "same_class_position_slots": config.region.same_class_position_slots,
+            "use_background_token": config.region.use_background_token,
+        },
+        "stage1_initialization": init_info,
+        "ongoing_stage2_config": str(config_path),
+        "ongoing_stage2_checkpoint": str(checkpoint_weights),
+    }
+    return pipeline, manifest
 
 
 class RegionDiffAttentionTeacher:
@@ -348,14 +522,26 @@ def load_regiondiff_attention_teacher(
     """Load and freeze an SD1.5 RegionDiff teacher from a stage-2 artifact."""
     from src.algorithms.stable_diffusion.layout_models import load_stage2_layout_pipeline
 
-    artifact_dir, override_weights = _find_stage2_artifact_dir(teacher_checkpoint)
-    pipeline, manifest = load_stage2_layout_pipeline(
-        stage2_dir=str(artifact_dir),
-        torch_dtype=torch_dtype,
-    )
-    if override_weights is not None:
+    source = _resolve_stage2_teacher_source(teacher_checkpoint)
+    if source.config_path is not None:
+        if source.weights is None:
+            raise FileNotFoundError(
+                "Internal error: ongoing Stage-2 teacher source has no checkpoint weights."
+            )
+        pipeline, manifest = _load_ongoing_stage2_layout_pipeline(
+            config_path=source.config_path,
+            checkpoint_weights=source.weights,
+            device=device,
+            torch_dtype=torch_dtype,
+        )
+    else:
+        pipeline, manifest = load_stage2_layout_pipeline(
+            stage2_dir=str(source.artifact_dir),
+            torch_dtype=torch_dtype,
+        )
+    if source.weights is not None and source.config_path is None:
         missing, unexpected = pipeline.unet.load_state_dict(
-            _load_state_dict(override_weights),
+            _load_state_dict(source.weights),
             strict=False,
         )
         if missing or unexpected:
@@ -672,4 +858,3 @@ def compute_region_attention_distillation_loss(
     if not layer_losses:
         return _zero_loss_like(student_attention_maps, boxes_xyxy_norm), diagnostics
     return torch.stack(layer_losses).mean(), diagnostics
-
