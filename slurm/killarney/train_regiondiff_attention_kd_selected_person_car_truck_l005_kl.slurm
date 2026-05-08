@@ -20,7 +20,7 @@ DEFAULT_TEACHER_CHECKPOINT="${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusi
 MIXED_PRECISION="${MIXED_PRECISION:-auto}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 TEACHER_CHECKPOINT="${TEACHER_CHECKPOINT:-}"
-RESUME="${RESUME:-}"
+RESUME="${RESUME:-artifacts/checkpoints/flow_matching/serious_runs/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005/UNET/unet_fm_epoch_125_ckpt.pt}"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"

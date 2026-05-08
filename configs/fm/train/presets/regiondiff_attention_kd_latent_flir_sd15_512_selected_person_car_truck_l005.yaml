@@ -110,7 +110,7 @@ output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005"
   log_dir: "./artifacts/runs/main/flow_matching/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005"
   debug_dir: "./artifacts/debug/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005"
-  resume: null
+  resume: "artifacts/checkpoints/flow_matching/serious_runs/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005/UNET/unet_fm_epoch_125_ckpt.pt"
 
 trainer_name: "default_fm"
 device: null
