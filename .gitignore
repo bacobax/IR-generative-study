@@ -87,3 +87,4 @@ events.out.tfevents.*
 **/*smoked*/
 artifacts/evaluations
 artifacts/flir_private_proxy_alignment_v18.zip
+domainstudio.pdf

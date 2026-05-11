@@ -17,7 +17,7 @@ center_crop: false
 random_flip: false
 
 # Actual per-step batch must be >=2 for pairwise DomainStudio losses.
-train_batch_size: 8
+train_batch_size: 4
 gradient_accumulation_steps: 2
 
 # For 10k samples, avoid full epoch-scale over-adaptation at first.
