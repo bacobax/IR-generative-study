@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -272,6 +273,104 @@ def test_metrics_only_uses_existing_images_without_generation(tmp_path: Path, mo
     assert result["metrics"] == {"enabled": True, "sentinel": "metrics"}
     assert result["audit"]["reason"] == "metrics_only"
     assert (output_dir / "metadata" / "production_summary.json").is_file()
+
+
+def test_validate_generator_checkpoint_readability_accepts_sd_layout_artifact(tmp_path: Path) -> None:
+    stage2_dir = tmp_path / "stage2"
+    stage2_dir.mkdir()
+    (stage2_dir / "stage2_layout_manifest.json").write_text("{}", encoding="utf-8")
+    (stage2_dir / "regiondiff_unet.safetensors").write_bytes(b"not-a-real-test-weight")
+
+    ok, detail = production_generation.validate_generator_checkpoint_readability(stage2_dir)
+
+    assert ok is True
+    assert str(stage2_dir) in detail
+
+
+def test_regiondiff_sd_layout_streaming_backend_uses_prompts_and_label_map(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset_yaml = _make_yolo_dataset(tmp_path)
+    output_dir = tmp_path / "generated" / "sd_layout"
+    stage2_dir = tmp_path / "stage2"
+    stage2_dir.mkdir()
+    (stage2_dir / "stage2_layout_manifest.json").write_text("{}", encoding="utf-8")
+    (stage2_dir / "regiondiff_unet.safetensors").write_bytes(b"fake")
+
+    source_samples, dataset_payload = production_generation.load_full_train_samples(dataset_yaml)
+    dataset_payload["names"] = {0: "person", 1: "car"}
+    source_samples = [
+        YOLOTrainSample(
+            index=0,
+            image_path=source_samples[0].image_path,
+            label_path=source_samples[0].label_path,
+            boxes=[
+                YOLOBox(0, 0.5, 0.5, 0.25, 0.25),
+                YOLOBox(1, 0.4, 0.4, 0.2, 0.2),
+            ],
+        )
+    ]
+    calls: list[dict[str, object]] = []
+
+    class FakePipeline:
+        def __init__(self) -> None:
+            self.unet = SimpleNamespace(category_id_to_name={0: "person", 2: "car"})
+            self.vae = SimpleNamespace(enable_slicing=lambda: None)
+
+        def set_progress_bar_config(self, **kwargs):  # noqa: ANN001
+            calls.append({"progress": kwargs})
+
+        def to(self, device):  # noqa: ANN001
+            calls.append({"device": str(device)})
+            return self
+
+        def __call__(self, prompts, **kwargs):  # noqa: ANN001
+            calls.append({"prompts": prompts, **kwargs})
+            from PIL import Image
+
+            return SimpleNamespace(images=[Image.fromarray(np.full((16, 16, 3), 128, dtype=np.uint8))])
+
+    monkeypatch.setattr(
+        production_generation,
+        "_load_stage2_layout_pipeline",
+        lambda **_kwargs: (
+            FakePipeline(),
+            {
+                "resolution": 16,
+                "prompt_mode": "class_list",
+                "constant_prompt": "thermal image",
+                "thermal_scene_suffix": "in thermal scene.",
+            },
+        ),
+    )
+
+    generated_count = production_generation.generate_regiondiff_sd_layout_dataset(
+        output_dir=output_dir,
+        generator_cfg={
+            "name": "sd_layout",
+            "backend": "regiondiff_sd_layout",
+            "stage2_dir": str(stage2_dir),
+            "steps": 4,
+            "guidance_scale": 6.5,
+            "batch_size": 1,
+            "precision": "fp32",
+        },
+        source_samples=source_samples,
+        dataset_payload=dataset_payload,
+        device="cpu",
+        seed=123,
+    )
+
+    pipeline_call = next(call for call in calls if "prompts" in call)
+    labels = pipeline_call["cross_attention_kwargs"]["labels"]
+    assert generated_count == 1
+    assert pipeline_call["prompts"] == ["An image of person and car in thermal scene."]
+    assert labels.tolist() == [[0, 2]]
+    assert pipeline_call["num_inference_steps"] == 4
+    assert pipeline_call["guidance_scale"] == 6.5
+    assert np.load(output_dir / "images" / "sample_000001.npy").shape == (16, 16)
+    assert (output_dir / "previews" / "sample_000001.png").is_file()
 
 
 def test_generation_retries_images_above_invalid_instance_ratio_threshold(

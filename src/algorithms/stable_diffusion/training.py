@@ -21,13 +21,24 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
-from diffusers import DiffusionPipeline, StableDiffusionPipeline
+from diffusers import DiffusionPipeline, StableDiffusionPipeline, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import compute_snr
 from diffusers.utils import is_wandb_available
 
 from src.core.training_utils import compute_snr
 from .config import TrainingConfig
+from .data import (
+    create_prior_dataloader,
+    cycle_dataloader,
+    find_prior_image_paths,
+    resolve_prior_image_dir,
+)
+from .domainstudio import (
+    compute_domainstudio_losses,
+    decode_latents_to_images,
+    predict_original_latents_from_epsilon,
+)
 from .models import (
     ModelComponents,
     REGIONDIFF_ADAPTER_WEIGHTS,
@@ -105,6 +116,11 @@ class Trainer:
         self.optimizer = None
         self.lr_scheduler = None
         self.manifest = None
+        self.domainstudio_teacher_unet = None
+        self.domainstudio_prior_dataloader = None
+        self.domainstudio_prior_iter = None
+        self.domainstudio_info: Dict[str, object] = {}
+        self._last_loss_logs: Dict[str, torch.Tensor] = {}
 
     def _create_accelerator(self) -> Accelerator:
         logging_dir = Path(self.config.output_dir, self.config.logging_dir)
@@ -141,6 +157,9 @@ class Trainer:
         if self.config.allow_tf32:
             torch.backends.cuda.matmul.allow_tf32 = True
 
+        if self.config.domainstudio_enabled:
+            self._setup_domainstudio_components()
+
         learning_rate = self.config.learning_rate
         if self.config.scale_lr:
             learning_rate = (
@@ -154,6 +173,7 @@ class Trainer:
         self._calculate_training_steps()
         self.lr_scheduler = self._create_lr_scheduler()
         self._prepare_for_training()
+        self._prepare_domainstudio_dataloader()
         self._register_hooks()
 
         if self.accelerator.is_main_process:
@@ -161,12 +181,142 @@ class Trainer:
             tracker_config["normalization_mode"] = self.normalization_mode
             tracker_config["trainable_components"] = trainable_component_names(self.models)
             tracker_config["adaptation_info"] = self.adaptation_info
+            tracker_config["domainstudio_info"] = self.domainstudio_info
             self.accelerator.init_trackers(
                 "sd-ir-adaptation",
                 config=_sanitize_tracker_config(tracker_config),
             )
 
         logger.info("Training setup complete")
+
+    def _setup_domainstudio_components(self) -> None:
+        prediction_type = self.models.noise_scheduler.config.prediction_type
+        if prediction_type != "epsilon":
+            raise NotImplementedError(
+                "DomainStudio Stage-1 losses currently support only epsilon prediction; "
+                f"got noise_scheduler.config.prediction_type={prediction_type!r}."
+            )
+
+        logger.info("Loading frozen DomainStudio source teacher U-Net...")
+        teacher_unet = UNet2DConditionModel.from_pretrained(
+            self.config.pretrained_model_name_or_path,
+            subfolder="unet",
+            revision=self.config.revision,
+            variant=self.config.variant,
+        )
+        teacher_unet.requires_grad_(False)
+        teacher_unet.eval()
+        teacher_unet.to(self.accelerator.device, dtype=self.models.weight_dtype)
+        self.domainstudio_teacher_unet = teacher_unet
+
+        prior_dir, prior_paths = resolve_prior_image_dir(
+            prior_data_dir=self.config.domainstudio_prior_data_dir,
+            prior_cache_dir=self.config.domainstudio_prior_cache_dir,
+        )
+        if not prior_paths and self.config.domainstudio_generate_prior_if_missing:
+            self._generate_domainstudio_prior_images()
+            prior_dir, prior_paths = resolve_prior_image_dir(
+                prior_data_dir=self.config.domainstudio_prior_data_dir,
+                prior_cache_dir=self.config.domainstudio_prior_cache_dir,
+            )
+
+        if not prior_paths:
+            searched = [
+                value
+                for value in (
+                    self.config.domainstudio_prior_data_dir,
+                    self.config.domainstudio_prior_cache_dir,
+                )
+                if value
+            ]
+            raise FileNotFoundError(
+                "DomainStudio requires source-prior images. No usable prior images "
+                f"were found under {searched or '[no prior dirs configured]'}. "
+                "Set domainstudio_prior_data_dir to an existing folder, or set "
+                "domainstudio_generate_prior_if_missing=True with "
+                "domainstudio_prior_cache_dir."
+            )
+
+        self.domainstudio_prior_dataloader = create_prior_dataloader(
+            prior_image_paths=prior_paths,
+            tokenizer=self.models.tokenizer,
+            source_prompt=str(self.config.domainstudio_source_prompt),
+            resolution=self.config.resolution,
+            center_crop=self.config.center_crop,
+            random_flip=self.config.random_flip,
+            interpolation_mode=self.config.image_interpolation_mode,
+            batch_size=self.config.train_batch_size,
+            num_workers=self.config.dataloader_num_workers,
+        )
+        self.domainstudio_info = {
+            "enabled": True,
+            "source_prompt": self.config.domainstudio_source_prompt,
+            "target_prompt": self.config.domainstudio_target_prompt,
+            "prior_dir": prior_dir,
+            "num_prior_images": len(prior_paths),
+            "loss_every_n_steps": self.config.domainstudio_loss_every_n_steps,
+            "teacher_unet_frozen": all(
+                not param.requires_grad for param in self.domainstudio_teacher_unet.parameters()
+            ),
+        }
+
+    def _generate_domainstudio_prior_images(self) -> None:
+        assert self.config.domainstudio_prior_cache_dir is not None
+        cache_dir = Path(self.config.domainstudio_prior_cache_dir)
+        context = (
+            self.accelerator.main_process_first()
+            if hasattr(self.accelerator, "main_process_first")
+            else nullcontext()
+        )
+        with context:
+            if not self.accelerator.is_main_process:
+                return
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            existing = find_prior_image_paths(str(cache_dir))
+            num_to_generate = max(0, self.config.domainstudio_num_prior_images - len(existing))
+            if num_to_generate == 0:
+                return
+
+            generation_dtype = (
+                self.models.weight_dtype
+                if self.accelerator.device.type != "cpu"
+                else torch.float32
+            )
+            pipeline = StableDiffusionPipeline.from_pretrained(
+                self.config.pretrained_model_name_or_path,
+                revision=self.config.revision,
+                variant=self.config.variant,
+                torch_dtype=generation_dtype,
+                safety_checker=None,
+                requires_safety_checker=False,
+            )
+            pipeline = pipeline.to(self.accelerator.device)
+            pipeline.set_progress_bar_config(disable=True)
+
+            logger.info("Generating %s DomainStudio prior images into %s", num_to_generate, cache_dir)
+            batch_size = max(1, int(self.config.train_batch_size))
+            image_index = len(existing)
+            for start in range(0, num_to_generate, batch_size):
+                current_batch = min(batch_size, num_to_generate - start)
+                prompts = [str(self.config.domainstudio_source_prompt)] * current_batch
+                output = pipeline(prompts)
+                for image in output.images:
+                    image.save(cache_dir / f"domainstudio_prior_{image_index:05d}.png")
+                    image_index += 1
+
+            del pipeline
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    def _prepare_domainstudio_dataloader(self) -> None:
+        if not self.config.domainstudio_enabled:
+            return
+        if self.domainstudio_prior_dataloader is None:
+            raise RuntimeError("DomainStudio prior dataloader was not initialized.")
+        self.domainstudio_prior_dataloader = self.accelerator.prepare(
+            self.domainstudio_prior_dataloader
+        )
+        self.domainstudio_prior_iter = cycle_dataloader(self.domainstudio_prior_dataloader)
 
     def _create_optimizer(self, learning_rate: float):
         params = get_trainable_params(self.models)
@@ -461,7 +611,15 @@ class Trainer:
             if self.accelerator.sync_gradients:
                 progress_bar.update(1)
                 self.global_step += 1
-                self.accelerator.log({"train_loss": train_loss}, step=self.global_step)
+                log_payload = {"train_loss": train_loss}
+                if self.config.domainstudio_enabled:
+                    log_payload.update(
+                        {
+                            key: float(value.detach().float().cpu())
+                            for key, value in self._last_loss_logs.items()
+                        }
+                    )
+                self.accelerator.log(log_payload, step=self.global_step)
                 train_loss = 0.0
 
             logs = {
@@ -522,7 +680,41 @@ class Trainer:
                 return_dict=False,
             )[0]
 
-            loss = self._compute_loss(model_pred, target, timesteps)
+            loss_simple = self._compute_loss(model_pred, target, timesteps)
+            loss = loss_simple
+            self._last_loss_logs = {}
+            if self.config.domainstudio_enabled:
+                zero = loss_simple * 0.0
+                domainstudio_losses = {
+                    "prior": zero,
+                    "img_pairwise": zero,
+                    "hf_pairwise": zero,
+                    "hf_mse": zero,
+                }
+                if self.global_step % self.config.domainstudio_loss_every_n_steps == 0:
+                    domainstudio_losses = self._compute_domainstudio_train_losses(
+                        pixel_values=pixel_values,
+                        noisy_latents=noisy_latents,
+                        timesteps=timesteps,
+                        model_pred=model_pred,
+                    )
+                    loss = (
+                        loss_simple
+                        + self.config.domainstudio_lambda_prior * domainstudio_losses["prior"]
+                        + self.config.domainstudio_lambda_img * domainstudio_losses["img_pairwise"]
+                        + self.config.domainstudio_lambda_hf * domainstudio_losses["hf_pairwise"]
+                        + self.config.domainstudio_lambda_hfmse * domainstudio_losses["hf_mse"]
+                    )
+
+                self._last_loss_logs = {
+                    "train/loss_simple": loss_simple.detach(),
+                    "train/loss_domainstudio_prior": domainstudio_losses["prior"].detach(),
+                    "train/loss_domainstudio_img_pairwise": domainstudio_losses["img_pairwise"].detach(),
+                    "train/loss_domainstudio_hf_pairwise": domainstudio_losses["hf_pairwise"].detach(),
+                    "train/loss_domainstudio_hf_mse": domainstudio_losses["hf_mse"].detach(),
+                    "train/loss_total": loss.detach(),
+                }
+
             self.accelerator.backward(loss)
 
             if self.accelerator.sync_gradients:
@@ -536,6 +728,88 @@ class Trainer:
             self.optimizer.zero_grad()
 
         return loss
+
+    def _compute_domainstudio_train_losses(
+        self,
+        *,
+        pixel_values: torch.Tensor,
+        noisy_latents: torch.Tensor,
+        timesteps: torch.Tensor,
+        model_pred: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        if self.domainstudio_teacher_unet is None or self.domainstudio_prior_iter is None:
+            raise RuntimeError("DomainStudio components were not initialized.")
+
+        prior_batch = next(self.domainstudio_prior_iter)
+        prior_pixel_values = prior_batch["pixel_values"].to(device=self.accelerator.device)
+        prior_latents = self.models.vae.encode(
+            prior_pixel_values.to(dtype=next(self.models.vae.parameters()).dtype)
+        ).latent_dist.sample()
+        prior_latents = prior_latents * self.models.vae.config.scaling_factor
+
+        prior_noise = torch.randn_like(prior_latents)
+        if self.config.noise_offset:
+            prior_noise += self.config.noise_offset * torch.randn(
+                (prior_latents.shape[0], prior_latents.shape[1], 1, 1),
+                device=prior_latents.device,
+            )
+
+        prior_timesteps = torch.randint(
+            0,
+            self.models.noise_scheduler.config.num_train_timesteps,
+            (prior_latents.shape[0],),
+            device=prior_latents.device,
+        ).long()
+        noisy_prior_latents = self.models.noise_scheduler.add_noise(
+            prior_latents,
+            prior_noise,
+            prior_timesteps,
+        )
+
+        source_hidden_states = self.models.text_encoder(
+            prior_batch["input_ids"].to(device=self.accelerator.device),
+            return_dict=False,
+        )[0]
+
+        student_pred_prior = self.models.unet(
+            noisy_prior_latents,
+            prior_timesteps,
+            source_hidden_states,
+            cross_attention_kwargs=None,
+            return_dict=False,
+        )[0]
+        with torch.no_grad():
+            teacher_pred_prior = self.domainstudio_teacher_unet(
+                noisy_prior_latents,
+                prior_timesteps,
+                source_hidden_states,
+                return_dict=False,
+            )[0]
+
+        z0_target_hat = predict_original_latents_from_epsilon(
+            noisy_latents,
+            timesteps,
+            model_pred,
+            self.models.noise_scheduler,
+        )
+        z0_prior_hat = predict_original_latents_from_epsilon(
+            noisy_prior_latents,
+            prior_timesteps,
+            student_pred_prior,
+            self.models.noise_scheduler,
+        )
+
+        img_target_hat = decode_latents_to_images(self.models.vae, z0_target_hat)
+        img_prior_hat = decode_latents_to_images(self.models.vae, z0_prior_hat)
+        return compute_domainstudio_losses(
+            student_pred_prior=student_pred_prior,
+            teacher_pred_prior=teacher_pred_prior,
+            img_target_hat=img_target_hat,
+            img_prior_hat=img_prior_hat,
+            pixel_values=pixel_values,
+            temperature=self.config.domainstudio_similarity_temperature,
+            min_pairwise_batch=self.config.domainstudio_min_pairwise_batch,
+        )
 
     def _get_prediction_target(
         self,

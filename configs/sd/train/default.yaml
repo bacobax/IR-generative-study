@@ -21,6 +21,21 @@ learning_rate: 1.0e-4
 lr_scheduler: "constant"
 lr_warmup_steps: 0
 
+domainstudio_enabled: false
+domainstudio_source_prompt: null
+domainstudio_target_prompt: null
+domainstudio_lambda_prior: 1.0
+domainstudio_lambda_img: 100.0
+domainstudio_lambda_hf: 100.0
+domainstudio_lambda_hfmse: 0.5
+domainstudio_similarity_temperature: 1.0
+domainstudio_loss_every_n_steps: 1
+domainstudio_min_pairwise_batch: 2
+domainstudio_prior_data_dir: null
+domainstudio_prior_cache_dir: null
+domainstudio_num_prior_images: 200
+domainstudio_generate_prior_if_missing: false
+
 rank: 8
 lora_alpha_scale: 1.0
 lora_target_modules:

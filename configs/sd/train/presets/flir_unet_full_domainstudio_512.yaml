@@ -1,0 +1,72 @@
+# configs/sd/train/presets/flir_unet_full_domainstudio_512.yaml
+
+pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+
+baseline_mode: "sd_ir_unet"
+unet_train_mode: "full"
+freeze_vae: true
+freeze_text_encoder: true
+
+dataset_id: "flir_private_proxy_alignment_v18"
+train_split: "train"
+prompt_text: "thermal image of a road scene"
+
+resolution: 512
+image_interpolation_mode: "lanczos"
+center_crop: false
+random_flip: false
+
+# Actual per-step batch must be >=2 for pairwise DomainStudio losses.
+train_batch_size: 8
+gradient_accumulation_steps: 2
+
+# For 10k samples, avoid full epoch-scale over-adaptation at first.
+max_train_steps: 2500
+num_train_epochs: 80
+
+learning_rate: 1.0e-6
+lr_scheduler: "constant"
+lr_warmup_steps: 0
+adam_weight_decay: 1.0e-2
+max_grad_norm: 1.0
+
+snr_gamma: null
+noise_offset: 0.0
+prediction_type: "epsilon"
+
+domainstudio_enabled: true
+domainstudio_source_prompt: "a photo of a road scene"
+domainstudio_target_prompt: "thermal image of a road scene"
+
+domainstudio_lambda_prior: 1.0
+domainstudio_lambda_img: 100.0
+domainstudio_lambda_hf: 100.0
+domainstudio_lambda_hfmse: 0.5
+
+domainstudio_similarity_temperature: 1.0
+domainstudio_loss_every_n_steps: 2
+domainstudio_min_pairwise_batch: 2
+
+# Prefer pre-generated visible/RGB source priors here.
+domainstudio_prior_data_dir: "data/derived/domainstudio_priors/photo_sd15_512"
+domainstudio_prior_cache_dir: "artifacts/cache/domainstudio_priors/photo_sd15_512"
+domainstudio_num_prior_images: 200
+domainstudio_generate_prior_if_missing: true
+
+validation_prompt: "thermal image of a road scene"
+num_validation_images: 4
+validation_epochs: 1
+validation_num_inference_steps: 30
+
+checkpointing_epochs: 1
+checkpoints_total_limit: 3
+
+mixed_precision: "fp16"
+allow_tf32: true
+enable_xformers_memory_efficient_attention: false
+dataloader_num_workers: 4
+
+logging_dir: "logs"
+report_to: "tensorboard"
+seed: 42
+output_dir: "./artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_domainstudio_512"

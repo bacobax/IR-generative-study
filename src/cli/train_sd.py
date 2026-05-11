@@ -129,8 +129,8 @@ def main():
                 tokenizer=models.tokenizer,
                 resolution=config.resolution,
                 normalization_mode=layout_split.normalization_mode,
-                prompt_mode="constant" if config.resolved_prompt_text() else "class_list",
-                constant_prompt=config.resolved_prompt_text() or DEFAULT_PROMPT_TEXT,
+                prompt_mode="constant" if config.resolved_training_prompt_text() else "class_list",
+                constant_prompt=config.resolved_training_prompt_text() or DEFAULT_PROMPT_TEXT,
                 thermal_scene_suffix="in thermal scene.",
                 use_captions_if_available=False,
                 max_samples=config.max_train_samples,
@@ -166,7 +166,7 @@ def main():
                 max_train_samples=config.max_train_samples,
                 seed=config.seed,
                 use_ir_preprocessing=config.use_ir_preprocessing,
-                prompt_text=config.resolved_prompt_text(),
+                prompt_text=config.resolved_training_prompt_text(),
             )
 
     logger.info("Configuring Stage-1 adaptation baseline: %s", config.baseline_mode)

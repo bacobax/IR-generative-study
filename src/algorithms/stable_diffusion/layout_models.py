@@ -769,6 +769,7 @@ def load_stage2_layout_pipeline(
     stage2_dir: str,
     torch_dtype: Optional[torch.dtype] = None,
     base_model: Optional[str] = None,
+    device: torch.device | str | None = None,
 ) -> Tuple[StableDiffusionPipeline, Dict[str, object]]:
     """Load a saved stage-2 RegionDiff artifact as a StableDiffusionPipeline."""
     stage2_dir_path = Path(stage2_dir)
@@ -784,6 +785,8 @@ def load_stage2_layout_pipeline(
         safety_checker=None,
         requires_safety_checker=False,
     )
+    if device is not None:
+        pipeline.to(device)
 
     category_id_to_name = {
         int(key): str(value)
@@ -792,8 +795,13 @@ def load_stage2_layout_pipeline(
 
     base_unet_config = _load_json(stage2_dir_path / STAGE2_BASE_UNET_CONFIG)
     base_unet = UNet2DConditionModel.from_config(base_unet_config)
-    if torch_dtype is not None:
-        base_unet.to(dtype=torch_dtype)
+    if device is not None or torch_dtype is not None:
+        to_kwargs = {}
+        if device is not None:
+            to_kwargs["device"] = device
+        if torch_dtype is not None:
+            to_kwargs["dtype"] = torch_dtype
+        base_unet.to(**to_kwargs)
 
     class_text_features = build_class_text_features(
         tokenizer=pipeline.tokenizer,
@@ -811,6 +819,8 @@ def load_stage2_layout_pipeline(
         use_background_token=bool(region_config["use_background_token"]),
         active_region_resolutions=region_config["active_region_resolutions"],
     )
+    if device is not None:
+        wrapped_unet.to(device)
     state_dict = _load_state_dict(stage2_dir_path / STAGE2_UNET_WEIGHTS)
     missing, unexpected = wrapped_unet.load_state_dict(state_dict, strict=False)
     if missing or unexpected:
@@ -818,7 +828,11 @@ def load_stage2_layout_pipeline(
             "Stage-2 RegionDiff artifact did not load cleanly. "
             f"Missing keys={missing[:5]}, unexpected keys={unexpected[:5]}"
         )
+    if device is not None:
+        wrapped_unet.to(device=device)
     if torch_dtype is not None:
         wrapped_unet.base_unet.to(dtype=torch_dtype)
     pipeline.unet = wrapped_unet
+    if device is not None:
+        pipeline.to(device)
     return pipeline, manifest

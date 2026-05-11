@@ -46,6 +46,12 @@ from src.models.stay_layout_conditioned_unet import build_stay_layout_conditione
 from src.models.vae import build_vae_from_config, freeze_vae, load_diffusers_vae_config, load_vae_config, load_vae_weights
 
 
+STAGE2_LAYOUT_MANIFEST_NAME = "stage2_layout_manifest.json"
+STAGE2_REGIONDIFF_CONFIG_NAME = "regiondiff_config.json"
+STAGE2_UNET_WEIGHTS_NAME = "regiondiff_unet.safetensors"
+STAGE2_CHECKPOINT_UNET_WEIGHTS_NAME = "regiondiff_unet_checkpoint.safetensors"
+
+
 DEFAULT_CONFIG_PATH = "configs/yolo/exp_b/synthetic_generation/default.yaml"
 DEFAULT_YOLO_DATASET_YAML = "data/derived/yolo-test-ds/full_train.yaml"
 DEFAULT_OUTPUT_ROOT = "artifacts/generated/yolo/exp_b/precomputed_candidates"
@@ -475,6 +481,15 @@ def export_generated_candidate_dataset(
 
 
 def _extract_unet_state(checkpoint_path: Path, *, device: str | torch.device) -> dict[str, torch.Tensor]:
+    if checkpoint_path.suffix == ".safetensors":
+        try:
+            from safetensors.torch import load_file as safe_load_file
+        except ImportError as exc:  # pragma: no cover - depends on optional runtime package
+            raise RuntimeError(
+                f"Cannot load safetensors checkpoint {checkpoint_path}; install safetensors."
+            ) from exc
+        return safe_load_file(str(checkpoint_path), device=str(device))
+
     try:
         state = torch.load(checkpoint_path, map_location=device)
     except RuntimeError as exc:
@@ -502,8 +517,17 @@ def validate_generator_checkpoint_readability(
     """Cheaply detect corrupt PyTorch zip checkpoints before model construction."""
 
     path = _repo_path(checkpoint_path)
-    if path is None or not path.is_file():
+    if path is None or not path.exists():
         return False, f"missing checkpoint: {checkpoint_path}"
+    if path.is_dir():
+        final_weights = path / STAGE2_UNET_WEIGHTS_NAME
+        checkpoint_weights = path / STAGE2_CHECKPOINT_UNET_WEIGHTS_NAME
+        parent_manifest = path.parent / STAGE2_LAYOUT_MANIFEST_NAME
+        if final_weights.is_file() and (path / STAGE2_LAYOUT_MANIFEST_NAME).is_file():
+            return True, str(path)
+        if checkpoint_weights.is_file() and parent_manifest.is_file():
+            return True, str(path)
+        return False, f"directory is not a recognized generator checkpoint/artifact: {path}"
     try:
         with path.open("rb") as handle:
             magic = handle.read(4)
@@ -516,6 +540,12 @@ def validate_generator_checkpoint_readability(
             "(zip central directory is missing; the file is likely truncated/incomplete)",
         )
     return True, str(path)
+
+
+def _load_stage2_layout_pipeline(*args, **kwargs):
+    from src.algorithms.stable_diffusion.layout_models import load_stage2_layout_pipeline
+
+    return load_stage2_layout_pipeline(*args, **kwargs)
 
 
 def _infer_stay_num_classes(
@@ -960,6 +990,186 @@ def _load_regiondiff_sd_sampler(
     return sampler, int(preset.get("data", {}).get("image_size", 512)), label_id_map
 
 
+def _resolve_regiondiff_sd_layout_artifact(
+    generator_cfg: Mapping[str, Any],
+) -> tuple[Path, Path]:
+    stage2_dir = _repo_path(generator_cfg.get("stage2_dir"))
+    checkpoint_path = _repo_path(generator_cfg.get("checkpoint_path"))
+
+    if checkpoint_path is not None:
+        if checkpoint_path.is_dir():
+            if (checkpoint_path / STAGE2_UNET_WEIGHTS_NAME).is_file():
+                stage2_dir = checkpoint_path
+                checkpoint_path = checkpoint_path / STAGE2_UNET_WEIGHTS_NAME
+            elif (checkpoint_path / STAGE2_CHECKPOINT_UNET_WEIGHTS_NAME).is_file():
+                stage2_dir = checkpoint_path.parent
+                checkpoint_path = checkpoint_path / STAGE2_CHECKPOINT_UNET_WEIGHTS_NAME
+        elif checkpoint_path.name == STAGE2_UNET_WEIGHTS_NAME:
+            stage2_dir = checkpoint_path.parent
+        elif checkpoint_path.name == STAGE2_CHECKPOINT_UNET_WEIGHTS_NAME:
+            candidate_stage2_dir = checkpoint_path.parent
+            if not (candidate_stage2_dir / STAGE2_LAYOUT_MANIFEST_NAME).is_file():
+                candidate_stage2_dir = checkpoint_path.parent.parent
+            stage2_dir = candidate_stage2_dir
+
+    if stage2_dir is None:
+        raise ValueError(
+            "RegionDiff SD-layout generator must define stage2_dir or checkpoint_path."
+        )
+    if not stage2_dir.is_dir():
+        raise FileNotFoundError(f"Missing RegionDiff SD-layout artifact directory: {stage2_dir}")
+    if not (stage2_dir / STAGE2_LAYOUT_MANIFEST_NAME).is_file():
+        raise FileNotFoundError(
+            f"Missing {STAGE2_LAYOUT_MANIFEST_NAME} under RegionDiff SD-layout artifact: {stage2_dir}"
+        )
+    if checkpoint_path is None:
+        checkpoint_path = stage2_dir / STAGE2_UNET_WEIGHTS_NAME
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Missing RegionDiff SD-layout weights: {checkpoint_path}")
+    return stage2_dir, checkpoint_path
+
+
+def _torch_dtype_from_precision(precision: Any, *, device: str | torch.device) -> torch.dtype | None:
+    value = str(precision or "").strip().lower()
+    if value in {"", "auto"}:
+        value = "fp16" if str(device).startswith("cuda") else "fp32"
+    if value in {"fp16", "float16", "half"}:
+        return torch.float16 if str(device).startswith("cuda") else torch.float32
+    if value in {"bf16", "bfloat16"}:
+        return torch.bfloat16 if str(device).startswith("cuda") else torch.float32
+    if value in {"fp32", "float32"}:
+        return torch.float32
+    raise ValueError("precision must be one of: auto, fp16, bf16, fp32.")
+
+
+def _stage2_manifest_prompt_config(
+    manifest: Mapping[str, Any],
+    generator_cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    prompt_cfg = dict(generator_cfg.get("prompt", {}) or {})
+    return {
+        "prompt_mode": str(
+            generator_cfg.get(
+                "prompt_mode",
+                prompt_cfg.get("prompt_mode", manifest.get("prompt_mode", "class_list")),
+            )
+        ),
+        "constant_prompt": str(
+            generator_cfg.get(
+                "constant_prompt",
+                prompt_cfg.get("constant_prompt", manifest.get("constant_prompt", "thermal image")),
+            )
+        ),
+        "thermal_scene_suffix": str(
+            generator_cfg.get(
+                "thermal_scene_suffix",
+                prompt_cfg.get("thermal_scene_suffix", manifest.get("thermal_scene_suffix", "in thermal scene.")),
+            )
+        ),
+        "use_captions_if_available": bool(
+            generator_cfg.get(
+                "use_captions_if_available",
+                prompt_cfg.get("use_captions_if_available", manifest.get("use_captions_if_available", False)),
+            )
+        ),
+    }
+
+
+def _build_regiondiff_sd_layout_prompts(
+    *,
+    batch: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    generator_cfg: Mapping[str, Any],
+) -> list[str]:
+    from src.algorithms.stable_diffusion.layout_data import build_layout_prompt
+
+    prompt_cfg = _stage2_manifest_prompt_config(manifest, generator_cfg)
+    return [
+        build_layout_prompt(
+            label_names=label_names,
+            prompt_mode=str(prompt_cfg["prompt_mode"]),
+            constant_prompt=str(prompt_cfg["constant_prompt"]),
+            thermal_scene_suffix=str(prompt_cfg["thermal_scene_suffix"]),
+            caption=None,
+            use_captions_if_available=bool(prompt_cfg["use_captions_if_available"]),
+        )
+        for label_names in batch.get("label_names", [])
+    ]
+
+
+def _pipeline_images_to_arrays(images: Sequence[Any]) -> list[np.ndarray]:
+    arrays: list[np.ndarray] = []
+    for image in images:
+        rgb = np.asarray(image.convert("RGB") if hasattr(image, "convert") else image)
+        if rgb.ndim == 3:
+            gray = rgb.astype(np.float32).mean(axis=-1)
+        else:
+            gray = rgb.astype(np.float32)
+        if gray.dtype != np.uint8:
+            if float(np.nanmax(gray)) <= 1.0:
+                gray = gray * 255.0
+            gray = np.clip(np.rint(gray), 0, 255).astype(np.uint8)
+        arrays.append(gray)
+    return arrays
+
+
+def _load_regiondiff_sd_layout_pipeline(
+    *,
+    generator_cfg: Mapping[str, Any],
+    dataset_payload: Mapping[str, Any],
+    device: str | torch.device,
+):
+    stage2_dir, checkpoint_path = _resolve_regiondiff_sd_layout_artifact(generator_cfg)
+    dtype = _torch_dtype_from_precision(generator_cfg.get("precision", "auto"), device=device)
+    pipeline, manifest = _load_stage2_layout_pipeline(
+        stage2_dir=str(stage2_dir),
+        torch_dtype=dtype,
+        base_model=generator_cfg.get("base_model"),
+        device=device,
+    )
+    default_weights = stage2_dir / STAGE2_UNET_WEIGHTS_NAME
+    if checkpoint_path.resolve() != default_weights.resolve():
+        state = _extract_unet_state(checkpoint_path, device="cpu")
+        missing, unexpected = pipeline.unet.load_state_dict(state, strict=False)
+        if missing or unexpected:
+            raise RuntimeError(
+                "RegionDiff SD-layout checkpoint did not load cleanly. "
+                f"Missing keys={missing[:5]}, unexpected keys={unexpected[:5]}"
+            )
+
+    if bool(generator_cfg.get("enable_vae_slicing", manifest.get("enable_vae_slicing", True))):
+        vae = getattr(pipeline, "vae", None)
+        if vae is not None and hasattr(vae, "enable_slicing"):
+            vae.enable_slicing()
+    if hasattr(pipeline, "set_progress_bar_config"):
+        pipeline.set_progress_bar_config(disable=bool(generator_cfg.get("disable_progress_bar", True)))
+    pipeline = pipeline.to(device)
+
+    names = _normalise_names(dataset_payload["names"])
+    checkpoint_names = {
+        int(key): str(value)
+        for key, value in getattr(pipeline.unet, "category_id_to_name", {}).items()
+    }
+    if not checkpoint_names:
+        region_config_path = stage2_dir / STAGE2_REGIONDIFF_CONFIG_NAME
+        if region_config_path.is_file():
+            region_config = json.loads(region_config_path.read_text(encoding="utf-8"))
+            checkpoint_names = {
+                int(key): str(value)
+                for key, value in dict(region_config.get("category_id_to_name", {})).items()
+            }
+    if not checkpoint_names:
+        checkpoint_names = names
+
+    label_id_map = _regiondiff_label_id_map(
+        generator_cfg,
+        dataset_names=names,
+        checkpoint_names=checkpoint_names,
+    )
+    image_size = int(generator_cfg.get("image_size", manifest.get("resolution", 512)))
+    return pipeline, dict(manifest), image_size, label_id_map
+
+
 def generate_stay_fm_arrays(
     *,
     generator_cfg: Mapping[str, Any],
@@ -1285,16 +1495,163 @@ def generate_regiondiff_sd_dataset(
     return generated_count
 
 
+def generate_regiondiff_sd_layout_arrays(
+    *,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: Mapping[str, Any],
+    device: str,
+    seed: int,
+) -> list[np.ndarray]:
+    pipeline, manifest, image_size, label_id_map = _load_regiondiff_sd_layout_pipeline(
+        generator_cfg=generator_cfg,
+        dataset_payload=dataset_payload,
+        device=device,
+    )
+    names = _normalise_names(dataset_payload["names"])
+    layout_batches = build_layout_batches(
+        source_samples,
+        image_size=image_size,
+        names=names,
+        batch_size=int(generator_cfg.get("batch_size", 1)),
+    )
+    arrays: list[np.ndarray] = []
+    guidance_scale = float(generator_cfg.get("guidance_scale", manifest.get("guidance_scale", 7.5)))
+    steps = int(generator_cfg.get("steps", generator_cfg.get("num_inference_steps", 30)))
+    for start_idx, batch in zip(
+        range(0, len(source_samples), max(1, int(generator_cfg.get("batch_size", 1)))),
+        tqdm(layout_batches, desc=f"{generator_cfg.get('name', 'regiondiff_sd_layout')} generation"),
+    ):
+        batch = _remap_layout_batch_labels(batch, label_id_map)
+        prompts = _build_regiondiff_sd_layout_prompts(
+            batch=batch,
+            manifest=manifest,
+            generator_cfg=generator_cfg,
+        )
+        generator = torch.Generator(device=device)
+        generator.manual_seed(int(seed) + int(start_idx))
+        result = pipeline(
+            prompts,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            generator=generator,
+            height=image_size,
+            width=image_size,
+            cross_attention_kwargs={
+                "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(device),
+                "labels": batch["labels"].to(device),
+                "object_mask": batch["object_mask"].to(device),
+            },
+        )
+        arrays.extend(_pipeline_images_to_arrays(result.images))
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return arrays
+
+
+def generate_regiondiff_sd_layout_dataset(
+    *,
+    output_dir: str | Path,
+    generator_cfg: Mapping[str, Any],
+    source_samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
+    device: str,
+    seed: int,
+    image_ids: Sequence[int] | None = None,
+    initialize: bool = True,
+    resume: bool = False,
+    max_preview_images: int | None = None,
+    max_layout_overlay_images: int | None = None,
+) -> int:
+    pipeline, manifest, image_size, label_id_map = _load_regiondiff_sd_layout_pipeline(
+        generator_cfg=generator_cfg,
+        dataset_payload=dataset_payload,
+        device=device,
+    )
+    if initialize:
+        initialize_generated_candidate_dataset(
+            output_dir=output_dir,
+            source_samples=source_samples,
+            dataset_payload=dataset_payload,
+            generator_kind=str(generator_cfg.get("backend", "regiondiff_sd_layout")),
+            generator_config=generator_cfg,
+            image_size=image_size,
+        )
+    names = _normalise_names(dataset_payload["names"])
+    ids = list(image_ids) if image_ids is not None else list(range(1, len(source_samples) + 1))
+    batch_size = max(1, int(generator_cfg.get("batch_size", 1)))
+    guidance_scale = float(generator_cfg.get("guidance_scale", manifest.get("guidance_scale", 7.5)))
+    steps = int(generator_cfg.get("steps", generator_cfg.get("num_inference_steps", 30)))
+    generated_count = 0
+    for start_idx in tqdm(
+        range(0, len(source_samples), batch_size),
+        desc=f"{generator_cfg.get('name', 'regiondiff_sd_layout')} generation",
+    ):
+        chunk_samples = source_samples[start_idx : start_idx + batch_size]
+        chunk_ids = ids[start_idx : start_idx + batch_size]
+        pending = [
+            (sample, image_id)
+            for sample, image_id in zip(chunk_samples, chunk_ids)
+            if not (resume and _generated_sample_exists(output_dir, image_id=int(image_id)))
+        ]
+        generated_count += len(chunk_samples) - len(pending)
+        if not pending:
+            continue
+        batch = collate_layout_batch([
+            _sample_to_layout_dict(sample, image_size=image_size, names=names)
+            for sample, _image_id in pending
+        ])
+        batch = _remap_layout_batch_labels(batch, label_id_map)
+        prompts = _build_regiondiff_sd_layout_prompts(
+            batch=batch,
+            manifest=manifest,
+            generator_cfg=generator_cfg,
+        )
+        generator = torch.Generator(device=device)
+        generator.manual_seed(int(seed) + int(start_idx))
+        result = pipeline(
+            prompts,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            generator=generator,
+            height=image_size,
+            width=image_size,
+            cross_attention_kwargs={
+                "boxes_xyxy_norm": batch["boxes_xyxy_norm"].to(device),
+                "labels": batch["labels"].to(device),
+                "object_mask": batch["object_mask"].to(device),
+            },
+        )
+        for (sample, image_id), array in zip(pending, _pipeline_images_to_arrays(result.images)):
+            _save_generated_array(
+                output_dir,
+                image_id=int(image_id),
+                array=array,
+                max_preview_images=max_preview_images,
+                overlay_sample=sample,
+                overlay_names=names,
+                max_layout_overlay_images=max_layout_overlay_images,
+            )
+            generated_count += 1
+        del result
+        del batch
+        if torch.cuda.is_available() and str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return generated_count
+
+
 GENERATOR_BACKENDS: dict[str, Callable[..., list[np.ndarray]]] = {
     "stay_fm": generate_stay_fm_arrays,
     "regiondiff_fm": generate_regiondiff_fm_arrays,
     "regiondiff_sd": generate_regiondiff_sd_arrays,
+    "regiondiff_sd_layout": generate_regiondiff_sd_layout_arrays,
 }
 
 STREAMING_GENERATOR_BACKENDS: dict[str, Callable[..., int]] = {
     "stay_fm": generate_stay_fm_dataset,
     "regiondiff_fm": generate_regiondiff_fm_dataset,
     "regiondiff_sd": generate_regiondiff_sd_dataset,
+    "regiondiff_sd_layout": generate_regiondiff_sd_layout_dataset,
 }
 
 

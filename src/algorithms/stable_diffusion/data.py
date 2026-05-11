@@ -9,7 +9,7 @@ import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -29,6 +29,7 @@ from src.core.normalization import (
 DATASET_NAME_MAPPING = {
     "lambdalabs/naruto-blip-captions": ("image", "text"),
 }
+PRIOR_IMAGE_EXTENSIONS = {".npy", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 
 @dataclass(frozen=True)
@@ -269,6 +270,38 @@ class TextImageDataset:
         }
 
 
+class PriorImageDataset(Dataset):
+    """Dataset for DomainStudio source-prior images with a constant prompt."""
+
+    def __init__(
+        self,
+        image_paths: List[str],
+        tokenizer,
+        image_transforms: transforms.Compose,
+        source_prompt: str,
+    ):
+        self.image_paths = list(image_paths)
+        self.tokenizer = tokenizer
+        self.image_transforms = image_transforms
+        self.source_prompt = source_prompt
+
+    def __len__(self) -> int:
+        return len(self.image_paths)
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        path = self.image_paths[idx]
+        image = load_prior_image_as_rgb(path)
+        pixel_values = self.image_transforms(image)
+        input_ids = self.tokenizer(
+            self.source_prompt,
+            max_length=self.tokenizer.model_max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        ).input_ids.squeeze(0)
+        return {"pixel_values": pixel_values, "input_ids": input_ids}
+
+
 class RecordDataset(Dataset):
     """Small dict-record dataset used for local repo-native training data."""
 
@@ -296,6 +329,85 @@ def collate_fn(examples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tenso
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
     input_ids = torch.stack([example["input_ids"] for example in examples])
     return {"pixel_values": pixel_values, "input_ids": input_ids}
+
+
+def find_prior_image_paths(directory: Optional[str]) -> List[str]:
+    """Return supported prior image paths from a directory, if it exists."""
+    if not directory:
+        return []
+    root = Path(directory)
+    if not root.is_dir():
+        return []
+    paths = [
+        str(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and path.suffix.lower() in PRIOR_IMAGE_EXTENSIONS
+    ]
+    return paths
+
+
+def load_prior_image_as_rgb(path: str | os.PathLike) -> Image.Image:
+    """Load a DomainStudio prior image from an image file or RGB-ish `.npy`."""
+    path = Path(path)
+    if path.suffix.lower() == ".npy":
+        return ir_npy_to_normalized_rgb(path, normalization_mode=UINT8_LINEAR)
+    with Image.open(path) as image:
+        return image.convert("RGB")
+
+
+def resolve_prior_image_dir(
+    *,
+    prior_data_dir: Optional[str],
+    prior_cache_dir: Optional[str],
+) -> Tuple[Optional[str], List[str]]:
+    """Resolve existing DomainStudio prior images, preferring explicit data."""
+    for directory in (prior_data_dir, prior_cache_dir):
+        paths = find_prior_image_paths(directory)
+        if paths:
+            return directory, paths
+    return None, []
+
+
+def create_prior_dataloader(
+    *,
+    prior_image_paths: List[str],
+    tokenizer,
+    source_prompt: str,
+    resolution: int,
+    center_crop: bool,
+    random_flip: bool,
+    interpolation_mode: str,
+    batch_size: int,
+    num_workers: int = 0,
+) -> DataLoader:
+    """Create the DomainStudio source-prior dataloader."""
+    if not prior_image_paths:
+        raise ValueError("DomainStudio prior dataloader requires at least one prior image.")
+    dataset = PriorImageDataset(
+        image_paths=prior_image_paths,
+        tokenizer=tokenizer,
+        image_transforms=get_transforms(
+            resolution=resolution,
+            center_crop=center_crop,
+            random_flip=random_flip,
+            interpolation_mode=interpolation_mode,
+        ),
+        source_prompt=source_prompt,
+    )
+    return DataLoader(
+        dataset,
+        shuffle=True,
+        collate_fn=collate_fn,
+        batch_size=batch_size,
+        num_workers=num_workers,
+    )
+
+
+def cycle_dataloader(dataloader) -> Iterator[Dict[str, torch.Tensor]]:
+    """Yield batches from a dataloader forever."""
+    while True:
+        for batch in dataloader:
+            yield batch
 
 
 def _build_local_training_dataset(

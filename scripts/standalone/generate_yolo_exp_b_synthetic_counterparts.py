@@ -87,7 +87,8 @@ def _preflight_configured_checkpoints(
         name = str(generator.get("name", ""))
         if requested and name not in requested:
             continue
-        ok, detail = validate_generator_checkpoint_readability(str(generator.get("checkpoint_path", "")))
+        checkpoint_ref = generator.get("checkpoint_path") or generator.get("stage2_dir") or ""
+        ok, detail = validate_generator_checkpoint_readability(str(checkpoint_ref))
         if ok:
             selected.append(generator)
         else:

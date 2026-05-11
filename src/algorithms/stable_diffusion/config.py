@@ -117,6 +117,20 @@ class TrainingConfig:
     snr_gamma: Optional[float] = None
     noise_offset: float = 0.0
     prediction_type: Optional[str] = None
+    domainstudio_enabled: bool = False
+    domainstudio_source_prompt: Optional[str] = None
+    domainstudio_target_prompt: Optional[str] = None
+    domainstudio_lambda_prior: float = 1.0
+    domainstudio_lambda_img: float = 100.0
+    domainstudio_lambda_hf: float = 100.0
+    domainstudio_lambda_hfmse: float = 0.5
+    domainstudio_similarity_temperature: float = 1.0
+    domainstudio_loss_every_n_steps: int = 1
+    domainstudio_min_pairwise_batch: int = 2
+    domainstudio_prior_data_dir: Optional[str] = None
+    domainstudio_prior_cache_dir: Optional[str] = None
+    domainstudio_num_prior_images: int = 200
+    domainstudio_generate_prior_if_missing: bool = False
 
     # Validation configuration
     validation_prompt: Optional[str] = None
@@ -156,6 +170,12 @@ class TrainingConfig:
         if self.prompt_text:
             return self.prompt_text
         return None
+
+    def resolved_training_prompt_text(self) -> Optional[str]:
+        """Return the prompt used by the target training dataloader."""
+        if self.domainstudio_target_prompt:
+            return self.domainstudio_target_prompt
+        return self.resolved_prompt_text()
 
     def validate(self):
         """Validate configuration parameters."""
@@ -216,6 +236,39 @@ class TrainingConfig:
                 raise ValueError(
                     "layout_annotations_path is required for SD1.5 layout conditioning "
                     "when dataset_id is not set."
+                )
+
+        if self.domainstudio_enabled:
+            if self.layout_conditioning_enabled:
+                raise ValueError(
+                    "DomainStudio Stage-1 losses are not currently supported with "
+                    "layout_conditioning_enabled=True because source-prior batches "
+                    "do not carry RegionDiff layout annotations."
+                )
+            if not self.domainstudio_source_prompt:
+                raise ValueError(
+                    "domainstudio_source_prompt is required when domainstudio_enabled=True."
+                )
+            if not self.freeze_vae:
+                raise ValueError("DomainStudio requires freeze_vae=True.")
+            if not self.freeze_text_encoder:
+                raise ValueError("DomainStudio requires freeze_text_encoder=True.")
+            if self.prediction_type not in {None, "epsilon"}:
+                raise NotImplementedError(
+                    "DomainStudio Stage-1 losses currently support only epsilon prediction."
+                )
+            if self.domainstudio_similarity_temperature <= 0:
+                raise ValueError("domainstudio_similarity_temperature must be positive.")
+            if self.domainstudio_loss_every_n_steps <= 0:
+                raise ValueError("domainstudio_loss_every_n_steps must be positive.")
+            if self.domainstudio_min_pairwise_batch <= 0:
+                raise ValueError("domainstudio_min_pairwise_batch must be positive.")
+            if self.domainstudio_num_prior_images <= 0:
+                raise ValueError("domainstudio_num_prior_images must be positive.")
+            if self.domainstudio_generate_prior_if_missing and not self.domainstudio_prior_cache_dir:
+                raise ValueError(
+                    "domainstudio_prior_cache_dir is required when "
+                    "domainstudio_generate_prior_if_missing=True."
                 )
 
         if self.report_to == "wandb" and self.hub_token is not None:
@@ -451,6 +504,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         choices=["epsilon", "v_prediction", None],
     )
+    loss_group.add_argument("--domainstudio_enabled", type=_str2bool, default=False)
+    loss_group.add_argument("--domainstudio_source_prompt", type=str, default=None)
+    loss_group.add_argument("--domainstudio_target_prompt", type=str, default=None)
+    loss_group.add_argument("--domainstudio_lambda_prior", type=float, default=1.0)
+    loss_group.add_argument("--domainstudio_lambda_img", type=float, default=100.0)
+    loss_group.add_argument("--domainstudio_lambda_hf", type=float, default=100.0)
+    loss_group.add_argument("--domainstudio_lambda_hfmse", type=float, default=0.5)
+    loss_group.add_argument("--domainstudio_similarity_temperature", type=float, default=1.0)
+    loss_group.add_argument("--domainstudio_loss_every_n_steps", type=int, default=1)
+    loss_group.add_argument("--domainstudio_min_pairwise_batch", type=int, default=2)
+    loss_group.add_argument("--domainstudio_prior_data_dir", type=str, default=None)
+    loss_group.add_argument("--domainstudio_prior_cache_dir", type=str, default=None)
+    loss_group.add_argument("--domainstudio_num_prior_images", type=int, default=200)
+    loss_group.add_argument("--domainstudio_generate_prior_if_missing", type=_str2bool, default=False)
 
     val_group = parser.add_argument_group("Validation Configuration")
     val_group.add_argument("--validation_prompt", type=str, default=None)
