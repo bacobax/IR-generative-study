@@ -21,8 +21,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.algorithms.inference.regiondiff_smoke_generation import (
     DEFAULT_CONFIG_PATH,
-    DEFAULT_OUTPUT_ROOT,
-    DEFAULT_YOLO_DATASET_YAML,
     generate_production_synthetic_datasets,
     load_generation_config,
     validate_generator_checkpoint_readability,
@@ -34,8 +32,8 @@ def parse_args() -> argparse.Namespace:
         description="Generate synthetic counterpart datasets for YOLO Experiment B."
     )
     parser.add_argument("--config", default=DEFAULT_CONFIG_PATH)
-    parser.add_argument("--yolo-dataset-yaml", default=DEFAULT_YOLO_DATASET_YAML)
-    parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--yolo-dataset-yaml", default=None)
+    parser.add_argument("--output-root", default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
         "--generators",

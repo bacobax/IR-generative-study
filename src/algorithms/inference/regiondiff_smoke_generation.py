@@ -11,6 +11,8 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
+import re
 import shutil
 import zipfile
 from collections import defaultdict
@@ -353,7 +355,15 @@ def _save_generated_array(
     file_name = f"sample_{int(image_id):06d}.npy"
     preview_name = f"sample_{int(image_id):06d}.png"
     generated_array = np.asarray(array)
-    np.save(output / "images" / file_name, generated_array)
+    image_path = output / "images" / file_name
+    tmp_path = image_path.with_name(f".{image_path.name}.{os.getpid()}.tmp")
+    try:
+        with tmp_path.open("wb") as handle:
+            np.save(handle, generated_array)
+        tmp_path.replace(image_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
     if _should_save_limited_artifact(int(image_id), max_preview_images):
         _save_preview_png(generated_array, output / "previews" / preview_name)
     if (
@@ -372,7 +382,19 @@ def _save_generated_array(
 
 def _generated_sample_exists(output_dir: str | Path, *, image_id: int) -> bool:
     output = Path(output_dir)
-    return (output / "images" / f"sample_{int(image_id):06d}.npy").is_file()
+    image_path = output / "images" / f"sample_{int(image_id):06d}.npy"
+    if not image_path.is_file():
+        return False
+    try:
+        array = np.load(image_path, mmap_mode="r")
+        _ = array.shape
+        mmap_handle = getattr(array, "_mmap", None)
+        if mmap_handle is not None:
+            mmap_handle.close()
+    except Exception:
+        image_path.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def export_generated_candidate_dataset(
@@ -511,6 +533,59 @@ def _extract_unet_state(checkpoint_path: Path, *, device: str | torch.device) ->
     return state
 
 
+def _checkpoint_epoch(path: Path) -> int:
+    match = re.search(r"_epoch_(\d+)\.pt$", path.name)
+    if match is None:
+        return -1
+    return int(match.group(1))
+
+
+def _resolve_unet_checkpoint_path(
+    checkpoint_path: str | Path,
+    *,
+    preferred_names: Sequence[str],
+) -> Path:
+    path = _repo_path(checkpoint_path)
+    if path is None:
+        raise FileNotFoundError(f"Missing checkpoint path: {checkpoint_path}")
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        raise FileNotFoundError(f"Missing checkpoint: {checkpoint_path}")
+
+    search_dirs = [path / "UNET", path]
+    for search_dir in search_dirs:
+        for name in preferred_names:
+            candidate = search_dir / name
+            if candidate.is_file():
+                return candidate
+
+    candidates: list[Path] = []
+    for search_dir in search_dirs:
+        if search_dir.is_dir():
+            candidates.extend(sorted(search_dir.glob("*.pt")))
+            candidates.extend(sorted(search_dir.glob("*.safetensors")))
+    if not candidates:
+        raise FileNotFoundError(
+            f"No UNET checkpoint file found under {path}. Expected one of "
+            f"{', '.join(preferred_names)} or an epoch checkpoint in UNET/."
+        )
+
+    candidates.sort(key=lambda item: (_checkpoint_epoch(item), item.name))
+    return candidates[-1]
+
+
+def _find_unet_checkpoint_in_dir(path: Path) -> Path | None:
+    for search_dir in (path / "UNET", path):
+        if not search_dir.is_dir():
+            continue
+        candidates = list(search_dir.glob("*.pt")) + list(search_dir.glob("*.safetensors"))
+        if candidates:
+            candidates.sort(key=lambda item: (_checkpoint_epoch(item), item.name))
+            return candidates[-1]
+    return None
+
+
 def validate_generator_checkpoint_readability(
     checkpoint_path: str | Path,
 ) -> tuple[bool, str]:
@@ -527,7 +602,11 @@ def validate_generator_checkpoint_readability(
             return True, str(path)
         if checkpoint_weights.is_file() and parent_manifest.is_file():
             return True, str(path)
-        return False, f"directory is not a recognized generator checkpoint/artifact: {path}"
+        unet_checkpoint = _find_unet_checkpoint_in_dir(path)
+        if unet_checkpoint is not None:
+            path = unet_checkpoint
+        else:
+            return False, f"directory is not a recognized generator checkpoint/artifact: {path}"
     try:
         with path.open("rb") as handle:
             magic = handle.read(4)
@@ -801,10 +880,11 @@ def _load_stay_sampler(
     dataset_payload: Mapping[str, Any],
     device: str | torch.device,
 ) -> tuple[LayoutFlowMatchingSampler, int]:
-    checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
+    checkpoint_path = _resolve_unet_checkpoint_path(
+        generator_cfg["checkpoint_path"],
+        preferred_names=("unet_fm_best.pt",),
+    )
     preset_path = _repo_path(generator_cfg["preset_path"])
-    if checkpoint_path is None or not checkpoint_path.is_file():
-        raise FileNotFoundError(f"Missing STAY checkpoint: {generator_cfg['checkpoint_path']}")
     if preset_path is None or not preset_path.is_file():
         raise FileNotFoundError(f"Missing STAY preset: {generator_cfg['preset_path']}")
 
@@ -860,10 +940,11 @@ def _load_regiondiff_sampler(
     dataset_payload: Mapping[str, Any],
     device: str | torch.device,
 ) -> tuple[FlowMatchingSampler, int, dict[int, int]]:
-    checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
+    checkpoint_path = _resolve_unet_checkpoint_path(
+        generator_cfg["checkpoint_path"],
+        preferred_names=("unet_fm_best.pt",),
+    )
     preset_path = _repo_path(generator_cfg["preset_path"])
-    if checkpoint_path is None or not checkpoint_path.is_file():
-        raise FileNotFoundError(f"Missing RegionDiff checkpoint: {generator_cfg['checkpoint_path']}")
     if preset_path is None or not preset_path.is_file():
         raise FileNotFoundError(f"Missing RegionDiff preset: {generator_cfg['preset_path']}")
 
@@ -929,12 +1010,11 @@ def _load_regiondiff_sd_sampler(
     dataset_payload: Mapping[str, Any],
     device: str | torch.device,
 ) -> tuple[UnconditionalStableDiffusionSampler, int, dict[int, int]]:
-    checkpoint_path = _repo_path(generator_cfg["checkpoint_path"])
+    checkpoint_path = _resolve_unet_checkpoint_path(
+        generator_cfg["checkpoint_path"],
+        preferred_names=("unet_sd_uncond_best.pt",),
+    )
     preset_path = _repo_path(generator_cfg["preset_path"])
-    if checkpoint_path is None or not checkpoint_path.is_file():
-        raise FileNotFoundError(
-            f"Missing RegionDiff SD checkpoint: {generator_cfg['checkpoint_path']}"
-        )
     if preset_path is None or not preset_path.is_file():
         raise FileNotFoundError(f"Missing RegionDiff SD preset: {generator_cfg['preset_path']}")
 
@@ -2122,6 +2202,17 @@ def _select_generators(config: Mapping[str, Any], names: Sequence[str] | None = 
     return generators
 
 
+def _resolve_generation_device(config: Mapping[str, Any], device: str | None = None) -> str:
+    if device not in (None, ""):
+        return str(device)
+    config_device = config.get("device")
+    if config_device not in (None, ""):
+        value = str(config_device).strip()
+        if value.lower() not in {"none", "null"}:
+            return value
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def _retry_config(config: Mapping[str, Any]) -> dict[str, Any]:
     retry_cfg = dict(config.get("retry", {}))
     threshold = float(retry_cfg.get("invalid_instance_ratio_threshold", 0.5))
@@ -2407,7 +2498,7 @@ def generate_production_synthetic_datasets(
 ) -> dict[str, Any]:
     active_config: dict[str, Any] = dict(config)
     resume = bool(active_config.get("resume", False))
-    active_device = device or str(active_config.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
+    active_device = _resolve_generation_device(active_config, device=device)
     dataset_yaml = yolo_dataset_yaml or active_config.get("yolo_dataset_yaml") or DEFAULT_YOLO_DATASET_YAML
     root = Path(output_root or active_config.get("output_root") or DEFAULT_OUTPUT_ROOT)
     if not root.is_absolute():

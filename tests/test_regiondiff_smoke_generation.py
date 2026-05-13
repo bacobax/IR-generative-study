@@ -144,6 +144,65 @@ def test_production_generation_routes_each_configured_generator_to_own_folder(tm
     assert (output_root / "summary.json").is_file()
 
 
+def test_production_generation_uses_configured_device(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dataset_yaml = _make_yolo_dataset(tmp_path)
+    output_root = tmp_path / "generated"
+    observed_devices: list[str] = []
+
+    def _fake_backend(**kwargs):
+        observed_devices.append(str(kwargs["device"]))
+        return [np.zeros((8, 8), dtype=np.float32) for _sample in kwargs["source_samples"]]
+
+    monkeypatch.setitem(production_generation.GENERATOR_BACKENDS, "fake_device", _fake_backend)
+    config = {
+        "yolo_dataset_yaml": str(dataset_yaml),
+        "output_root": str(output_root),
+        "device": "cuda:1",
+        "filter": {"enabled": False},
+        "metrics": {"enabled": False},
+        "generators": [{"name": "device_test", "backend": "fake_device"}],
+    }
+
+    summary = generate_production_synthetic_datasets(
+        config=config,
+        skip_filter=True,
+        skip_metrics=True,
+    )
+
+    assert observed_devices == ["cuda:1"]
+    assert summary["device"] == "cuda:1"
+
+
+def test_production_generation_cli_device_overrides_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dataset_yaml = _make_yolo_dataset(tmp_path)
+    output_root = tmp_path / "generated"
+    observed_devices: list[str] = []
+
+    def _fake_backend(**kwargs):
+        observed_devices.append(str(kwargs["device"]))
+        return [np.zeros((8, 8), dtype=np.float32) for _sample in kwargs["source_samples"]]
+
+    monkeypatch.setitem(production_generation.GENERATOR_BACKENDS, "fake_device", _fake_backend)
+    config = {
+        "yolo_dataset_yaml": str(dataset_yaml),
+        "output_root": str(output_root),
+        "device": "cuda:1",
+        "filter": {"enabled": False},
+        "metrics": {"enabled": False},
+        "generators": [{"name": "device_test", "backend": "fake_device"}],
+    }
+
+    summary = generate_production_synthetic_datasets(
+        config=config,
+        device="cpu",
+        skip_filter=True,
+        skip_metrics=True,
+    )
+
+    assert observed_devices == ["cpu"]
+    assert summary["device"] == "cpu"
+
+
 def test_production_generation_uses_streaming_backend_when_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     dataset_yaml = _make_yolo_dataset(tmp_path)
     output_root = tmp_path / "generated"
@@ -239,6 +298,39 @@ def test_streaming_generation_resume_skips_existing_images(tmp_path: Path, monke
     assert saved_ids == [2]
     assert np.load(output_dir / "images" / "sample_000001.npy").mean() == pytest.approx(99.0)
     assert np.load(output_dir / "images" / "sample_000002.npy").mean() == pytest.approx(11.0)
+
+
+def test_generated_sample_exists_rejects_corrupt_partial_file(tmp_path: Path) -> None:
+    output_dir = tmp_path / "generated"
+    images_dir = output_dir / "images"
+    images_dir.mkdir(parents=True)
+    partial_path = images_dir / "sample_000001.npy"
+    partial_path.write_bytes(b"\x93NUMPY")
+
+    assert not production_generation._generated_sample_exists(output_dir, image_id=1)
+    assert not partial_path.exists()
+
+
+def test_save_generated_array_does_not_publish_partial_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output_dir = tmp_path / "generated"
+    (output_dir / "images").mkdir(parents=True)
+    (output_dir / "previews").mkdir(parents=True)
+
+    def _failing_save(handle, array, **_kwargs):
+        handle.write(b"partial")
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(production_generation.np, "save", _failing_save)
+
+    with pytest.raises(OSError, match="simulated disk full"):
+        production_generation._save_generated_array(
+            output_dir,
+            image_id=1,
+            array=np.zeros((8, 8), dtype=np.float32),
+        )
+
+    assert not (output_dir / "images" / "sample_000001.npy").exists()
+    assert list((output_dir / "images").iterdir()) == []
 
 
 def test_metrics_only_uses_existing_images_without_generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -755,6 +847,28 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
     assert captured["regiondiff_kwargs"]["backbone_kind"] == "fm_unet2d"
     assert captured["regiondiff_kwargs"]["attachment_kind"] == "residual"
     assert torch.equal(dummy_wrapper.loaded_state["sentinel"], torch.ones(1) * 2)
+
+
+def test_regiondiff_backend_resolves_latest_epoch_from_run_directory(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "regiondiff_run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    early_checkpoint = unet_dir / "unet_fm_epoch_80.pt"
+    latest_checkpoint = unet_dir / "unet_fm_epoch_200.pt"
+    torch.save({"unet_state": {"sentinel": torch.ones(1)}}, early_checkpoint)
+    torch.save({"unet_state": {"sentinel": torch.ones(1) * 2}}, latest_checkpoint)
+
+    ok, detail = production_generation.validate_generator_checkpoint_readability(run_dir)
+    resolved = production_generation._resolve_unet_checkpoint_path(
+        run_dir,
+        preferred_names=("unet_fm_best.pt",),
+    )
+
+    assert ok
+    assert detail == str(latest_checkpoint)
+    assert resolved == latest_checkpoint
 
 
 def test_regiondiff_backend_uses_training_latent_size_with_pretrained_vae(

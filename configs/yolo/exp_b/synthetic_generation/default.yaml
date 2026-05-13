@@ -2,7 +2,7 @@ yolo_dataset_yaml: data/derived/yolo-test-ds/full_train.yaml
 output_root: artifacts/generated/yolo/exp_b/precomputed_candidates
 max_samples: 10745
 seed: 7
-device: cuda:1
+device: cuda:0
 overwrite: true
 
 filter:
@@ -45,28 +45,27 @@ generators:
   #   batch_size: 8
   #   seed_offset: 0
 
-  # - name: regiondiff_fm_ot_hflip
-  #   backend: regiondiff_fm
-  #   checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip/UNET/unet_fm_epoch_80.pt
-  #   preset_path: configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
-  #   steps: 20
-  #   batch_size: 8
-  #   seed_offset: 100000
-
-  # - name: regiondiff_sd_hflip
-  #   backend: regiondiff_sd
-  #   checkpoint_path: artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip/UNET/unet_sd_uncond_epoch_80.pt
-  #   preset_path: configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml
-  #   steps: 80
-  #   batch_size: 8
-  #   seed_offset: 100000
-
-  - name: regiondiff_sd15_lora_stage2_r8_fm_comparable
-    backend: regiondiff_sd_layout
-    stage2_dir: artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable
-    steps: 80
-    guidance_scale: 7.5
+  - name: regiondiff_fm_ot_hflip_fixed
+    backend: regiondiff_fm
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip_fixed
+    preset_path: configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
+    steps: 20
     batch_size: 8
-    precision: fp32
+    seed_offset: 100000
+
+  - name: regiondiff_sd_hflip_fixed_x0
+    backend: regiondiff_sd
+    checkpoint_path: artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip_fixed_x0
+    preset_path: configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml
+    steps: 80
+    batch_size: 8
     seed_offset: 200000
 
+  # - name: regiondiff_sd15_lora_stage2_r8_fm_comparable
+  #   backend: regiondiff_sd_layout
+  #   stage2_dir: artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable
+  #   steps: 80
+  #   guidance_scale: 7.5
+  #   batch_size: 8
+  #   precision: fp32
+  #   seed_offset: 300000
