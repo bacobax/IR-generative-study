@@ -42,6 +42,8 @@ check(guidance_pkg.is_dir(), "src/guidance/ exists")
 check((guidance_pkg / "__init__.py").is_file(), "src/guidance/__init__.py exists")
 check((guidance_pkg / "base_guidance.py").is_file(), "src/guidance/base_guidance.py exists")
 check((guidance_pkg / "no_guidance.py").is_file(), "src/guidance/no_guidance.py exists")
+check((guidance_pkg / "score_predictor_guidance.py").is_file(),
+      "src/guidance/score_predictor_guidance.py exists")
 
 # ══════════════════════════════════════════════════════════════════════════
 # B. BaseGuidance ABC
@@ -102,6 +104,34 @@ check(torch.all(g == 0.0).item(), "guidance_grad returns all zeros")
 scores = ng.log_scores(z_test)
 check(isinstance(scores, dict), "log_scores returns dict")
 check(len(scores) == 0, "log_scores returns empty dict (no-op)")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# C2. ScorePredictorGuidance public API
+# ══════════════════════════════════════════════════════════════════════════
+print("\n=== C2. ScorePredictorGuidance public API ===")
+from src.guidance.score_predictor_guidance import (
+    ScoreGuidanceConfig,
+    ScorePredictorGuidance,
+    _compute_lambda,
+    run_sanity_check,
+)
+
+check(issubclass(ScorePredictorGuidance, BaseGuidance),
+      "ScorePredictorGuidance extends BaseGuidance")
+check(callable(run_sanity_check), "run_sanity_check importable")
+
+cfg = ScoreGuidanceConfig(lambda_start=2.0, lambda_end=0.5)
+cfg.lambda_schedule = "constant"
+check(_compute_lambda(0.25, cfg) == 2.0, "constant lambda schedule")
+cfg.lambda_schedule = "linear"
+check(abs(_compute_lambda(0.5, cfg) - 1.25) < 1e-8, "linear lambda schedule")
+cfg.lambda_schedule = "cosine"
+check(abs(_compute_lambda(0.0, cfg) - 2.0) < 1e-8, "cosine lambda starts at lambda_start")
+check(abs(_compute_lambda(1.0, cfg) - 0.5) < 1e-8, "cosine lambda ends at lambda_end")
+cfg.lambda_schedule = "step"
+check(_compute_lambda(0.49, cfg) == 2.0, "step lambda before midpoint")
+check(_compute_lambda(0.50, cfg) == 0.5, "step lambda after midpoint")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -246,6 +276,13 @@ check("BaseGuidance" in ng_src, "no_guidance imports BaseGuidance")
 check("REGISTRIES.guidance.register" in ng_src, "no_guidance registers with REGISTRIES")
 check("torch.zeros_like" in ng_src, "no_guidance returns zeros for grad")
 check("torch.zeros(" in ng_src, "no_guidance returns zeros for energy")
+
+spg_src = (guidance_pkg / "score_predictor_guidance.py").read_text()
+check("ScoreGuidanceConfig" in spg_src, "score_predictor_guidance defines config")
+check("ScorePredictorGuidance" in spg_src, "score_predictor_guidance defines guidance class")
+legacy_guidance_import = "from " + "fm_src" + ".guidance"
+check(legacy_guidance_import not in spg_src,
+      "score_predictor_guidance does not import legacy guidance")
 
 # sampler
 check("active_guidance = guidance if guidance is not None else self.guidance" in sampler_src,

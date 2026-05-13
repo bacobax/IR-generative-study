@@ -50,6 +50,9 @@ EXPECTED_FILES = {
     # Thin wrappers
     "train_sfm.py", "train_sd.py", "train_sd_uncond.py", "train_vae.py",
     "train_controlnet.py", "generate_datasets.py",
+    # Compatibility wrappers for canonical scripts/standalone tools
+    "train_fm.py", "train_count_adapter.py", "train_cluster_reconstruction.py",
+    "train_surprise_predictor.py", "analyze_distribution_shift.py",
 }
 
 actual_dirs = {e.name for e in entries if e.is_dir()}
@@ -80,6 +83,15 @@ for f in ("README.md", "pyproject.toml", ".gitignore"):
 # Thin wrappers present
 for f in ("train_sfm.py", "train_sd.py", "train_sd_uncond.py", "train_vae.py", "train_controlnet.py", "generate_datasets.py"):
     check(f"Thin wrapper {f} present", f in actual_files)
+
+for f in (
+    "train_fm.py",
+    "train_count_adapter.py",
+    "train_cluster_reconstruction.py",
+    "train_surprise_predictor.py",
+    "analyze_distribution_shift.py",
+):
+    check(f"Compatibility wrapper {f} present", f in actual_files)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 3. Flag heavy folders that should NOT be at root

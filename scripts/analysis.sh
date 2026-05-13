@@ -8,7 +8,7 @@ else
     ROOT_DIR="$SCRIPT_DIR"
 fi
 
-python "$ROOT_DIR/scripts/analyze_distribution_shift.py" \
+python "$ROOT_DIR/scripts/standalone/analyze_distribution_shift.py" \
     --real_dir "$ROOT_DIR/data/raw/v18/test" \
     --generated_dir "$ROOT_DIR/artifacts/generated/main" \
     --output_dir "$ROOT_DIR/artifacts/analysis/main" \

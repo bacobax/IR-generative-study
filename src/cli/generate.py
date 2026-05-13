@@ -241,10 +241,7 @@ def generate_fm(args, entries: List[Dict]):
 
 def generate_fm_guided(args, entries: List[Dict]):
     """Guided FM generation supporting all sampling methods."""
-    import sys as _sys
-    from src.core.paths import legacy_code_root
-    _sys.path.insert(0, str(legacy_code_root()))
-    from fm_src.guidance.score_predictor_guidance import (  # noqa: E402
+    from src.guidance.score_predictor_guidance import (  # noqa: E402
         ScoreGuidanceConfig,
         ScorePredictorGuidance,
     )

@@ -38,20 +38,20 @@ The script can:
     6) load a trained checkpoint and predict embeddings for counts
 
 Example:
-    python train_count_adapter.py \
+    python scripts/standalone/train_count_adapter.py \
         --data-dir /path/to/data \
         --output-dir runs/count_adapter \
         --epochs 400 \
         --feature-mode cls
 
 Resume:
-    python train_count_adapter.py \
+    python scripts/standalone/train_count_adapter.py \
         --data-dir /path/to/data \
         --output-dir runs/count_adapter \
         --resume runs/count_adapter/checkpoints/latest.pt
 
 Inference:
-    python train_count_adapter.py \
+    python scripts/standalone/train_count_adapter.py \
         --data-dir /path/to/data \
         --output-dir runs/count_adapter \
         --inference-only \
@@ -63,13 +63,19 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from src.core.configs.config_loader import apply_yaml_defaults
 import json
 import math
 import os
 import random
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
 import numpy as np

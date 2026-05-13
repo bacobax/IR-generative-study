@@ -83,7 +83,7 @@ PATIENCE=50
 # Launch training
 # ==========================================================
 
-python "$ROOT_DIR/scripts/train_count_adapter.py" \
+python "$ROOT_DIR/scripts/standalone/train_count_adapter.py" \
   --data-dir "$DATA_DIR" \
   --output-dir "$OUTPUT_DIR" \
   --model-name "$MODEL_NAME" \
@@ -106,5 +106,4 @@ python "$ROOT_DIR/scripts/train_count_adapter.py" \
   --patience "$PATIENCE" \
   --cache \
   --cache-dir "$CACHE_DIR" \
-  --loco \
-  
+  --loco

@@ -68,6 +68,9 @@ Root-level Python scripts (`train_sfm.py`, `train_sd.py`, `train_vae.py`,
 
 ### Standalone scripts under `scripts/standalone/`
 
+These files are the source of truth for standalone experiment tools. Older
+root-level invocation paths are kept as thin compatibility wrappers where used.
+
 | Script                                             | Purpose                                          |
 | -------------------------------------------------- | ------------------------------------------------ |
 | `scripts/standalone/train_fm.py`                   | Pixel-space flow matching training (no VAE)      |

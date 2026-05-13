@@ -52,7 +52,7 @@ RESUME=""                   # path to checkpoint to resume from
 
 # -------- Build command --------
 CMD=(
-  python "$ROOT_DIR/scripts/train_surprise_predictor.py"
+  python "$ROOT_DIR/scripts/standalone/train_surprise_predictor.py"
   --ds_root "$DS_ROOT"
   --vae_model_name "$VAE_MODEL_NAME"
   --vae_config "$VAE_CONFIG"

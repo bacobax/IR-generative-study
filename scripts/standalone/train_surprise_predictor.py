@@ -28,10 +28,21 @@ import copy
 import json
 import os
 import random
-from src.core.configs.config_loader import apply_yaml_defaults
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from src.core.paths import legacy_code_root
+
+_LEGACY_CODE_ROOT = legacy_code_root()
+if str(_LEGACY_CODE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_LEGACY_CODE_ROOT))
+
+from src.core.configs.config_loader import apply_yaml_defaults
 
 import numpy as np
 import torch
@@ -40,11 +51,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
-# ── repo root on path ─────────────────────────────────────────────────────────
-_REPO_ROOT = Path(__file__).resolve().parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
 
 from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline  # noqa: E402
 from src.core.constants import IMAGENET_MEAN, IMAGENET_STD  # noqa: E402

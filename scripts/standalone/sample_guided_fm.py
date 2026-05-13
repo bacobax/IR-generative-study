@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-scripts/sample_guided_fm.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+scripts/standalone/sample_guided_fm.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 CLI for guided sampling from a trained StableFlowMatchingPipeline.
 
 Supports the following sampling methods:
@@ -14,14 +14,14 @@ Supports the following sampling methods:
 Example usage
 -------------
 # Baseline (no guidance):
-python scripts/sample_guided_fm.py \\
+python scripts/standalone/sample_guided_fm.py \\
     --fm_pipeline_dir runs/my_run_001 \\
     --method euler \\
     --batch_size 8 --steps 50 \\
     --output_dir generated/guided_test
 
 # Guided sampling:
-python scripts/sample_guided_fm.py \\
+python scripts/standalone/sample_guided_fm.py \\
     --fm_pipeline_dir runs/my_run_001 \\
     --surprise_ckpt runs/surprise_predictor/best_model.pt \\
     --method euler_guided \\
@@ -33,21 +33,21 @@ python scripts/sample_guided_fm.py \\
     --output_dir generated/guided_test
 
 # Reranking:
-python scripts/sample_guided_fm.py \\
+python scripts/standalone/sample_guided_fm.py \\
     --fm_pipeline_dir runs/my_run_001 \\
     --surprise_ckpt runs/surprise_predictor/best_model.pt \\
     --method rerank --n_candidates 16 --keep_top_k 4 \\
     --output_dir generated/rerank_test
 
 # Beam search:
-python scripts/sample_guided_fm.py \\
+python scripts/standalone/sample_guided_fm.py \\
     --fm_pipeline_dir runs/my_run_001 \\
     --surprise_ckpt runs/surprise_predictor/best_model.pt \\
     --method beam --beam_size 4 --branch_factor 2 \\
     --output_dir generated/beam_test
 
 # Refinement:
-python scripts/sample_guided_fm.py \\
+python scripts/standalone/sample_guided_fm.py \\
     --fm_pipeline_dir runs/my_run_001 \\
     --surprise_ckpt runs/surprise_predictor/best_model.pt \\
     --method refine \\
@@ -64,18 +64,24 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import torch
-import torchvision.utils as vutils
-
 # ---------------------------------------------------------------------------
 # Ensure repo root is importable.
 # ---------------------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from src.core.paths import legacy_code_root
+
+_LEGACY_CODE_ROOT = legacy_code_root()
+if str(_LEGACY_CODE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_LEGACY_CODE_ROOT))
+
+import torch
+import torchvision.utils as vutils
+
 from fm_src.pipelines.flow_matching_pipeline import StableFlowMatchingPipeline  # noqa: E402
-from fm_src.guidance.score_predictor_guidance import (  # noqa: E402
+from src.guidance.score_predictor_guidance import (  # noqa: E402
     ScoreGuidanceConfig,
     ScorePredictorGuidance,
     run_sanity_check,

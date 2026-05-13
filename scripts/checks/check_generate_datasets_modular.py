@@ -85,15 +85,15 @@ check("Imports flow_matching_sampler module (registration)",
 print("\n=== 3. No old pipeline in FM path ===")
 check("No _build_sampler_from_folder", "_build_sampler_from_folder" not in src)
 check("No _pick_latest_by_prefix", "_pick_latest_by_prefix" not in src)
-# The only from fm_src import should be the guidance module, not the pipeline
+# src/cli/generate.py should not import legacy fm_src modules for active FM paths.
 fm_src_imports = [line for line in src.splitlines()
                   if "from fm_src" in line and "import" in line]
 pipeline_imports = [line for line in fm_src_imports if "pipeline" in line.lower()]
 check("No fm_src.pipelines import", len(pipeline_imports) == 0)
-# Guidance import IS expected (for guided generation)
 guidance_imports = [line for line in fm_src_imports if "guidance" in line.lower()]
-check("fm_src.guidance import present (expected)",
-      len(guidance_imports) >= 1)
+check("No legacy guidance import", len(guidance_imports) == 0)
+check("Imports src.guidance.score_predictor_guidance",
+      "from src.guidance.score_predictor_guidance import" in src)
 
 # ======================================================================
 # 4. _build_sampler uses config + registry

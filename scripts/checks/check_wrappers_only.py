@@ -40,6 +40,35 @@ WRAPPER_MAP = {
     "generate_datasets.py": ("src.cli.generate",         "src/cli/generate.py"),
 }
 
+STANDALONE_WRAPPER_MAP = {
+    "train_fm.py": (
+        "scripts.standalone.train_fm",
+        "scripts/standalone/train_fm.py",
+    ),
+    "analyze_distribution_shift.py": (
+        "scripts.standalone.analyze_distribution_shift",
+        "scripts/standalone/analyze_distribution_shift.py",
+    ),
+    "train_count_adapter.py": (
+        "scripts.standalone.train_count_adapter",
+        "scripts/standalone/train_count_adapter.py",
+    ),
+    "train_cluster_reconstruction.py": (
+        "scripts.standalone.train_cluster_reconstruction",
+        "scripts/standalone/train_cluster_reconstruction.py",
+    ),
+    "train_surprise_predictor.py": (
+        "scripts.standalone.train_surprise_predictor",
+        "scripts/standalone/train_surprise_predictor.py",
+    ),
+    "scripts/sample_guided_fm.py": (
+        "scripts.standalone.sample_guided_fm",
+        "scripts/standalone/sample_guided_fm.py",
+    ),
+}
+
+ALL_WRAPPERS = {**WRAPPER_MAP, **STANDALONE_WRAPPER_MAP}
+
 # Patterns that should NOT appear in a thin wrapper
 FORBIDDEN_PATTERNS = [
     "class ",
@@ -57,7 +86,7 @@ FORBIDDEN_PATTERNS = [
 # A. Root wrappers exist and are short
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== A. Root wrappers exist and are short ===")
-for wrapper_name in WRAPPER_MAP:
+for wrapper_name in ALL_WRAPPERS:
     wrapper_path = ROOT / wrapper_name
     check(wrapper_path.is_file(), f"{wrapper_name} exists")
     if wrapper_path.is_file():
@@ -97,11 +126,23 @@ for wrapper_name, (expected_import, _) in WRAPPER_MAP.items():
     check(found_import,
           f"{wrapper_name} imports from {expected_import}")
 
+print("\n=== B2. Compatibility wrappers target scripts.standalone modules ===")
+for wrapper_name, (expected_module, _) in STANDALONE_WRAPPER_MAP.items():
+    wrapper_path = ROOT / wrapper_name
+    if not wrapper_path.is_file():
+        check(False, f"{wrapper_name}: file missing, cannot check target")
+        continue
+    source = wrapper_path.read_text()
+    check(expected_module in source,
+          f"{wrapper_name} targets {expected_module}")
+    check("_impl.main()" in source,
+          f"{wrapper_name} calls canonical main()")
+
 # ══════════════════════════════════════════════════════════════════════════
 # C. Source-of-truth files exist under src/cli/
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== C. Source-of-truth files exist ===")
-for wrapper_name, (_, sot_relpath) in WRAPPER_MAP.items():
+for wrapper_name, (_, sot_relpath) in ALL_WRAPPERS.items():
     sot_path = ROOT / sot_relpath
     check(sot_path.is_file(),
           f"{sot_relpath} exists (source of truth for {wrapper_name})")
@@ -110,7 +151,7 @@ for wrapper_name, (_, sot_relpath) in WRAPPER_MAP.items():
 # D. Root wrappers contain no core logic
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== D. Root wrappers contain no core logic ===")
-for wrapper_name in WRAPPER_MAP:
+for wrapper_name in ALL_WRAPPERS:
     wrapper_path = ROOT / wrapper_name
     if not wrapper_path.is_file():
         check(False, f"{wrapper_name}: file missing, cannot check content")
@@ -175,7 +216,7 @@ else:
 # G. Source-of-truth files have main() callable
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== G. Source-of-truth files expose main() ===")
-for wrapper_name, (_, sot_relpath) in WRAPPER_MAP.items():
+for wrapper_name, (_, sot_relpath) in ALL_WRAPPERS.items():
     sot_path = ROOT / sot_relpath
     if not sot_path.is_file():
         check(False, f"{sot_relpath} missing")

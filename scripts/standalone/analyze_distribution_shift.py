@@ -14,7 +14,18 @@ Results are saved in per-extractor sub-folders inside --output_dir.
 import argparse
 import glob
 import os
+import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from src.core.paths import legacy_code_root
+
+_LEGACY_CODE_ROOT = legacy_code_root()
+if str(_LEGACY_CODE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_LEGACY_CODE_ROOT))
 
 import matplotlib
 matplotlib.use("Agg")

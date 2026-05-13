@@ -118,7 +118,7 @@ check scripts (`check_*.py`).  Not part of the importable `src` package.
 | Category | Examples |
 |---|---|
 | Shell launchers | `train_stable_fm.sh`, `generate_dataset_fm.sh`, `analysis.sh`, … |
-| Standalone Python | `train_fm.py`, `train_count_adapter.py`, `analyze_distribution_shift.py`, … |
+| Standalone Python | `scripts/standalone/train_fm.py`, `scripts/standalone/train_count_adapter.py`, `scripts/standalone/analyze_distribution_shift.py`, … |
 | Check scripts | `check_repo_paths.py`, `check_canonical_layout_only.py`, … |
 
 ---

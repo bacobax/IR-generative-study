@@ -7,8 +7,6 @@ patterns that would break now that ``fm_src`` and ``sd_src`` live in
 
 Allowed exceptions:
   - Comments and docstrings mentioning the old paths
-  - The two sanctioned transitional imports in train_controlnet.py and generate.py
-    (which use ``sys.path.insert`` + ``legacy_code_root()`` explicitly)
 """
 
 import ast
@@ -34,10 +32,17 @@ def check(label, cond):
 
 
 # Files with sanctioned transitional fm_src imports
-SANCTIONED = {
-    str(SRC / "cli" / "train_controlnet.py"),
-    str(SRC / "cli" / "generate.py"),
+SANCTIONED = set()
+
+EXCLUDED_SRC_SUBTREES = {
+    SRC / "diffusers",
+    SRC / "flow-matching-trial",
 }
+
+
+def _is_excluded_src_path(path: str | Path) -> bool:
+    path = Path(path)
+    return any(path == excluded or excluded in path.parents for excluded in EXCLUDED_SRC_SUBTREES)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. Scan for forbidden string literals containing old paths
@@ -51,7 +56,10 @@ FORBIDDEN_PATTERNS = [
 ]
 
 violations = []
-for root, _dirs, files in os.walk(SRC):
+for root, dirs, files in os.walk(SRC):
+    dirs[:] = [d for d in dirs if not _is_excluded_src_path(Path(root) / d)]
+    if _is_excluded_src_path(root):
+        continue
     for fname in files:
         if not fname.endswith(".py"):
             continue
@@ -76,7 +84,11 @@ for v in violations:
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n=== 2. No unsanctioned fm_src/sd_src imports ===")
 import_violations = []
-for root, _dirs, files in os.walk(SRC):
+guidance_import_violations = []
+for root, dirs, files in os.walk(SRC):
+    dirs[:] = [d for d in dirs if not _is_excluded_src_path(Path(root) / d)]
+    if _is_excluded_src_path(root):
+        continue
     for fname in files:
         if not fname.endswith(".py"):
             continue
@@ -100,9 +112,17 @@ for root, _dirs, files in os.walk(SRC):
                     import_violations.append(
                         f"{os.path.relpath(fpath, REPO)}:{node.lineno}: from {node.module} import ..."
                     )
+                if node.module.startswith("fm_src" + ".guidance"):
+                    guidance_import_violations.append(
+                        f"{os.path.relpath(fpath, REPO)}:{node.lineno}: from {node.module} import ..."
+                    )
 
 check(f"No unsanctioned imports ({len(import_violations)} violations)", len(import_violations) == 0)
 for v in import_violations:
+    print(f"    ! {v}")
+check(f"No src imports from legacy guidance ({len(guidance_import_violations)} violations)",
+      len(guidance_import_violations) == 0)
+for v in guidance_import_violations:
     print(f"    ! {v}")
 
 
@@ -126,6 +146,45 @@ for fpath in sorted(SANCTIONED):
 print("\n=== 4. Archived legacy code exists ===")
 check("archive/legacy_code/fm_src/ exists", (REPO / "archive" / "legacy_code" / "fm_src").is_dir())
 check("archive/legacy_code/sd_src/ exists", (REPO / "archive" / "legacy_code" / "sd_src").is_dir())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 5. Active runtime files do not import legacy guidance
+# ═══════════════════════════════════════════════════════════════════════════
+print("\n=== 5. No active legacy guidance imports ===")
+excluded_parts = {
+    ".git",
+    "archive",
+    "artifacts",
+    "data",
+    "docs",
+    "ControlNet",
+    "__pycache__",
+}
+active_guidance_refs = []
+for root_name in ("src", "scripts", "tests"):
+    root_path = REPO / root_name
+    if not root_path.exists():
+        continue
+    for fpath in root_path.rglob("*"):
+        if not fpath.is_file() or fpath.suffix not in {".py", ".sh"}:
+            continue
+        rel_parts = set(fpath.relative_to(REPO).parts)
+        if rel_parts & excluded_parts:
+            continue
+        rel = str(fpath.relative_to(REPO))
+        if rel.startswith("src/diffusers/") or rel.startswith("src/flow-matching-trial/"):
+            continue
+        text = fpath.read_text(errors="ignore")
+        legacy_from = "from " + "fm_src" + ".guidance"
+        legacy_module = "fm_src" + ".guidance.score_predictor_guidance"
+        if legacy_from in text or legacy_module in text:
+            active_guidance_refs.append(rel)
+
+check(f"No active legacy guidance references ({len(active_guidance_refs)} found)",
+      len(active_guidance_refs) == 0)
+for ref in active_guidance_refs:
+    print(f"    ! {ref}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
