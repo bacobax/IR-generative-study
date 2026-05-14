@@ -62,7 +62,7 @@ For nested dataclass configs (e.g. `FMTrainConfig`), the equivalent is
 
 | Directory           | Purpose                                      |
 |---------------------|----------------------------------------------|
-| `scripts/train/`    | Training launchers (FM, VAE, SD, ControlNet, cluster, etc.) |
+| `scripts/train/`    | Training launchers (FM, VAE, SD, ControlNet, etc.) |
 | `scripts/generate/` | Generation / sampling launchers              |
 | `scripts/analyze/`  | Analysis launchers                           |
 | `scripts/checks/`   | Repo health check scripts                    |
@@ -79,7 +79,7 @@ For nested dataclass configs (e.g. `FMTrainConfig`), the equivalent is
 | `configs/sd_uncond/train/presets/`     | Unconditional latent SD training|
 | `configs/sd/generate/presets/`         | SD generation                   |
 | `configs/controlnet/train/presets/`    | ControlNet training             |
-| `configs/auxiliary/*/presets/`         | Cluster recon, surprise pred, count adapter |
+| `configs/auxiliary/*/presets/`         | Auxiliary training and analysis tools |
 | `configs/analysis/presets/`            | Analysis scripts                |
 
 ## YAML Preset Conventions
@@ -124,8 +124,8 @@ bash scripts/train/uncond_latent_flir_sd15_512.sh
 # Override a single parameter
 bash scripts/train/fm_stable.sh --training.epochs 50
 
-# Generate FM guided samples
-bash scripts/generate/fm_guided_combo_maxmin.sh
+# Generate FM samples
+bash scripts/generate/fm_plain.sh
 ```
 
 ### Via Python directly

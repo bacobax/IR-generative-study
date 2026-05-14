@@ -10,7 +10,7 @@ Checks:
   3. No old pipeline dependency in FM path.
   4. _build_sampler uses config + registry.
   5. generate_fm body.
-  6. generate_fm_guided body.
+  6. Retired guided FM score-predictor path stays archived.
   7. CLI parsing preserved.
   8. SD mode still works structurally.
   9. Output format preserved.
@@ -92,8 +92,8 @@ pipeline_imports = [line for line in fm_src_imports if "pipeline" in line.lower(
 check("No fm_src.pipelines import", len(pipeline_imports) == 0)
 guidance_imports = [line for line in fm_src_imports if "guidance" in line.lower()]
 check("No legacy guidance import", len(guidance_imports) == 0)
-check("Imports src.guidance.score_predictor_guidance",
-      "from src.guidance.score_predictor_guidance import" in src)
+check("No active score-predictor guidance import",
+      "score_predictor_guidance" not in src)
 
 # ======================================================================
 # 4. _build_sampler uses config + registry
@@ -118,16 +118,12 @@ check("generate_fm calls sampler.decode", "sampler.decode(" in fm_body)
 check("generate_fm calls fm_output_to_uint16", "fm_output_to_uint16(" in fm_body)
 
 # ======================================================================
-# 6. generate_fm_guided uses _build_sampler
+# 6. Retired guided FM score-predictor path stays archived
 # ======================================================================
-print("\n=== 6. generate_fm_guided ===")
-fg_match = re.search(r"def generate_fm_guided\(.*?\):\n(.*?)(?=\ndef |\Z)", src, re.DOTALL)
-fg_body = fg_match.group(1) if fg_match else ""
-check("generate_fm_guided calls _build_sampler", "_build_sampler(" in fg_body)
-check("generate_fm_guided supports euler_guided", "sample_euler_guided(" in fg_body)
-check("generate_fm_guided supports rerank", "sample_euler_with_candidates(" in fg_body)
-check("generate_fm_guided supports beam", "sample_euler_beam(" in fg_body)
-check("generate_fm_guided supports refine", "refine_latents_energy(" in fg_body)
+print("\n=== 6. Retired guided FM path ===")
+check("generate_fm_guided removed from active CLI", "def generate_fm_guided(" not in src)
+check("--fm_guidance_method removed from active CLI", "fm_guidance_method" not in src)
+check("ScorePredictorGuidance removed from active CLI", "ScorePredictorGuidance" not in src)
 
 # ======================================================================
 # 7. CLI parsing preserved
@@ -139,7 +135,6 @@ check("--fm_vae_weights present", "fm_vae_weights" in src)
 check("--fm_t_scale present", "fm_t_scale" in src)
 check("--fm_steps present", "fm_steps" in src)
 check("--fm_batch_size present", "fm_batch_size" in src)
-check("--fm_guidance_method present", "fm_guidance_method" in src)
 
 # SD flags
 check("--base_model present", "base_model" in src)

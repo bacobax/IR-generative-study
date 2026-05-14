@@ -3,4 +3,4 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
 cd "$ROOT_DIR"
-python -m src.cli.generate --config configs/fm/generate/presets/test.yaml "$@"
+python -m src.cli.generate --config configs/fm/generate/presets/plain_100_steps.yaml --max_samples 8 --fm_steps 5 "$@"

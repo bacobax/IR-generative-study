@@ -46,7 +46,6 @@ try:
         v18_root,
         flir_root,
         default_data_dir,
-        surprise_pred_dataset_root,
         dino_cache_dir,
         fm_model_configs_dir,
         stable_unet_config_path,
@@ -102,8 +101,6 @@ check(
 )
 check("default_data_dir('train') == data/raw/v18/train", default_data_dir("train") == REPO / "data" / "raw" / "v18" / "train")
 check("default_data_dir('val') == data/raw/v18/val", default_data_dir("val") == REPO / "data" / "raw" / "v18" / "val")
-check("surprise_pred_dataset_root() == data/derived/surprise_pred_dataset",
-      surprise_pred_dataset_root() == REPO / "data" / "derived" / "surprise_pred_dataset")
 check("dino_cache_dir() == data/cache/dino_cache",
       dino_cache_dir() == REPO / "data" / "cache" / "dino_cache")
 

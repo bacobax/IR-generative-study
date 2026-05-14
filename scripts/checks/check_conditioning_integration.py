@@ -135,13 +135,19 @@ check("cond_kwargs" in sig_fms.parameters,
 check(sig_fms.parameters["cond_kwargs"].default is None,
       "cond_kwargs default is None")
 
-# flow_matching_step passes kwargs to UNet
+# flow_matching_step keeps kwargs on the sampled state and the UNet forward
+# consumes them through the shared helper.
 fms_src = inspect.getsource(FlowMatchingTrainer.flow_matching_step)
-check("**cond_kwargs" in fms_src, "flow_matching_step unpacks **cond_kwargs to UNet")
+state_src = inspect.getsource(FlowMatchingTrainer._sample_flow_matching_state)
+forward_src = inspect.getsource(FlowMatchingTrainer._forward_flow_matching_unet)
+check("cond_kwargs" in fms_src and "_sample_flow_matching_state" in fms_src,
+      "flow_matching_step passes cond_kwargs into FM state")
+check('**state["cond_kwargs"]' in forward_src,
+      "UNet forward unpacks **state['cond_kwargs']")
 
 # Training loop passes cond_kw
-check("self.flow_matching_step(x_fm, cond_kw)" in trainer_src,
-      "Training loop passes cond_kw to flow_matching_step")
+check("self._compute_batch_loss(x_fm, cond_kw)" in trainer_src,
+      "Training loop passes cond_kw to batch-loss computation")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -267,9 +273,9 @@ check("BaseConditioner" in nc_src, "no_conditioner imports BaseConditioner")
 check("REGISTRIES.conditioning.register" in nc_src, "no_conditioner registers with REGISTRIES")
 
 # Trainer source: cond wiring
-check("cond_kw = self.conditioner.prepare_for_training" in trainer_src,
-      "Trainer derives cond_kw from conditioner")
-check("if self.conditioner is not None else {}" in trainer_src,
+check("cond_kw.update(self.conditioner.prepare_for_training" in trainer_src,
+      "Trainer merges conditioner kwargs into batch conditioning")
+check("if self.conditioner is not None:" in trainer_src,
       "Trainer gracefully handles None conditioner")
 
 # Sampler source: all UNet calls have cond_kw

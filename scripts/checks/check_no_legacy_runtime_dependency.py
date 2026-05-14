@@ -162,6 +162,7 @@ excluded_parts = {
     "__pycache__",
 }
 active_guidance_refs = []
+active_score_predictor_refs = []
 for root_name in ("src", "scripts", "tests"):
     root_path = REPO / root_name
     if not root_path.exists():
@@ -175,15 +176,69 @@ for root_name in ("src", "scripts", "tests"):
         rel = str(fpath.relative_to(REPO))
         if rel.startswith("src/diffusers/") or rel.startswith("src/flow-matching-trial/"):
             continue
+        if rel.startswith("scripts/checks/"):
+            continue
         text = fpath.read_text(errors="ignore")
         legacy_from = "from " + "fm_src" + ".guidance"
-        legacy_module = "fm_src" + ".guidance.score_predictor_guidance"
+        legacy_module = "fm_src" + ".guidance." + "score_" + "predictor_guidance"
         if legacy_from in text or legacy_module in text:
             active_guidance_refs.append(rel)
+        retired_module = "score_" + "predictor_guidance"
+        retired_class = "Score" + "PredictorGuidance"
+        if retired_module in text or retired_class in text:
+            active_score_predictor_refs.append(rel)
 
 check(f"No active legacy guidance references ({len(active_guidance_refs)} found)",
       len(active_guidance_refs) == 0)
 for ref in active_guidance_refs:
+    print(f"    ! {ref}")
+
+check(f"No active score-predictor guidance references ({len(active_score_predictor_refs)} found)",
+      len(active_score_predictor_refs) == 0)
+for ref in active_score_predictor_refs:
+    print(f"    ! {ref}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Active runtime files do not reference retired meta/MoE stack
+# ═══════════════════════════════════════════════════════════════════════════
+print("\n=== 6. No active retired meta/MoE references ===")
+retired_meta_moe_tokens = [
+    "train_" + "meta_fm",
+    "meta_" + "fm",
+    "meta_" + "curriculum",
+    "text_" + "moe",
+    "moe_" + "text_unet",
+    "Expert" + "SubsetPolicy",
+    "expert_" + "subset_policy",
+    "gated_" + "correction",
+    "lambda_" + "corr",
+    "router_" + "weights",
+]
+active_meta_moe_refs = []
+for root_name in ("src", "configs", "scripts", "tests"):
+    root_path = REPO / root_name
+    if not root_path.exists():
+        continue
+    for fpath in root_path.rglob("*"):
+        if not fpath.is_file() or fpath.suffix not in {".py", ".sh", ".yaml", ".yml", ".json", ".md"}:
+            continue
+        rel_parts = set(fpath.relative_to(REPO).parts)
+        if rel_parts & excluded_parts:
+            continue
+        rel = str(fpath.relative_to(REPO))
+        if rel.startswith("src/diffusers/") or rel.startswith("src/flow-matching-trial/"):
+            continue
+        if rel.startswith("scripts/checks/"):
+            continue
+        text = fpath.read_text(errors="ignore")
+        hits = [token for token in retired_meta_moe_tokens if token in text]
+        if hits:
+            active_meta_moe_refs.append(f"{rel}: {', '.join(hits)}")
+
+check(f"No active retired meta/MoE references ({len(active_meta_moe_refs)} found)",
+      len(active_meta_moe_refs) == 0)
+for ref in active_meta_moe_refs:
     print(f"    ! {ref}")
 
 

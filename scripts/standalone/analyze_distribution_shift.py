@@ -22,10 +22,13 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.core.paths import legacy_code_root
+from src.core.diffusers_compat import restore_real_scipy_if_available
 
 _LEGACY_CODE_ROOT = legacy_code_root()
 if str(_LEGACY_CODE_ROOT) not in sys.path:
     sys.path.insert(0, str(_LEGACY_CODE_ROOT))
+
+restore_real_scipy_if_available()
 
 import matplotlib
 matplotlib.use("Agg")

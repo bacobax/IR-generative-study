@@ -1,7 +1,7 @@
 """Modular CLI entrypoint for synthetic dataset generation.
 
 This module is the **source of truth** for generating synthetic IR datasets
-using either SD 1.5 with LoRA or Stable Flow Matching (plain or guided).
+using either SD 1.5 with LoRA or Stable Flow Matching.
 
 The root-level ``generate_datasets.py`` is a thin compatibility wrapper that
 forwards to :func:`main` here.
@@ -236,154 +236,6 @@ def generate_fm(args, entries: List[Dict]):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Stable Flow-Matching generator with guidance
-# ═══════════════════════════════════════════════════════════════════════════
-
-def generate_fm_guided(args, entries: List[Dict]):
-    """Guided FM generation supporting all sampling methods."""
-    from src.guidance.score_predictor_guidance import (  # noqa: E402
-        ScoreGuidanceConfig,
-        ScorePredictorGuidance,
-    )
-
-    method = args.fm_guidance_method
-
-    print(f"[FM-guided:{method}] Building sampler from {args.fm_pipeline_dir}")
-    sampler, device = _build_sampler(args)
-
-    guidance = None
-    if method != "euler":
-        if not args.fm_surprise_ckpt:
-            raise ValueError(
-                f"--fm_surprise_ckpt is required for fm_guidance_method='{method}'"
-            )
-        cfg = ScoreGuidanceConfig(
-            ckpt_path=args.fm_surprise_ckpt,
-            vae_config_path=args.fm_predictor_vae_config,
-            vae_weights_path=args.fm_predictor_vae_weights,
-            dino_name=args.fm_dino_name,
-            hidden_dim=args.fm_hidden_dim,
-            energy_mode=args.fm_energy_mode,
-            sign=args.fm_sign,
-            w_surprise=args.fm_w_surprise,
-            w_gmm=args.fm_w_gmm,
-            lambda_start=args.fm_lambda_start,
-            lambda_end=args.fm_lambda_end,
-            lambda_schedule=args.fm_lambda_schedule,
-            grad_clip_norm=args.fm_grad_clip_norm,
-            normalize_grad=args.fm_normalize_grad,
-            guidance_on=args.fm_guidance_on,
-            use_ddim_hat=args.fm_use_ddim_hat,
-            use_amp=args.fm_use_amp,
-            num_refine_steps=args.fm_num_refine_steps,
-            refine_step_size=args.fm_refine_step_size,
-        )
-        guidance = ScorePredictorGuidance.from_checkpoint(cfg, device=device)
-        print(
-            f"[FM-guided:{method}] Guidance loaded.  "
-            f"energy={args.fm_energy_mode}  sign={args.fm_sign}"
-        )
-
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    n_total = len(entries)
-    generated = 0
-    batch_size = args.fm_batch_size
-
-    print(
-        f"[FM-guided:{method}] Generating {n_total} samples "
-        f"(batch_size={batch_size}, steps={args.fm_steps}) ..."
-    )
-
-    with tqdm(total=n_total, desc=f"[FM-guided:{method}] samples", unit="img") as pbar:
-        while generated < n_total:
-            bs = min(batch_size, n_total - generated)
-
-            if method == "euler":
-                z = sampler.sample_euler(steps=args.fm_steps, batch_size=bs)
-            elif method == "euler_guided":
-                z = sampler.sample_euler_guided(
-                    steps=args.fm_steps,
-                    batch_size=bs,
-                    guidance=guidance,
-                    guidance_scale=args.fm_guidance_scale,
-                    return_logs=False,
-                )
-            elif method == "rerank":
-                z = sampler.sample_euler_with_candidates(
-                    steps=args.fm_steps,
-                    n_candidates=args.fm_n_candidates,
-                    keep_top_k=1,
-                    batch_size=bs,
-                    guidance=guidance,
-                    guidance_scale=0.0,
-                )
-            elif method == "beam":
-                z = sampler.sample_euler_beam(
-                    steps=args.fm_steps,
-                    batch_size=bs,
-                    beam_size=args.fm_beam_size,
-                    branch_factor=args.fm_branch_factor,
-                    sigma_perturb=args.fm_sigma_perturb,
-                    guidance=guidance,
-                    guidance_scale=0.0,
-                    return_all_beams=False,
-                )
-            elif method == "refine":
-                z = sampler.sample_euler(steps=args.fm_steps, batch_size=bs)
-                z = sampler.refine_latents_energy(
-                    z=z,
-                    guidance=guidance,
-                    num_steps=args.fm_num_refine_steps,
-                    step_size=args.fm_refine_step_size,
-                )
-            else:
-                raise ValueError(f"Unknown fm_guidance_method: {method!r}")
-
-            with torch.no_grad():
-                x_gen = sampler.decode(z)
-
-            for j in range(x_gen.shape[0]):
-                raw_uint16 = fm_output_to_uint16(x_gen[j])
-                out_path = os.path.join(args.output_dir, f"sample_{generated:05d}.npy")
-                np.save(out_path, raw_uint16)
-
-                png_path = os.path.join(args.output_dir, f"sample_{generated:05d}.png")
-                vis = uint16_to_png_uint8(raw_uint16)
-                Image.fromarray(vis, mode="L").save(png_path)
-
-                generated += 1
-                pbar.update(1)
-                if generated >= n_total:
-                    break
-
-    if guidance is not None:
-        scores = guidance.log_scores(z)
-        print(
-            f"[FM-guided:{method}] Last-batch mean scores: "
-            f"surprise={scores['mean_surprise']:.4f}  "
-            f"gmm={scores['mean_gmm']:.4f}"
-        )
-
-    meta_out = os.path.join(args.output_dir, "metadata.jsonl")
-    with open(meta_out, "w", encoding="utf-8") as f:
-        for idx, entry in enumerate(entries):
-            record = {
-                "file_name": f"sample_{idx:05d}.npy",
-                "text": entry.get("text", ""),
-                "source_file": entry.get("file_name", ""),
-                "fm_guidance_method": method,
-                "fm_energy_mode": args.fm_energy_mode if guidance else "none",
-                "fm_sign": args.fm_sign if guidance else "none",
-            }
-            f.write(json.dumps(record) + "\n")
-    print(f"[FM-guided:{method}] Done. {n_total} samples in {args.output_dir}")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CLI
-# ═══════════════════════════════════════════════════════════════════════════
-
 def parse_args():
     p = argparse.ArgumentParser(
         description="Generate synthetic IR datasets using SD1.5-LoRA or Stable Flow Matching."
@@ -426,39 +278,6 @@ def parse_args():
     fm.add_argument("--fm_steps", type=int, default=50)
     fm.add_argument("--fm_batch_size", type=int, default=8)
 
-    # --- FM guidance ---
-    fg = p.add_argument_group("FM Guidance options (mode=fm only)")
-    fg.add_argument("--fm_guidance_method", type=str, default="euler",
-                    choices=["euler", "euler_guided", "rerank", "beam", "refine"])
-    fg.add_argument("--fm_surprise_ckpt", type=str, default=None)
-    fg.add_argument("--fm_predictor_vae_config", type=str, default=None)
-    fg.add_argument("--fm_predictor_vae_weights", type=str, default=None)
-    fg.add_argument("--fm_dino_name", type=str, default=None)
-    fg.add_argument("--fm_hidden_dim", type=int, default=None)
-    fg.add_argument("--fm_energy_mode", type=str, default="surprise",
-                    choices=["surprise", "gmm", "combo"])
-    fg.add_argument("--fm_sign", type=str, default="minimize",
-                    choices=["minimize", "maximize"])
-    fg.add_argument("--fm_w_surprise", type=float, default=1.0)
-    fg.add_argument("--fm_w_gmm", type=float, default=1.0)
-    fg.add_argument("--fm_guidance_scale", type=float, default=1.0)
-    fg.add_argument("--fm_lambda_start", type=float, default=1.0)
-    fg.add_argument("--fm_lambda_end", type=float, default=1.0)
-    fg.add_argument("--fm_lambda_schedule", type=str, default="constant",
-                    choices=["constant", "linear", "cosine", "step"])
-    fg.add_argument("--fm_grad_clip_norm", type=float, default=None)
-    fg.add_argument("--fm_normalize_grad", action="store_true")
-    fg.add_argument("--fm_guidance_on", type=str, default="latent",
-                    choices=["latent", "decoded"])
-    fg.add_argument("--fm_use_ddim_hat", action="store_true")
-    fg.add_argument("--fm_use_amp", action="store_true")
-    fg.add_argument("--fm_n_candidates", type=int, default=8)
-    fg.add_argument("--fm_beam_size", type=int, default=4)
-    fg.add_argument("--fm_branch_factor", type=int, default=2)
-    fg.add_argument("--fm_sigma_perturb", type=float, default=0.05)
-    fg.add_argument("--fm_num_refine_steps", type=int, default=10)
-    fg.add_argument("--fm_refine_step_size", type=float, default=0.01)
-
     p.add_argument("--device", type=str, default=None)
 
     # Two-pass parse: first grab --config, apply YAML defaults, then re-parse
@@ -485,10 +304,7 @@ def main():
     elif args.mode == "fm":
         if args.fm_pipeline_dir is None:
             raise ValueError("--fm_pipeline_dir is required for mode=fm")
-        if args.fm_guidance_method == "euler":
-            generate_fm(args, entries)
-        else:
-            generate_fm_guided(args, entries)
+        generate_fm(args, entries)
 
 
 if __name__ == "__main__":

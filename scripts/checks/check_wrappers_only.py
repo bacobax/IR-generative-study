@@ -53,18 +53,6 @@ STANDALONE_WRAPPER_MAP = {
         "scripts.standalone.train_count_adapter",
         "scripts/standalone/train_count_adapter.py",
     ),
-    "train_cluster_reconstruction.py": (
-        "scripts.standalone.train_cluster_reconstruction",
-        "scripts/standalone/train_cluster_reconstruction.py",
-    ),
-    "train_surprise_predictor.py": (
-        "scripts.standalone.train_surprise_predictor",
-        "scripts/standalone/train_surprise_predictor.py",
-    ),
-    "scripts/sample_guided_fm.py": (
-        "scripts.standalone.sample_guided_fm",
-        "scripts/standalone/sample_guided_fm.py",
-    ),
 }
 
 ALL_WRAPPERS = {**WRAPPER_MAP, **STANDALONE_WRAPPER_MAP}

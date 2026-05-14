@@ -40,7 +40,7 @@ flow_matching_trial/
 | `src/algorithms/inference/` | FM sampler |
 | `src/algorithms/stable_diffusion/` | SD LoRA training & modules |
 | `src/models/` | Model construction helpers (UNet, VAE) |
-| `src/guidance/` | Guidance ABC + implementations (surprise, GMM, combo) |
+| `src/guidance/` | Guidance ABC and active no-op guidance implementation |
 | `src/conditioning/` | Conditioning ABC + implementations |
 | `src/data/` | Datasets and transforms |
 
@@ -69,7 +69,6 @@ All dataset files.  **Heavy contents ignored by git** (.gitkeep tracked).
 | Sub-path | Contents |
 |---|---|
 | `data/raw/v18/` | Original IR images (`train/`, `val/` splits) |
-| `data/derived/surprise_pred_dataset/` | Preprocessed surprise prediction dataset |
 | `data/cache/dino_cache/` | Cached DINOv2 features |
 
 ---
@@ -106,6 +105,8 @@ preserved for reference.
 |---|---|
 | `archive/legacy_code/fm_src/` | Old monolithic FM pipeline code. **Tracked by git.** |
 | `archive/legacy_code/sd_src/` | Old monolithic SD pipeline code. **Tracked by git.** |
+| `archive/legacy_code/surprise_cluster_guidance/` | Retired surprise/cluster/score-predictor guidance tools. |
+| `archive/legacy_code/meta_moe/` | Retired meta-learning and MoE flow-matching curriculum tools. |
 | `archive/legacy_outputs/` | Old output folders no longer needed. **Ignored by git.** |
 
 ---
@@ -127,7 +128,7 @@ check scripts (`check_*.py`).  Not part of the importable `src` package.
 
 | Sub-path | Contents |
 |---|---|
-| `docs/notebooks/` | Jupyter analysis notebooks (cluster study, DINO features, guided sampling) |
+| `docs/notebooks/` | Jupyter analysis notebooks for active studies |
 | `docs/repo_layout_target.md` | This file |
 | `docs/refactor_plan.md` | Original refactor planning document |
 

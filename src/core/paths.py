@@ -87,11 +87,6 @@ def default_data_dir(split: str = "train") -> Path:
     return v18_root() / split
 
 
-def surprise_pred_dataset_root() -> Path:
-    """``data/derived/surprise_pred_dataset/``."""
-    return derived_data_root() / "surprise_pred_dataset"
-
-
 def dino_cache_dir() -> Path:
     """``data/cache/dino_cache/`` — cached DINOv2 features."""
     return cache_root() / "dino_cache"

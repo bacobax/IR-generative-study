@@ -14,7 +14,7 @@ flow_matching_trial/
 │   ├── sd/              # Stable Diffusion train & generate presets
 │   ├── vae/             # VAE training presets
 │   ├── controlnet/      # ControlNet training presets
-│   ├── auxiliary/       # Cluster recon, surprise predictor, count adapter presets
+│   ├── auxiliary/       # Count adapter and other auxiliary presets
 │   ├── analysis/        # Analysis script presets
 │   └── models/          # Architecture JSONs (UNet, VAE)
 ├── scripts/             # Shell launch wrappers & standalone Python utilities
@@ -34,7 +34,7 @@ flow_matching_trial/
 │   ├── analysis/        # Distribution-shift analysis results
 │   └── debug/           # Debug sample images
 ├── archive/             # Inactive / retired material
-│   └── legacy_code/     # Old fm_src & sd_src trees
+│   └── legacy_code/     # Old fm_src/sd_src trees and retired experiments
 ├── docs/                # Documentation, notebooks, prompt files
 │   ├── notebooks/       # Jupyter analysis notebooks
 │   ├── launcher_workflow.md  # Config-driven launcher architecture
@@ -75,12 +75,12 @@ root-level invocation paths are kept as thin compatibility wrappers where used.
 | -------------------------------------------------- | ------------------------------------------------ |
 | `scripts/standalone/train_fm.py`                   | Pixel-space flow matching training (no VAE)      |
 | `scripts/standalone/train_count_adapter.py`        | Count-conditioned DINO adapter training          |
-| `scripts/standalone/train_cluster_reconstruction.py`| Masked cluster reconstruction training          |
-| `scripts/standalone/train_surprise_predictor.py`   | Surprise/GMM multi-task predictor training       |
-| `scripts/standalone/build_surprise_pred_dataset.py`| Build surprise prediction dataset                |
 | `scripts/standalone/analyze_distribution_shift.py` | Distribution shift analysis (FID, MMD, etc.)     |
-| `scripts/standalone/analyze_fm_subsampling_coverage.py` | Coverage/diversity analysis for FM samples  |
-| `scripts/standalone/sample_guided_fm.py`           | Guided FM sampling script                        |
+
+The retired surprise/cluster/score-predictor guidance tools are preserved under
+`archive/legacy_code/surprise_cluster_guidance/`.
+Retired meta-learning and MoE flow-matching curriculum tools are preserved under
+`archive/legacy_code/meta_moe/`.
 
 ## Quick start
 
@@ -176,12 +176,10 @@ bash scripts/train/vae_4x.sh             # VAE 4x compression training
 
 # Generation
 bash scripts/generate/fm_plain.sh        # FM plain Euler generation
-bash scripts/generate/fm_guided_combo_maxmin.sh  # FM guided combo generation
 bash scripts/generate/sd_r4.sh           # SD LoRA generation
 
 # Analysis
 bash scripts/analyze/distribution_shift.sh
-bash scripts/analyze/fm_subsampling.sh
 
 # Override a parameter from the command line
 bash scripts/train/fm_stable.sh --training.epochs 50

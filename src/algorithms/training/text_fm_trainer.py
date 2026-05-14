@@ -116,15 +116,11 @@ class TextFMTrainer(FlowMatchingTrainer):
             vae_cfg = load_vae_config(config.model.vae_config)
             vae = build_vae_from_config(vae_cfg, device=device)
 
-        return_pooled = getattr(config.conditioning, "return_pooled", False)
-        if config.model.model_builder_name == "text_moe_unet":
-            return_pooled = True
-
         conditioner = TextConditioner(
             encoder_name=config.conditioning.text_encoder,
             max_length=config.conditioning.max_text_length,
             cond_drop_prob=config.conditioning.cond_drop_prob,
-            return_pooled=return_pooled,
+            return_pooled=getattr(config.conditioning, "return_pooled", False),
             device=device,
         )
 

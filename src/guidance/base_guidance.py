@@ -1,9 +1,8 @@
 """Abstract base class for inference-time guidance modules.
 
 Any guidance object that can be plugged into ``FlowMatchingSampler``
-must implement this interface.  The three methods mirror the existing
-duck-typed protocol used by ``ScorePredictorGuidance`` in the legacy
-``fm_src/guidance`` package.
+must implement this interface.  The three methods define the active
+duck-typed protocol used by sampler guidance hooks.
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@ null embedding for unconditional generation.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers import UNet2DConditionModel
@@ -32,10 +32,7 @@ from src.analysis.cross_attention_maps import (
     AttentionHeatmapVisualizer,
     CrossAttentionExtractor,
 )
-from src.conditioning.expert_subset_policy import ExpertSubsetPolicy
 from src.conditioning.text_conditioner import TextConditioner
-from src.core.conditions import extract_person_count
-from src.models.moe_text_unet import TextMOEUNet
 
 
 class CFGFlowMatchingSampler(FlowMatchingSampler):
@@ -62,7 +59,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
         unet: UNet2DConditionModel,
         *,
         conditioner: TextConditioner,
-        subset_policy: Optional[ExpertSubsetPolicy] = None,
         device: Optional[Union[str, torch.device]] = None,
         t_scale: float = 1.0,
         train_target: str = "v",
@@ -84,55 +80,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
             guidance=guidance,
             conditioner=conditioner,
         )
-        self.subset_policy = subset_policy
-
-    def _resolve_condition_ids(
-        self,
-        prompts: Sequence[str],
-        condition_ids: Optional[Sequence[Any]],
-    ) -> List[Any]:
-        if condition_ids is not None:
-            resolved = list(condition_ids)
-            if len(resolved) != len(prompts):
-                raise ValueError(
-                    "condition_ids must have the same length as prompts"
-                )
-            return resolved
-        resolved: List[Any] = []
-        for prompt in prompts:
-            resolved.append(extract_person_count(prompt))
-        return resolved
-
-    def _apply_subset_routing(
-        self,
-        cond_kw: Dict[str, Any],
-        *,
-        condition_ids: Sequence[Any],
-        expert_mask: Optional[torch.Tensor] = None,
-        require_configured: bool = False,
-    ) -> Tuple[Dict[str, Any], Optional[torch.Tensor]]:
-        if (
-            self.subset_policy is None
-            or not self.subset_policy.enabled
-            or not isinstance(self.unet, TextMOEUNet)
-        ):
-            return cond_kw, expert_mask
-
-        pooled = cond_kw.get("pooled_text_embeds")
-        if pooled is None:
-            return cond_kw, expert_mask
-
-        raw_weights = self.unet.compute_raw_router_weights(pooled)
-        if expert_mask is None:
-            expert_mask = self.subset_policy.build_masks(
-                condition_ids,
-                raw_weights=raw_weights,
-                device=raw_weights.device,
-                require_configured=require_configured,
-            )
-        updated = dict(cond_kw)
-        updated["router_weights"] = self.unet.normalize_masked_weights(raw_weights, expert_mask)
-        return updated, expert_mask
 
     # ------------------------------------------------------------------
     # VAE convenience constructor
@@ -259,7 +206,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
         steps: int = 50,
         guidance_scale: float = 7.5,
         sample_shape: Optional[Tuple[int, int, int]] = None,
-        condition_ids: Optional[Sequence[Any]] = None,
     ) -> torch.Tensor:
         """Sample with classifier-free guidance.
 
@@ -295,18 +241,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
 
         cond_kw, uncond_kw = self.conditioner.prepare_cfg_pair(
             prompts, self.device,
-        )
-        resolved_condition_ids = self._resolve_condition_ids(prompts, condition_ids)
-        cond_kw, expert_mask = self._apply_subset_routing(
-            cond_kw,
-            condition_ids=resolved_condition_ids,
-            require_configured=False,
-        )
-        uncond_kw, _ = self._apply_subset_routing(
-            uncond_kw,
-            condition_ids=resolved_condition_ids,
-            expert_mask=expert_mask,
-            require_configured=False,
         )
 
         for i in range(steps):
@@ -346,7 +280,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
         guidance_scale: float = 7.5,
         sample_shape: Optional[Tuple[int, int, int]] = None,
         attn_config: Optional[AttentionExtractionConfig] = None,
-        condition_ids: Optional[Sequence[Any]] = None,
     ) -> Tuple[torch.Tensor, Dict[int, Dict[str, torch.Tensor]]]:
         """Sample with CFG and capture cross-attention maps.
 
@@ -382,18 +315,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
 
         cond_kw, uncond_kw = self.conditioner.prepare_cfg_pair(
             prompts, self.device,
-        )
-        resolved_condition_ids = self._resolve_condition_ids(prompts, condition_ids)
-        cond_kw, expert_mask = self._apply_subset_routing(
-            cond_kw,
-            condition_ids=resolved_condition_ids,
-            require_configured=False,
-        )
-        uncond_kw, _ = self._apply_subset_routing(
-            uncond_kw,
-            condition_ids=resolved_condition_ids,
-            expert_mask=expert_mask,
-            require_configured=False,
         )
 
         # Set up attention extraction
@@ -520,7 +441,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
         guidance_scale: float = 7.5,
         tag: str = "text_fm/cfg_generated",
         sample_shape: Optional[Tuple[int, int, int]] = None,
-        condition_ids: Optional[Sequence[Any]] = None,
     ) -> None:
         """Generate CFG samples and log to TensorBoard."""
         z = self.sample_euler_cfg(
@@ -528,7 +448,6 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
             steps=steps,
             guidance_scale=guidance_scale,
             sample_shape=sample_shape,
-            condition_ids=condition_ids,
         )
         x = self.decode(z)
         vis = self.from_norm_to_display(x)

@@ -646,25 +646,23 @@ class FlowMatchingSampler:
             if log_score_scalars:
                 scores_plain = guidance.log_scores(z_plain)
                 scores_guided = guidance.log_scores(z_guided)
-                writer.add_scalars(
-                    f"guided_scores{tag_suffix}/mean_surprise",
-                    {"unguided": scores_plain["mean_surprise"],
-                     "guided": scores_guided["mean_surprise"]},
-                    epoch,
-                )
-                writer.add_scalars(
-                    f"guided_scores{tag_suffix}/mean_gmm",
-                    {"unguided": scores_plain["mean_gmm"],
-                     "guided": scores_guided["mean_gmm"]},
-                    epoch,
-                )
-                print(
-                    f"[log_guided] epoch={epoch}  "
-                    f"unguided: surprise={scores_plain['mean_surprise']:.4f}  "
-                    f"gmm={scores_plain['mean_gmm']:.4f}  |  "
-                    f"guided:   surprise={scores_guided['mean_surprise']:.4f}  "
-                    f"gmm={scores_guided['mean_gmm']:.4f}"
-                )
+                common_keys = sorted(set(scores_plain) & set(scores_guided))
+                logged = []
+                for key in common_keys:
+                    plain_value = scores_plain[key]
+                    guided_value = scores_guided[key]
+                    if isinstance(plain_value, (int, float)) and isinstance(guided_value, (int, float)):
+                        writer.add_scalars(
+                            f"guided_scores{tag_suffix}/{key}",
+                            {"unguided": float(plain_value), "guided": float(guided_value)},
+                            epoch,
+                        )
+                        logged.append(
+                            f"{key}: unguided={float(plain_value):.4f} "
+                            f"guided={float(guided_value):.4f}"
+                        )
+                if logged:
+                    print(f"[log_guided] epoch={epoch}  " + "  |  ".join(logged))
 
 
 # ── registry ──────────────────────────────────────────────────────────────────

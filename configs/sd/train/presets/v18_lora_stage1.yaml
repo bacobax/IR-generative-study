@@ -16,4 +16,3 @@ validation_prompt: "overhead infrared surveillance image, circular field of view
 checkpointing_epochs: 1
 output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/v18_sd15_lora_stage1_r8
 seed: 42
-device: cuda:1
