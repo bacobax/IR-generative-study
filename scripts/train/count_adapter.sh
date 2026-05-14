@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
-cd "$ROOT_DIR"
-python scripts/standalone/train_count_adapter.py --config configs/auxiliary/count_adapter/presets/run_07.yaml "$@"
+source "${SCRIPT_DIR}/../lib/common.sh"
+enter_repo_root "${SCRIPT_DIR}"
+run_python_script_config scripts/standalone/train_count_adapter.py configs/auxiliary/count_adapter/presets/run_07.yaml "$@"

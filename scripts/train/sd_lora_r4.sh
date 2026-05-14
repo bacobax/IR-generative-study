@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
-cd "$ROOT_DIR"
+source "${SCRIPT_DIR}/../lib/common.sh"
+enter_repo_root "${SCRIPT_DIR}"
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:256"
-accelerate launch --mixed_precision=fp16 \
-  -m src.cli.train_sd --config configs/sd/train/presets/lora_r4.yaml "$@"
+run_accelerate_module_config fp16 src.cli.train_sd configs/sd/train/presets/lora_r4.yaml "$@"

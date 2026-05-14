@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
-cd "$ROOT_DIR"
-python -m src.cli.sample_text_fm --config configs/fm/sample/presets/text_cfg.yaml "$@"
+source "${SCRIPT_DIR}/../lib/common.sh"
+enter_repo_root "${SCRIPT_DIR}"
+run_python_module_config src.cli.sample_text_fm configs/fm/sample/presets/text_cfg.yaml "$@"
