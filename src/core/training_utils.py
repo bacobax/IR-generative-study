@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import math
-from dataclasses import dataclass
+import os
 from collections.abc import Mapping
-from typing import Iterable, Optional, Union
+from dataclasses import dataclass
+from typing import Callable, Iterable, Optional, Union
 
 import torch
 
@@ -115,6 +116,171 @@ def build_grad_scaler(settings: PrecisionSettings) -> Optional[torch.cuda.amp.Gr
     if not settings.use_grad_scaler:
         return None
     return torch.cuda.amp.GradScaler(enabled=True)
+
+
+@dataclass
+class TrainingProgressState:
+    """Serializable trainer progress shared by full-checkpoint payloads."""
+
+    epoch: int = 0
+    global_step: int = 0
+    best_eval: float = float("inf")
+    best_epoch: int = -1
+    bad_epochs: int = 0
+
+
+_MISSING = object()
+
+
+def progress_state_from_checkpoint(checkpoint: Mapping) -> tuple[int, TrainingProgressState]:
+    """Recover loop start epoch and progress state from a training checkpoint."""
+    epoch = int(checkpoint["epoch"])
+    state = TrainingProgressState(
+        epoch=epoch,
+        global_step=int(checkpoint["global_step"]),
+        best_eval=float(checkpoint.get("best_eval", float("inf"))),
+        best_epoch=int(checkpoint.get("best_epoch", -1)),
+        bad_epochs=int(checkpoint.get("bad_epochs", 0)),
+    )
+    return epoch + 1, state
+
+
+def _rng_state_to_cpu_uint8(value) -> torch.Tensor:
+    if not torch.is_tensor(value) or value.dtype != torch.uint8:
+        value = torch.tensor(value, dtype=torch.uint8)
+    if value.device.type != "cpu":
+        value = value.cpu()
+    return value
+
+
+def _restore_rng_from_checkpoint(checkpoint: Mapping) -> None:
+    if "rng_state" in checkpoint:
+        torch.random.set_rng_state(_rng_state_to_cpu_uint8(checkpoint["rng_state"]))
+    if torch.cuda.is_available() and "cuda_rng_state_all" in checkpoint:
+        torch.cuda.set_rng_state_all([
+            _rng_state_to_cpu_uint8(state)
+            for state in checkpoint["cuda_rng_state_all"]
+        ])
+
+
+def _optional_state(value, state_getter: Callable[[], object]):
+    if value is _MISSING:
+        return _MISSING
+    if value is None:
+        return None
+    return tensor_tree_to_cpu(state_getter())
+
+
+def build_training_checkpoint(
+    *,
+    model_states: Mapping[str, torch.nn.Module],
+    optimizer: torch.optim.Optimizer,
+    progress: TrainingProgressState,
+    scheduler=_MISSING,
+    scaler=_MISSING,
+    ema=_MISSING,
+    extra_metadata: Optional[Mapping] = None,
+    include_rng: bool = False,
+) -> dict:
+    """Build a full training checkpoint without changing existing key names."""
+    checkpoint = {
+        "epoch": int(progress.epoch),
+        "global_step": int(progress.global_step),
+        "optimizer_state": optimizer_state_dict_cpu(optimizer),
+        "best_eval": float(progress.best_eval),
+        "best_epoch": int(progress.best_epoch),
+        "bad_epochs": int(progress.bad_epochs),
+    }
+    for key, module in model_states.items():
+        checkpoint[key] = module_state_dict_cpu(module)
+
+    scheduler_state = _optional_state(
+        scheduler,
+        lambda: scheduler.state_dict(),
+    )
+    if scheduler_state is not _MISSING:
+        checkpoint["scheduler_state"] = scheduler_state
+
+    scaler_state = _optional_state(
+        scaler,
+        lambda: scaler.state_dict(),
+    )
+    if scaler_state is not _MISSING:
+        checkpoint["scaler_state"] = scaler_state
+
+    ema_state = _optional_state(
+        ema,
+        lambda: ema.state_dict(),
+    )
+    if ema_state is not _MISSING:
+        checkpoint["ema_state"] = ema_state
+
+    if extra_metadata:
+        checkpoint.update(dict(extra_metadata))
+
+    if include_rng:
+        checkpoint["rng_state"] = torch.random.get_rng_state()
+        if torch.cuda.is_available():
+            checkpoint["cuda_rng_state_all"] = tensor_tree_to_cpu(
+                torch.cuda.get_rng_state_all()
+            )
+
+    return checkpoint
+
+
+def restore_training_checkpoint(
+    path: str,
+    *,
+    device: Union[str, torch.device],
+    model_states: Mapping[str, torch.nn.Module],
+    optimizer: torch.optim.Optimizer,
+    scheduler=_MISSING,
+    scaler=_MISSING,
+    ema=_MISSING,
+    ema_model: Optional[torch.nn.Module] = None,
+    restore_rng: bool = False,
+    validate_checkpoint: Optional[Callable[[dict, str], None]] = None,
+) -> tuple[dict, int, TrainingProgressState]:
+    """Load a full checkpoint and restore common trainer runtime state."""
+    checkpoint = torch.load(path, map_location=device)
+    if validate_checkpoint is not None:
+        validate_checkpoint(checkpoint, path)
+
+    for key, module in model_states.items():
+        module.load_state_dict(checkpoint[key])
+    optimizer.load_state_dict(checkpoint["optimizer_state"])
+    move_optimizer_state_to_device(optimizer, device)
+
+    if (
+        scheduler is not _MISSING
+        and scheduler is not None
+        and checkpoint.get("scheduler_state") is not None
+    ):
+        scheduler.load_state_dict(checkpoint["scheduler_state"])
+    if (
+        scaler is not _MISSING
+        and scaler is not None
+        and checkpoint.get("scaler_state") is not None
+    ):
+        scaler.load_state_dict(checkpoint["scaler_state"])
+    if ema is not _MISSING and ema is not None:
+        if checkpoint.get("ema_state") is not None:
+            ema.load_state_dict(checkpoint["ema_state"], device=device)
+        elif ema_model is not None:
+            ema.reset(ema_model)
+
+    start_epoch, progress = progress_state_from_checkpoint(checkpoint)
+    if restore_rng:
+        _restore_rng_from_checkpoint(checkpoint)
+    return checkpoint, start_epoch, progress
+
+
+def save_training_checkpoint(path: str, payload: Mapping, *, release_cache: bool = True) -> None:
+    """Persist a full training checkpoint and optionally release CUDA cache."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    torch.save(dict(payload), path)
+    if release_cache:
+        release_cuda_cache()
 
 
 def move_optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: Union[str, torch.device]) -> None:
@@ -243,6 +409,14 @@ class EMAState:
                     continue
                 self.shadow_params[idx].mul_(self.decay).add_(param.detach(), alpha=1.0 - self.decay)
                 idx += 1
+
+    def reset(self, model: torch.nn.Module) -> None:
+        """Reinitialize EMA weights from the current model parameters."""
+        self.shadow_params = [
+            param.detach().clone()
+            for param in model.parameters()
+            if param.requires_grad
+        ]
 
     def copy_to(self, model: torch.nn.Module) -> None:
         """Copy EMA weights into the given model in-place."""

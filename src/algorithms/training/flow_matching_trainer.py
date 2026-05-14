@@ -31,16 +31,17 @@ from src.algorithms.training.regiondiff_attention_distillation import (
 from src.core.ot import match_target_batch
 from src.core.training_utils import (
     EMAState,
+    TrainingProgressState,
     autocast_context,
+    build_training_checkpoint,
     build_grad_scaler,
     build_scheduler,
     build_summary_writer,
     module_state_dict_cpu,
-    move_optimizer_state_to_device,
-    optimizer_state_dict_cpu,
     release_cuda_cache,
+    restore_training_checkpoint,
     resolve_precision_settings,
-    tensor_tree_to_cpu,
+    save_training_checkpoint,
 )
 from src.core.visualization.layout_debug import (
     draw_bbox_overlays,
@@ -1080,41 +1081,22 @@ class FlowMatchingTrainer:
 
         if resume_path is not None:
             print(f"[{self._progress_label()} Resume] Loading checkpoint from {resume_path}")
-            ckpt = torch.load(resume_path, map_location=self.device)
-            self._validate_resume_checkpoint(ckpt, resume_path)
-            self.unet.load_state_dict(ckpt["unet_state"])
-            optimizer.load_state_dict(ckpt["optimizer_state"])
-            move_optimizer_state_to_device(optimizer, self.device)
-            if scheduler is not None and ckpt.get("scheduler_state") is not None:
-                scheduler.load_state_dict(ckpt["scheduler_state"])
-            if scaler is not None and ckpt.get("scaler_state") is not None:
-                scaler.load_state_dict(ckpt["scaler_state"])
-            if ema is not None:
-                if ckpt.get("ema_state") is not None:
-                    ema.load_state_dict(ckpt["ema_state"], device=self.device)
-                else:
-                    ema = EMAState(self.unet, decay=ema_decay)
-            start_epoch = ckpt["epoch"] + 1
-            global_step = ckpt["global_step"]
-            best_eval = ckpt.get("best_eval", float("inf"))
-            best_epoch = ckpt.get("best_epoch", -1)
-            bad_epochs = ckpt.get("bad_epochs", 0)
-            if "rng_state" in ckpt:
-                rng_state = ckpt["rng_state"]
-                if not torch.is_tensor(rng_state) or rng_state.dtype != torch.uint8:
-                    rng_state = torch.tensor(rng_state, dtype=torch.uint8)
-                if rng_state.device.type != "cpu":
-                    rng_state = rng_state.cpu()
-                torch.random.set_rng_state(rng_state)
-            if torch.cuda.is_available() and "cuda_rng_state_all" in ckpt:
-                cuda_states = []
-                for s in ckpt["cuda_rng_state_all"]:
-                    if not torch.is_tensor(s) or s.dtype != torch.uint8:
-                        s = torch.tensor(s, dtype=torch.uint8)
-                    if s.device.type != "cpu":
-                        s = s.cpu()
-                    cuda_states.append(s)
-                torch.cuda.set_rng_state_all(cuda_states)
+            _ckpt, start_epoch, progress = restore_training_checkpoint(
+                resume_path,
+                device=self.device,
+                model_states={"unet_state": self.unet},
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                ema=ema,
+                ema_model=self.unet,
+                restore_rng=True,
+                validate_checkpoint=self._validate_resume_checkpoint,
+            )
+            global_step = progress.global_step
+            best_eval = progress.best_eval
+            best_epoch = progress.best_epoch
+            bad_epochs = progress.bad_epochs
             print(
                 f"[{self._progress_label()} Resume] Resuming from epoch {start_epoch}, "
                 f"global_step={global_step}, best_eval={best_eval:.6f}"
@@ -1123,25 +1105,24 @@ class FlowMatchingTrainer:
         writer = build_summary_writer(log_dir)
 
         def _save_checkpoint(path: str, epoch_idx: int) -> None:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            ckpt = {
-                "epoch": epoch_idx,
-                "global_step": global_step,
-                "unet_state": module_state_dict_cpu(self.unet),
-                "optimizer_state": optimizer_state_dict_cpu(optimizer),
-                "scheduler_state": None if scheduler is None else tensor_tree_to_cpu(scheduler.state_dict()),
-                "scaler_state": None if scaler is None else tensor_tree_to_cpu(scaler.state_dict()),
-                "ema_state": None if ema is None else ema.state_dict(),
-                "best_eval": best_eval,
-                "best_epoch": best_epoch,
-                "bad_epochs": bad_epochs,
-                "rng_state": torch.random.get_rng_state(),
-            }
-            ckpt.update(self._checkpoint_metadata())
-            if torch.cuda.is_available():
-                ckpt["cuda_rng_state_all"] = tensor_tree_to_cpu(torch.cuda.get_rng_state_all())
-            torch.save(ckpt, path)
-            release_cuda_cache()
+            progress = TrainingProgressState(
+                epoch=epoch_idx,
+                global_step=global_step,
+                best_eval=best_eval,
+                best_epoch=best_epoch,
+                bad_epochs=bad_epochs,
+            )
+            ckpt = build_training_checkpoint(
+                model_states={"unet_state": self.unet},
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                ema=ema,
+                progress=progress,
+                extra_metadata=self._checkpoint_metadata(),
+                include_rng=True,
+            )
+            save_training_checkpoint(path, ckpt)
 
         def _set_epoch_for_dataloader(dl: Optional[DataLoader], epoch_idx: int) -> None:
             if dl is None:

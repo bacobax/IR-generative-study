@@ -27,10 +27,10 @@ from tqdm import tqdm
 from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
 from src.conditioning.text_conditioner import TextConditioner
 from src.core.training_utils import (
-    module_state_dict_cpu,
-    optimizer_state_dict_cpu,
-    release_cuda_cache,
-    tensor_tree_to_cpu,
+    TrainingProgressState,
+    build_training_checkpoint,
+    restore_training_checkpoint,
+    save_training_checkpoint,
 )
 from src.models.fm_text_unet import load_text_unet_config, build_text_fm_unet, save_text_unet_config
 from src.core.registry import REGISTRIES
@@ -330,51 +330,32 @@ class TextFMTrainer(FlowMatchingTrainer):
         resume_path = self._resolve_resume_path(resume_from_checkpoint)
         if resume_path is not None:
             print(f"[Resume] Loading checkpoint from {resume_path}")
-            ckpt = torch.load(resume_path, map_location=self.device)
-            self.unet.load_state_dict(ckpt["unet_state"])
-            optimizer.load_state_dict(ckpt["optimizer_state"])
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.to(self.device)
-            start_epoch = ckpt["epoch"] + 1
-            global_step = ckpt["global_step"]
-            best_eval = ckpt.get("best_eval", float("inf"))
-            best_epoch = ckpt.get("best_epoch", -1)
-            bad_epochs = ckpt.get("bad_epochs", 0)
-            if "rng_state" in ckpt:
-                rng_state = ckpt["rng_state"]
-                if not torch.is_tensor(rng_state) or rng_state.dtype != torch.uint8:
-                    rng_state = torch.tensor(rng_state, dtype=torch.uint8)
-                if rng_state.device.type != "cpu":
-                    rng_state = rng_state.cpu()
-                torch.random.set_rng_state(rng_state)
-            if torch.cuda.is_available() and "cuda_rng_state_all" in ckpt:
-                cuda_states = []
-                for s in ckpt["cuda_rng_state_all"]:
-                    if not torch.is_tensor(s) or s.dtype != torch.uint8:
-                        s = torch.tensor(s, dtype=torch.uint8)
-                    if s.device.type != "cpu":
-                        s = s.cpu()
-                    cuda_states.append(s)
-                torch.cuda.set_rng_state_all(cuda_states)
+            _ckpt, start_epoch, progress = restore_training_checkpoint(
+                resume_path,
+                device=self.device,
+                model_states={"unet_state": self.unet},
+                optimizer=optimizer,
+                restore_rng=True,
+            )
+            global_step = progress.global_step
+            best_eval = progress.best_eval
+            best_epoch = progress.best_epoch
+            bad_epochs = progress.bad_epochs
             print(f"[Resume] epoch {start_epoch}, step={global_step}, best_eval={best_eval:.6f}")
 
         writer = SummaryWriter(log_dir)
 
         def _save_checkpoint(path: str, epoch_idx: int) -> None:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            ckpt = {
-                "epoch": epoch_idx,
-                "global_step": global_step,
-                "unet_state": module_state_dict_cpu(self.unet),
-                "optimizer_state": optimizer_state_dict_cpu(optimizer),
-                "best_eval": best_eval,
-                "best_epoch": best_epoch,
-                "bad_epochs": bad_epochs,
+            progress = TrainingProgressState(
+                epoch=epoch_idx,
+                global_step=global_step,
+                best_eval=best_eval,
+                best_epoch=best_epoch,
+                bad_epochs=bad_epochs,
+            )
+            extra_metadata = {
                 "t_scale": self.t_scale,
                 "train_target": self.train_target,
-                "rng_state": torch.random.get_rng_state(),
             }
             # Embed count filter metadata in checkpoint
             cf = getattr(self, "_count_filter_config", None)
@@ -382,14 +363,18 @@ class TextFMTrainer(FlowMatchingTrainer):
                 seen = getattr(cf, "seen_counts", None)
                 unseen = getattr(cf, "unseen_counts", None)
                 if seen is not None or unseen is not None:
-                    ckpt["count_filter"] = {
+                    extra_metadata["count_filter"] = {
                         "seen_counts": list(seen) if seen is not None else None,
                         "unseen_counts": list(unseen) if unseen is not None else None,
                     }
-            if torch.cuda.is_available():
-                ckpt["cuda_rng_state_all"] = tensor_tree_to_cpu(torch.cuda.get_rng_state_all())
-            torch.save(ckpt, path)
-            release_cuda_cache()
+            ckpt = build_training_checkpoint(
+                model_states={"unet_state": self.unet},
+                optimizer=optimizer,
+                progress=progress,
+                extra_metadata=extra_metadata,
+                include_rng=True,
+            )
+            save_training_checkpoint(path, ckpt)
 
         def _set_epoch(dl: Optional[DataLoader], epoch_idx: int) -> None:
             if dl is None:

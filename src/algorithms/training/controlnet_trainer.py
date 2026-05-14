@@ -25,9 +25,12 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.core.training_utils import (
+    TrainingProgressState,
+    build_training_checkpoint,
     module_state_dict_cpu,
-    optimizer_state_dict_cpu,
     release_cuda_cache,
+    restore_training_checkpoint,
+    save_training_checkpoint,
 )
 from src.models.controlnet import (
     ControlNetModel,
@@ -307,20 +310,16 @@ class ControlNetTrainer:
                 f"[Resume] Loading ControlNet checkpoint: "
                 f"{resume_from_checkpoint}"
             )
-            ckpt = torch.load(
-                resume_from_checkpoint, map_location=self.device
+            _ckpt, start_epoch, progress = restore_training_checkpoint(
+                resume_from_checkpoint,
+                device=self.device,
+                model_states={"controlnet_state": self.controlnet},
+                optimizer=optimizer,
             )
-            self.controlnet.load_state_dict(ckpt["controlnet_state"])
-            optimizer.load_state_dict(ckpt["optimizer_state"])
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.to(self.device)
-            start_epoch = ckpt["epoch"] + 1
-            global_step = ckpt["global_step"]
-            best_eval = ckpt.get("best_eval", float("inf"))
-            best_epoch = ckpt.get("best_epoch", -1)
-            bad_epochs = ckpt.get("bad_epochs", 0)
+            global_step = progress.global_step
+            best_eval = progress.best_eval
+            best_epoch = progress.best_epoch
+            bad_epochs = progress.bad_epochs
             print(
                 f"[Resume] epoch={start_epoch}, step={global_step}, "
                 f"best_eval={best_eval:.6f}"
@@ -329,20 +328,23 @@ class ControlNetTrainer:
         writer = SummaryWriter(log_dir)
 
         def _save_checkpoint(path: str, epoch_idx: int) -> None:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            ckpt = {
-                "epoch": epoch_idx,
-                "global_step": global_step,
-                "controlnet_state": module_state_dict_cpu(self.controlnet),
-                "optimizer_state": optimizer_state_dict_cpu(optimizer),
-                "best_eval": best_eval,
-                "best_epoch": best_epoch,
-                "bad_epochs": bad_epochs,
-                "t_scale": self.t_scale,
-                "conditioning_scale": conditioning_scale,
-            }
-            torch.save(ckpt, path)
-            release_cuda_cache()
+            progress = TrainingProgressState(
+                epoch=epoch_idx,
+                global_step=global_step,
+                best_eval=best_eval,
+                best_epoch=best_epoch,
+                bad_epochs=bad_epochs,
+            )
+            ckpt = build_training_checkpoint(
+                model_states={"controlnet_state": self.controlnet},
+                optimizer=optimizer,
+                progress=progress,
+                extra_metadata={
+                    "t_scale": self.t_scale,
+                    "conditioning_scale": conditioning_scale,
+                },
+            )
+            save_training_checkpoint(path, ckpt)
 
         # Grab a small fixed batch of conditioning images for sampling.
         sample_cond = None
