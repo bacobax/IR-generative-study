@@ -27,10 +27,54 @@ T = TypeVar("T")
 # ═══════════════════════════════════════════════════════════════════════════
 
 def load_yaml(path: str | Path) -> Dict[str, Any]:
-    """Load a YAML file and return its contents as a dict."""
-    with open(path, "r") as f:
+    """Load a YAML file and return its effective contents as a dict.
+
+    A YAML file may declare ``extends: parent.yaml`` to inherit from one
+    parent file relative to the child file.  The parent loads first, then
+    the child deep-merges over it.  The ``extends`` key is loader metadata
+    and is not returned in the effective config.
+    """
+    return _load_yaml_with_extends(Path(path), stack=[])
+
+
+def _load_yaml_with_extends(path: Path, stack: list[Path]) -> Dict[str, Any]:
+    resolved = path.expanduser().resolve()
+    if resolved in stack:
+        cycle = stack[stack.index(resolved):] + [resolved]
+        cycle_text = " -> ".join(str(p) for p in cycle)
+        raise ValueError(f"YAML extends cycle detected: {cycle_text}")
+
+    with open(resolved, "r") as f:
         data = yaml.safe_load(f)
-    return data if data is not None else {}
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        return data
+
+    if "extends" not in data:
+        return data
+
+    parent_ref = data["extends"]
+    if not isinstance(parent_ref, str) or not parent_ref.strip():
+        raise ValueError(
+            f"YAML extends in {resolved} must be a non-empty relative path string."
+        )
+
+    parent_path = Path(parent_ref)
+    if parent_path.is_absolute():
+        raise ValueError(
+            f"YAML extends in {resolved} must be relative to the child file, got {parent_ref!r}."
+        )
+
+    parent_resolved = (resolved.parent / parent_path).resolve()
+    if not parent_resolved.is_file():
+        raise FileNotFoundError(
+            f"YAML extends parent not found for {resolved}: {parent_resolved}"
+        )
+
+    parent_data = _load_yaml_with_extends(parent_resolved, stack + [resolved])
+    child_data = {key: value for key, value in data.items() if key != "extends"}
+    return _deep_merge(copy.deepcopy(parent_data), child_data)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
