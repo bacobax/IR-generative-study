@@ -9,13 +9,20 @@ from __future__ import annotations
 
 import math
 import os
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 
 from src.models.regiondiffusion import load_regiondiff_config
 from src.models.regiondiffusion_factory import build_regiondiff_wrapper
+from src.algorithms.inference.sampler_utils import (
+    get_unet_sample_shape,
+    load_checkpoint_state,
+    make_vae_latent_codec,
+    pick_latest_checkpoint,
+    resolve_preferred_or_latest_checkpoint,
+)
 
 if TYPE_CHECKING:
     from diffusers import UNet2DModel
@@ -38,45 +45,7 @@ def validate_t_scale(t_scale: float) -> float:
     return value
 
 
-# ---------------------------------------------------------------------------
-# Pick latest numbered checkpoint in a directory
-# ---------------------------------------------------------------------------
-def _pick_latest(folder: str, prefix: str, suffix: str = ".pt"):
-    import os as _os
-    if not _os.path.isdir(folder):
-        return None
-    best_i, best_path = None, None
-    for fn in _os.listdir(folder):
-        if not (fn.startswith(prefix) and fn.endswith(suffix)):
-            continue
-        mid = fn[len(prefix):-len(suffix)]
-        try:
-            i = int(mid)
-        except ValueError:
-            continue
-        if best_i is None or i > best_i:
-            best_i = i
-            best_path = _os.path.join(folder, fn)
-    return best_path
-
-
-# ---------------------------------------------------------------------------
-# Utility: derive sample shape from a UNet2DModel
-# ---------------------------------------------------------------------------
-def get_unet_sample_shape(
-    unet: UNet2DModel,
-    override: Optional[Tuple[int, int, int]] = None,
-) -> Tuple[int, int, int]:
-    """Return (C, H, W) from the UNet config or an explicit override."""
-    if override is not None:
-        return override
-    in_channels = unet.config.in_channels
-    sample_size = unet.config.sample_size
-    if isinstance(sample_size, Sequence):
-        h, w = sample_size
-    else:
-        h = w = sample_size
-    return (in_channels, h, w)
+_pick_latest = pick_latest_checkpoint
 
 
 def _maybe_wrap_regiondiff_unet(
@@ -179,17 +148,8 @@ class FlowMatchingSampler:
         **kwargs,
     ) -> "FlowMatchingSampler":
         """Build a sampler wired to a frozen VAE for latent-space sampling."""
-
-        @torch.no_grad()
-        def _encode(x: torch.Tensor) -> torch.Tensor:
-            z_mu, z_sigma = vae.encode(x)
-            return vae.sampling(z_mu, z_sigma)
-
-        @torch.no_grad()
-        def _decode(z: torch.Tensor) -> torch.Tensor:
-            return vae.decode(z)
-
-        return cls(unet, encoder=_encode, decoder=_decode, **kwargs)
+        encoder, decoder = make_vae_latent_codec(vae)
+        return cls(unet, encoder=encoder, decoder=decoder, **kwargs)
 
     # ------------------------------------------------------------------
     # Guidance wiring
@@ -228,44 +188,45 @@ class FlowMatchingSampler:
             load_vae_config as _load_vae_config,
             load_vae_weights as _load_vae_w,
         )
-        import os as _os
 
         device = config.resolved_device()
         pipeline_dir = config.pipeline_dir
-        unet_dir = _os.path.join(pipeline_dir, "UNET")
-        vae_dir = _os.path.join(pipeline_dir, "VAE")
+        unet_dir = os.path.join(pipeline_dir, "UNET")
+        vae_dir = os.path.join(pipeline_dir, "VAE")
 
         # UNet
-        unet_cfg = _load_unet_config(_os.path.join(unet_dir, "config.json"))
+        unet_cfg = _load_unet_config(os.path.join(unet_dir, "config.json"))
         unet = _build_unet(unet_cfg, device=device)
         unet = _maybe_wrap_regiondiff_unet(
             unet,
             pipeline_dir=pipeline_dir,
             backbone_kind="fm_unet2d",
         ).to(device)
-        unet_w = _os.path.join(unet_dir, "unet_fm_best.pt")
-        if not _os.path.isfile(unet_w):
-            unet_w = _pick_latest(unet_dir, "unet_fm_epoch_")
-        if unet_w is None or not _os.path.isfile(unet_w):
+        unet_w = resolve_preferred_or_latest_checkpoint(
+            unet_dir,
+            "unet_fm_best.pt",
+            "unet_fm_epoch_",
+        )
+        if unet_w is None or not os.path.isfile(unet_w):
             raise FileNotFoundError(f"No UNET weights in {unet_dir}")
-        state = torch.load(unet_w, map_location=device)
-        if isinstance(state, dict) and "unet_state" in state:
-            state = state["unet_state"]
+        state = load_checkpoint_state(unet_w, map_location=device)
         unet.load_state_dict(state)
         unet.eval()
 
         # VAE
-        vae_cfg = _load_vae_config(_os.path.join(vae_dir, "config.json"))
+        vae_cfg = _load_vae_config(os.path.join(vae_dir, "config.json"))
         vae = _build_vae(vae_cfg, device=device)
-        vae_w = _os.path.join(vae_dir, "vae_best.pt")
-        if not _os.path.isfile(vae_w):
-            vae_w = _pick_latest(vae_dir, "vae_epoch_")
-        if vae_w is None or not _os.path.isfile(vae_w):
+        vae_w = resolve_preferred_or_latest_checkpoint(
+            vae_dir,
+            "vae_best.pt",
+            "vae_epoch_",
+        )
+        if vae_w is None or not os.path.isfile(vae_w):
             if _is_diffusers_vae_config(vae_cfg):
                 vae_w = None
             else:
                 raise FileNotFoundError(f"No VAE weights in {vae_dir}")
-        if vae_w is not None and _os.path.isfile(vae_w):
+        if vae_w is not None and os.path.isfile(vae_w):
             _load_vae_w(vae, vae_w, map_location=device)
 
         if config.vae_weights is not None:

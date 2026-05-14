@@ -6,10 +6,8 @@ from typing import Dict, Optional, Tuple
 
 import torch
 
-from src.algorithms.inference.flow_matching_sampler import (
-    FlowMatchingSampler,
-    get_unet_sample_shape,
-)
+from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler
+from src.algorithms.inference.sampler_utils import make_vae_latent_codec
 
 
 class LayoutFlowMatchingSampler(FlowMatchingSampler):
@@ -23,17 +21,8 @@ class LayoutFlowMatchingSampler(FlowMatchingSampler):
         **kwargs,
     ) -> "LayoutFlowMatchingSampler":
         """Build a layout sampler wired to a frozen VAE for latent sampling."""
-
-        @torch.no_grad()
-        def _encode(x: torch.Tensor) -> torch.Tensor:
-            z_mu, z_sigma = vae.encode(x)
-            return vae.sampling(z_mu, z_sigma)
-
-        @torch.no_grad()
-        def _decode(z: torch.Tensor) -> torch.Tensor:
-            return vae.decode(z)
-
-        return cls(unet, encoder=_encode, decoder=_decode, **kwargs)
+        encoder, decoder = make_vae_latent_codec(vae)
+        return cls(unet, encoder=encoder, decoder=decoder, **kwargs)
 
     @torch.no_grad()
     def sample_euler_layout(
@@ -44,7 +33,7 @@ class LayoutFlowMatchingSampler(FlowMatchingSampler):
         sample_shape: Optional[Tuple[int, int, int]] = None,
     ) -> torch.Tensor:
         self.unet.eval()
-        shape = get_unet_sample_shape(self.unet, override=sample_shape or self._sample_shape)
+        shape = self._shape(sample_shape)
         batch_size = int(batch["pixel_values"].shape[0])
         z = torch.randn(batch_size, *shape, device=self.device)
         dt = 1.0 / steps

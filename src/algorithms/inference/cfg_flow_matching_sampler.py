@@ -25,7 +25,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 from src.algorithms.inference.flow_matching_sampler import (
     FlowMatchingSampler,
-    get_unet_sample_shape,
+)
+from src.algorithms.inference.sampler_utils import (
+    load_checkpoint_state,
+    make_vae_latent_codec,
+    resolve_preferred_or_latest_checkpoint,
 )
 from src.analysis.cross_attention_maps import (
     AttentionExtractionConfig,
@@ -94,21 +98,13 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
         **kwargs,
     ) -> "CFGFlowMatchingSampler":
         """Build a latent-space CFG sampler wired to a frozen VAE."""
-
-        @torch.no_grad()
-        def _encode(x: torch.Tensor) -> torch.Tensor:
-            z_mu, z_sigma = vae.encode(x)
-            return vae.sampling(z_mu, z_sigma)
-
-        @torch.no_grad()
-        def _decode(z: torch.Tensor) -> torch.Tensor:
-            return vae.decode(z)
+        encoder, decoder = make_vae_latent_codec(vae)
 
         return cls(
             unet,
             conditioner=conditioner,
-            encoder=_encode,
-            decoder=_decode,
+            encoder=encoder,
+            decoder=decoder,
             **kwargs,
         )
 
@@ -145,22 +141,24 @@ class CFGFlowMatchingSampler(FlowMatchingSampler):
         # UNet
         unet_cfg = load_text_unet_config(os.path.join(unet_dir, "config.json"))
         unet = build_text_fm_unet(unet_cfg, device=device)
-        unet_w = os.path.join(unet_dir, "unet_fm_best.pt")
-        if not os.path.isfile(unet_w):
-            from src.algorithms.inference.flow_matching_sampler import _pick_latest
-            unet_w = _pick_latest(unet_dir, "unet_fm_epoch_")
+        unet_w = resolve_preferred_or_latest_checkpoint(
+            unet_dir,
+            "unet_fm_best.pt",
+            "unet_fm_epoch_",
+        )
         if unet_w is None or not os.path.isfile(unet_w):
             raise FileNotFoundError(f"No UNET weights in {unet_dir}")
-        unet.load_state_dict(torch.load(unet_w, map_location=device))
+        unet.load_state_dict(load_checkpoint_state(unet_w, map_location=device))
         unet.eval()
 
         # VAE
         vae_cfg = load_vae_config(os.path.join(vae_dir, "config.json"))
         vae = build_vae_from_config(vae_cfg, device=device)
-        vae_w = os.path.join(vae_dir, "vae_best.pt")
-        if not os.path.isfile(vae_w):
-            from src.algorithms.inference.flow_matching_sampler import _pick_latest
-            vae_w = _pick_latest(vae_dir, "vae_epoch_")
+        vae_w = resolve_preferred_or_latest_checkpoint(
+            vae_dir,
+            "vae_best.pt",
+            "vae_epoch_",
+        )
         if vae_w is not None and os.path.isfile(vae_w):
             load_vae_weights(vae, vae_w, map_location=device)
         if config.vae_weights is not None:
