@@ -8,11 +8,10 @@
 #SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out
 #SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err
 
-set -euo pipefail
-
-PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../lib/common.sh"
+PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
-
 WEIGHTS_DIR="${WEIGHTS_DIR:-artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET}"
 PRESET_PATH="${PRESET_PATH:-configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts/generated/checkpoint_compare/uncond_sd_latent_flir_sd15_512_hflip}"
@@ -28,26 +27,8 @@ OVERWRITE="${OVERWRITE:-0}"
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256}"
 
-cd "${PROJECT_ROOT}"
-mkdir -p "${PROJECT_ROOT}/logs"
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+slurm_init_runtime
 
-if command -v conda >/dev/null 2>&1; then
-    eval "$(conda shell.bash hook)"
-    conda activate "${ENV_NAME}"
-else
-    echo "ERROR: conda not found in PATH"
-    exit 1
-fi
-
-JOB_ID="${SLURM_JOB_ID:-manual}"
-LOG_OUT="${PROJECT_ROOT}/logs/qcmp-uncond-sd-hflip-${JOB_ID}.out"
-LOG_ERR="${PROJECT_ROOT}/logs/qcmp-uncond-sd-hflip-${JOB_ID}.err"
-
-echo "Host: $(hostname)"
-echo "Start time: $(date)"
-echo "Project root: ${PROJECT_ROOT}"
-echo "Conda env: ${ENV_NAME}"
 echo "Run: unconditional latent SD hflip"
 echo "Weights dir: ${WEIGHTS_DIR}"
 echo "Preset path: ${PRESET_PATH}"
@@ -58,44 +39,14 @@ echo "Batch size: ${BATCH_SIZE}"
 echo "Seed: ${SEED}"
 echo "Device: ${DEVICE}"
 echo "Overwrite: ${OVERWRITE}"
-which python
-python --version
-nvidia-smi || true
-
-if [ ! -e "${PROJECT_ROOT}/${WEIGHTS_DIR}" ] && [ ! -e "${WEIGHTS_DIR}" ]; then
-    echo "ERROR: weights dir not found: ${WEIGHTS_DIR}"
-    exit 1
-fi
-if [ ! -f "${PROJECT_ROOT}/${PRESET_PATH}" ] && [ ! -f "${PRESET_PATH}" ]; then
-    echo "ERROR: preset path not found: ${PRESET_PATH}"
-    exit 1
-fi
+slurm_print_python_diagnostics
+slurm_print_gpu_diagnostics
+slurm_require_path "${WEIGHTS_DIR}" "weights dir"
+slurm_require_file "${PRESET_PATH}" "preset path"
 
 EXTRA_ARGS=()
 if [ "${OVERWRITE}" = "1" ] || [ "${OVERWRITE}" = "true" ]; then
     EXTRA_ARGS+=(--overwrite)
 fi
 
-set +e
-/usr/bin/time -v python scripts/standalone/generate_checkpoint_quality_comparison.py \
-  --weights_dir "${WEIGHTS_DIR}" \
-  --preset_path "${PRESET_PATH}" \
-  --output_dir "${OUTPUT_DIR}" \
-  --model_family "${MODEL_FAMILY}" \
-  --split "${SPLIT}" \
-  --max_samples "${MAX_SAMPLES}" \
-  --steps "${STEPS}" \
-  --batch_size "${BATCH_SIZE}" \
-  --seed "${SEED}" \
-  --device "${DEVICE}" \
-  "${EXTRA_ARGS[@]}" \
-  > "${LOG_OUT}" \
-  2> "${LOG_ERR}"
-STATUS=$?
-set -e
-
-echo "Exit code: ${STATUS}"
-echo "Stdout log: ${LOG_OUT}"
-echo "Stderr log: ${LOG_ERR}"
-echo "End time: $(date)"
-exit "${STATUS}"
+slurm_run_timed "${PROJECT_ROOT}/logs/qcmp-uncond-sd-hflip-${JOB_ID}" "Checkpoint quality comparison" --   python scripts/standalone/generate_checkpoint_quality_comparison.py     --weights_dir "${WEIGHTS_DIR}"     --preset_path "${PRESET_PATH}"     --output_dir "${OUTPUT_DIR}"     --model_family "${MODEL_FAMILY}"     --split "${SPLIT}"     --max_samples "${MAX_SAMPLES}"     --steps "${STEPS}"     --batch_size "${BATCH_SIZE}"     --seed "${SEED}"     --device "${DEVICE}"     "${EXTRA_ARGS[@]}" || exit $?

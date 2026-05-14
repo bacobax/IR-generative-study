@@ -8,9 +8,9 @@
 #SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out
 #SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err
 
-set -euo pipefail
-
-PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../lib/common.sh"
+PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="diffusers-dev"
 MIXED_PRECISION="${MIXED_PRECISION:-bf16}"
 STAGE1_NUM_WORKERS="${STAGE1_NUM_WORKERS:-4}"
@@ -31,40 +31,16 @@ if [ "${DEBUG_SEGFAULT:-0}" = "1" ]; then
     STAGE2_NUM_WORKERS=0
 fi
 
-cd "${PROJECT_ROOT}"
-mkdir -p "${PROJECT_ROOT}/logs"
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+slurm_init_runtime
 
-if command -v conda >/dev/null 2>&1; then
-    eval "$(conda shell.bash hook)"
-    conda activate "${ENV_NAME}"
-else
-    echo "ERROR: conda not found in PATH"
-    exit 1
-fi
-
-echo "Host: $(hostname)"
-echo "Start time: $(date)"
-echo "Project root: ${PROJECT_ROOT}"
-echo "Conda env: ${ENV_NAME}"
-echo "CUDA_VISIBLE_DEVICES from Slurm: ${CUDA_VISIBLE_DEVICES:-<unset>}"
-echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
-echo "SLURM_CPUS_PER_TASK: ${SLURM_CPUS_PER_TASK:-<unset>}"
 echo "MIXED_PRECISION: ${MIXED_PRECISION}"
 echo "STAGE1_NUM_WORKERS: ${STAGE1_NUM_WORKERS}"
 echo "STAGE2_NUM_WORKERS: ${STAGE2_NUM_WORKERS}"
 echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
 echo "DEBUG_SEGFAULT: ${DEBUG_SEGFAULT:-0}"
-which python
-python --version
-nvidia-smi || true
+slurm_print_python_diagnostics
+slurm_print_gpu_diagnostics
+slurm_require_file "configs/sd/train/presets/flir_lora_stage1_r8.yaml" "stage-1 config"
+slurm_require_file "configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml" "stage-2 config"
 
-/usr/bin/time -v python scripts/train/run_sd_stage1_then_regiondiff.py \
-  --project-root "${PROJECT_ROOT}" \
-  --stage1-config configs/sd/train/presets/flir_lora_stage1_r8.yaml \
-  --stage2-config configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml \
-  --mixed-precision "${MIXED_PRECISION}" \
-  --stage1-num-workers "${STAGE1_NUM_WORKERS}" \
-  --stage2-num-workers "${STAGE2_NUM_WORKERS}"
-
-echo "End time: $(date)"
+slurm_run_timed "${PROJECT_ROOT}/logs/sd-lora-rdiff-${JOB_ID}" "SD LoRA r8 then RegionDiff" --   python scripts/train/run_sd_stage1_then_regiondiff.py     --project-root "${PROJECT_ROOT}"     --stage1-config configs/sd/train/presets/flir_lora_stage1_r8.yaml     --stage2-config configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml     --mixed-precision "${MIXED_PRECISION}"     --stage1-num-workers "${STAGE1_NUM_WORKERS}"     --stage2-num-workers "${STAGE2_NUM_WORKERS}" || exit $?
