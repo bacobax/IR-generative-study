@@ -82,6 +82,9 @@ For nested dataclass configs (e.g. `FMTrainConfig`), the equivalent is
 | `configs/auxiliary/*/presets/`         | Auxiliary training and analysis tools |
 | `configs/analysis/presets/`            | Analysis scripts                |
 
+Active FM generation presets currently cover plain FM generation; retired
+surprise/GMM-guided FM presets remain archived under `archive/legacy_code/`.
+
 ## YAML Preset Conventions
 
 1. **Only override non-defaults.** Presets contain only values that differ

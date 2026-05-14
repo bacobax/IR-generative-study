@@ -1,0 +1,2504 @@
+{
+  "configs/yolo/exp_a/flir_yolov8l/exp_balanced.yaml": {
+    "data": {
+      "batch_size": 4,
+      "dataset_yaml": "data/derived/yolo-test-ds/balanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8l.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8l",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8l",
+      "experiment_name": "exp_balanced_yolov8l",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8l"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8l/exp_full_train.yaml": {
+    "data": {
+      "batch_size": 4,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8l.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8l",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8l",
+      "experiment_name": "exp_full_train_yolov8l",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8l"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8l/exp_full_train_baseline_a.yaml": {
+    "baseline": {
+      "clip_weight_max": 10.0,
+      "image_score_top_k": 3,
+      "mode": "baseline_a",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "seed": 7
+    },
+    "data": {
+      "batch_size": 4,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8l.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8l",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8l",
+      "experiment_name": "exp_full_train_baseline_a_yolov8l",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8l"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8l/exp_full_train_baseline_b.yaml": {
+    "baseline": {
+      "allow_horizontal_flip": true,
+      "clip_weight_max": 10.0,
+      "crop_max_attempts": 10,
+      "crop_min_rare_box_area_retained": 0.5,
+      "crop_scale_max": 1.0,
+      "crop_scale_min": 0.85,
+      "image_score_top_k": 3,
+      "mode": "baseline_b",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "scale_max": 1.1,
+      "scale_min": 0.9,
+      "seed": 7,
+      "targeted_aug_probability": 0.5,
+      "targeted_aug_rarity_quantile": 0.8,
+      "translate_fraction": 0.05
+    },
+    "data": {
+      "batch_size": 4,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8l.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8l",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8l",
+      "experiment_name": "exp_full_train_baseline_b_yolov8l",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8l"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8l/exp_unbalanced.yaml": {
+    "data": {
+      "batch_size": 4,
+      "dataset_yaml": "data/derived/yolo-test-ds/unbalanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8l.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8l",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8l",
+      "experiment_name": "exp_unbalanced_yolov8l",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8l"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8l/run_exp_a_all.yaml": {
+    "launcher": {
+      "notes": "Run with python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/flir_yolov8l/run_exp_a_all.yaml",
+      "ordered_config_paths": [
+        "configs/yolo/exp_a/flir_yolov8l/exp_balanced.yaml",
+        "configs/yolo/exp_a/flir_yolov8l/exp_unbalanced.yaml",
+        "configs/yolo/exp_a/flir_yolov8l/exp_full_train.yaml",
+        "configs/yolo/exp_a/flir_yolov8l/exp_full_train_baseline_a.yaml",
+        "configs/yolo/exp_a/flir_yolov8l/exp_full_train_baseline_b.yaml"
+      ],
+      "ordered_labels": [
+        "balanced",
+        "unbalanced",
+        "full_train",
+        "full_train_baseline_a",
+        "full_train_baseline_b"
+      ]
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8l",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8l",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8l"
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/exp_balanced.yaml": {
+    "data": {
+      "batch_size": 8,
+      "dataset_yaml": "data/derived/yolo-test-ds/balanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "experiment_name": "exp_balanced_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/exp_full_train.yaml": {
+    "data": {
+      "batch_size": 8,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "experiment_name": "exp_full_train_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/exp_full_train_baseline_a.yaml": {
+    "baseline": {
+      "clip_weight_max": 10.0,
+      "image_score_top_k": 3,
+      "mode": "baseline_a",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "seed": 7
+    },
+    "data": {
+      "batch_size": 8,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "experiment_name": "exp_full_train_baseline_a_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/exp_full_train_baseline_b.yaml": {
+    "baseline": {
+      "allow_horizontal_flip": true,
+      "clip_weight_max": 10.0,
+      "crop_max_attempts": 10,
+      "crop_min_rare_box_area_retained": 0.5,
+      "crop_scale_max": 1.0,
+      "crop_scale_min": 0.85,
+      "image_score_top_k": 3,
+      "mode": "baseline_b",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "scale_max": 1.1,
+      "scale_min": 0.9,
+      "seed": 7,
+      "targeted_aug_probability": 0.5,
+      "targeted_aug_rarity_quantile": 0.8,
+      "translate_fraction": 0.05
+    },
+    "data": {
+      "batch_size": 8,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "experiment_name": "exp_full_train_baseline_b_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/exp_unbalanced.yaml": {
+    "data": {
+      "batch_size": 8,
+      "dataset_yaml": "data/derived/yolo-test-ds/unbalanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "experiment_name": "exp_unbalanced_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/run_exp_a.yaml": {
+    "data": {
+      "balanced_dataset_yaml": "data/derived/yolo-test-ds/balanced.yaml",
+      "batch_size": 8,
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "unbalanced_dataset_yaml": "data/derived/yolo-test-ds/unbalanced.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": true,
+      "split": "val"
+    },
+    "launcher": {
+      "balanced_experiment_name": "exp_balanced_yolov8m",
+      "comparison_filename": "comparison_summary.csv",
+      "full_train_experiment_name": "exp_full_train_yolov8m",
+      "unbalanced_experiment_name": "exp_unbalanced_yolov8m"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 50,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8m/run_exp_a_all.yaml": {
+    "launcher": {
+      "notes": "Run with python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/flir_yolov8m/run_exp_a_all.yaml",
+      "ordered_config_paths": [
+        "configs/yolo/exp_a/flir_yolov8m/exp_balanced.yaml",
+        "configs/yolo/exp_a/flir_yolov8m/exp_unbalanced.yaml",
+        "configs/yolo/exp_a/flir_yolov8m/exp_full_train.yaml",
+        "configs/yolo/exp_a/flir_yolov8m/exp_full_train_baseline_a.yaml",
+        "configs/yolo/exp_a/flir_yolov8m/exp_full_train_baseline_b.yaml"
+      ],
+      "ordered_labels": [
+        "balanced",
+        "unbalanced",
+        "full_train",
+        "full_train_baseline_a",
+        "full_train_baseline_b"
+      ]
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir_yolov8m",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir_yolov8m"
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/exp_balanced.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/balanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "experiment_name": "exp_balanced",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/exp_full_train.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "experiment_name": "exp_full_train",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/exp_full_train_baseline_a.yaml": {
+    "baseline": {
+      "clip_weight_max": 10.0,
+      "image_score_top_k": 3,
+      "mode": "baseline_a",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "seed": 7
+    },
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "experiment_name": "exp_full_train_baseline_a",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/exp_full_train_baseline_b.yaml": {
+    "baseline": {
+      "allow_horizontal_flip": true,
+      "clip_weight_max": 10.0,
+      "crop_max_attempts": 10,
+      "crop_min_rare_box_area_retained": 0.5,
+      "crop_scale_max": 1.0,
+      "crop_scale_min": 0.85,
+      "image_score_top_k": 3,
+      "mode": "baseline_b",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "scale_max": 1.1,
+      "scale_min": 0.9,
+      "seed": 7,
+      "targeted_aug_probability": 0.5,
+      "targeted_aug_rarity_quantile": 0.8,
+      "translate_fraction": 0.05
+    },
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "experiment_name": "exp_full_train_baseline_b",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/exp_unbalanced.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/unbalanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "experiment_name": "exp_unbalanced",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/run_exp_a.yaml": {
+    "data": {
+      "balanced_dataset_yaml": "data/derived/yolo-test-ds/balanced.yaml",
+      "batch_size": 16,
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "unbalanced_dataset_yaml": "data/derived/yolo-test-ds/unbalanced.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": true,
+      "split": "val"
+    },
+    "launcher": {
+      "balanced_experiment_name": "exp_balanced",
+      "comparison_filename": "comparison_summary.csv",
+      "full_train_experiment_name": "exp_full_train",
+      "unbalanced_experiment_name": "exp_unbalanced"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 50,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/flir_yolov8n/run_exp_a_all.yaml": {
+    "launcher": {
+      "notes": "Run with python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/flir/run_exp_a_all.yaml",
+      "ordered_config_paths": [
+        "configs/yolo/exp_a/flir/exp_balanced.yaml",
+        "configs/yolo/exp_a/flir/exp_unbalanced.yaml",
+        "configs/yolo/exp_a/flir/exp_full_train.yaml",
+        "configs/yolo/exp_a/flir/exp_full_train_baseline_a.yaml",
+        "configs/yolo/exp_a/flir/exp_full_train_baseline_b.yaml"
+      ],
+      "ordered_labels": [
+        "balanced",
+        "unbalanced",
+        "full_train",
+        "full_train_baseline_a",
+        "full_train_baseline_b"
+      ]
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/flir/valset",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/flir",
+      "runs_root": "artifacts/runs/yolo/exp_a/flir"
+    }
+  },
+  "configs/yolo/exp_a/v18/exp_balanced.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds_v18/balanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds_v18/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "test"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "experiment_name": "exp_balanced",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/v18/exp_full_train.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds_v18/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds_v18/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "test"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "experiment_name": "exp_full_train",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/v18/exp_full_train_baseline_a.yaml": {
+    "baseline": {
+      "clip_weight_max": 10.0,
+      "image_score_top_k": 3,
+      "mode": "baseline_a",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "seed": 7
+    },
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds_v18/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds_v18/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "test"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "experiment_name": "exp_full_train_baseline_a",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/v18/exp_full_train_baseline_b.yaml": {
+    "baseline": {
+      "allow_horizontal_flip": true,
+      "clip_weight_max": 10.0,
+      "crop_max_attempts": 10,
+      "crop_min_rare_box_area_retained": 0.5,
+      "crop_scale_max": 1.0,
+      "crop_scale_min": 0.85,
+      "image_score_top_k": 3,
+      "mode": "baseline_b",
+      "normalize_weights": true,
+      "rarity_alpha": 1.0,
+      "rarity_eps": 1e-06,
+      "sampler_replacement": true,
+      "scale_max": 1.1,
+      "scale_min": 0.9,
+      "seed": 7,
+      "targeted_aug_probability": 0.5,
+      "targeted_aug_rarity_quantile": 0.8,
+      "translate_fraction": 0.05
+    },
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds_v18/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds_v18/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "test"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "experiment_name": "exp_full_train_baseline_b",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/v18/exp_unbalanced.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds_v18/unbalanced.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds_v18/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "test"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "experiment_name": "exp_unbalanced",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/v18/run_exp_a.yaml": {
+    "data": {
+      "balanced_dataset_yaml": "data/derived/yolo-test-ds_v18/balanced.yaml",
+      "batch_size": 16,
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds_v18/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds_v18/test.yaml",
+      "unbalanced_dataset_yaml": "data/derived/yolo-test-ds_v18/unbalanced.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "save_json": true,
+      "split": "test"
+    },
+    "launcher": {
+      "balanced_experiment_name": "exp_balanced",
+      "comparison_filename": "comparison_summary.csv",
+      "full_train_experiment_name": "exp_full_train",
+      "unbalanced_experiment_name": "exp_unbalanced"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 50,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_a/v18/run_exp_a_all.yaml": {
+    "launcher": {
+      "notes": "Run with python -m src.cli.train_yolo --action run_exp_a_all --config configs/yolo/exp_a/v18/run_exp_a_all.yaml",
+      "ordered_config_paths": [
+        "configs/yolo/exp_a/v18/exp_balanced.yaml",
+        "configs/yolo/exp_a/v18/exp_unbalanced.yaml",
+        "configs/yolo/exp_a/v18/exp_full_train.yaml",
+        "configs/yolo/exp_a/v18/exp_full_train_baseline_a.yaml",
+        "configs/yolo/exp_a/v18/exp_full_train_baseline_b.yaml"
+      ],
+      "ordered_labels": [
+        "balanced",
+        "unbalanced",
+        "full_train",
+        "full_train_baseline_a",
+        "full_train_baseline_b"
+      ]
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_a/v18",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_a/v18",
+      "runs_root": "artifacts/runs/yolo/exp_a/v18"
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/exp_fm_aug.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8m/augmented_yolo",
+      "disable_ultralytics_augmentations": false,
+      "filter": {
+        "batch_size": 64,
+        "checkpoint_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440/checkpoints"
+      },
+      "fm": {
+        "batch_size": 8,
+        "checkpoint_path": "artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512/UNET/unet_fm_epoch_270.pt",
+        "preset_path": "configs/fm/train/presets/stay_layout_latent_flir_sd15_512.yaml",
+        "steps": 20
+      },
+      "generated_dataset_dir": "artifacts/generated/yolo/exp_b/flir_yolov8m/generated_candidates",
+      "invalid_instance_ratio_threshold": 0.6,
+      "mode": "fm_aug"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8m",
+      "experiment_name": "exp_fm_aug",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/exp_plain.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "disable_ultralytics_augmentations": true,
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "plain"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8m",
+      "experiment_name": "exp_plain",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/exp_precomputed_regiondiff_fm_ot_hflip.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8m/augmented_yolo",
+      "disable_ultralytics_augmentations": false,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/generated/yolo/exp_b/precomputed_candidates/regiondiff_fm_ot_hflip"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8m",
+      "experiment_name": "exp_precomputed_regiondiff_fm_ot_hflip",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/exp_precomputed_stay_fm_hflip.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8m/augmented_yolo",
+      "disable_ultralytics_augmentations": false,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/generated/yolo/exp_b/precomputed_candidates/stay_fm_hflip"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8m",
+      "experiment_name": "exp_precomputed_stay_fm_hflip",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/exp_sd_aug_lora.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8m/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "batch_size": 64,
+        "checkpoint_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440/checkpoints"
+      },
+      "generated_dataset_dir": "artifacts/generated/yolo/exp_b/flir_yolov8m/generated_candidates",
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "sd_aug",
+      "sd": {
+        "base_model": "runwayml/stable-diffusion-v1-5",
+        "guidance": 7.5,
+        "lora_dir": "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r128",
+        "max_tries": 25,
+        "precision": "fp16",
+        "prompt_mode": "constant",
+        "sd_steps": 100
+      }
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8m",
+      "experiment_name": "exp_sd_aug_lora",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/exp_sd_aug_unet.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8m/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "batch_size": 64,
+        "checkpoint_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440/checkpoints"
+      },
+      "generated_dataset_dir": "artifacts/generated/yolo/exp_b/flir_yolov8m/generated_candidates",
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "sd_aug",
+      "sd": {
+        "base_model": "runwayml/stable-diffusion-v1-5",
+        "guidance": 7.5,
+        "max_tries": 25,
+        "precision": "fp16",
+        "prompt_mode": "constant",
+        "sd_steps": 100,
+        "stage1_dir": "artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_stage1"
+      }
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8m",
+      "experiment_name": "exp_sd_aug_unet",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8m"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8m/run_exp_b_all.yaml": {
+    "launcher": {
+      "notes": "Run with python3 -m src.cli.train_yolo --action run_exp_b_all --config configs/yolo/exp_b/flir_yolov8m/run_exp_b_all.yaml",
+      "ordered_config_paths": [
+        "configs/yolo/exp_b/flir_yolov8m/exp_plain.yaml"
+      ],
+      "ordered_labels": [
+        "plain"
+      ]
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8m"
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/exp_fm_aug.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 512,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8n/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "batch_size": 64,
+        "checkpoint_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440/checkpoints"
+      },
+      "fm": {
+        "batch_size": 8,
+        "checkpoint_path": "artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512/UNET/unet_fm_epoch_270.pt",
+        "preset_path": "configs/fm/train/presets/stay_layout_latent_flir_sd15_512.yaml",
+        "steps": 50
+      },
+      "generated_dataset_dir": "artifacts/generated/yolo/exp_b/flir_yolov8n/generated_candidates",
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "fm_aug"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8m.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8n",
+      "experiment_name": "exp_fm_aug",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8n"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/exp_plain.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "disable_ultralytics_augmentations": true,
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "plain"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8n",
+      "experiment_name": "exp_plain",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8n"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/exp_precomputed_regiondiff_fm_ot_hflip.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8n/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/generated/yolo/exp_b/precomputed_candidates/regiondiff_fm_ot_hflip"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8n",
+      "experiment_name": "exp_precomputed_regiondiff_fm_ot_hflip",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8n"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/exp_precomputed_stay_fm_hflip.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8n/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/generated/yolo/exp_b/precomputed_candidates/stay_fm_hflip"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8n",
+      "experiment_name": "exp_precomputed_stay_fm_hflip",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8n"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/exp_sd_aug_lora.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8n/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "batch_size": 64,
+        "checkpoint_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440/checkpoints"
+      },
+      "generated_dataset_dir": "artifacts/generated/yolo/exp_b/flir_yolov8n/generated_candidates",
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "sd_aug",
+      "sd": {
+        "base_model": "runwayml/stable-diffusion-v1-5",
+        "guidance": 7.5,
+        "lora_dir": "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r128",
+        "max_tries": 25,
+        "precision": "fp16",
+        "prompt_mode": "constant",
+        "sd_steps": 100
+      }
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8n",
+      "experiment_name": "exp_sd_aug_lora",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8n"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/exp_sd_aug_unet.yaml": {
+    "data": {
+      "batch_size": 16,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 640,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 4
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_hybrid": false,
+      "save_json": true,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/generated/yolo/exp_b/flir_yolov8n/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "batch_size": 64,
+        "checkpoint_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440/checkpoints"
+      },
+      "generated_dataset_dir": "artifacts/generated/yolo/exp_b/flir_yolov8n/generated_candidates",
+      "invalid_instance_ratio_threshold": 0.5,
+      "mode": "sd_aug",
+      "sd": {
+        "base_model": "runwayml/stable-diffusion-v1-5",
+        "guidance": 7.5,
+        "max_tries": 25,
+        "precision": "fp16",
+        "prompt_mode": "constant",
+        "sd_steps": 100,
+        "stage1_dir": "artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_stage1"
+      }
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n",
+      "checkpoints_root": "artifacts/checkpoints/yolo/exp_b/flir_yolov8n",
+      "experiment_name": "exp_sd_aug_unet",
+      "runs_root": "artifacts/runs/yolo/exp_b/flir_yolov8n"
+    },
+    "training": {
+      "backbone_lr_multiplier": 0.1,
+      "backbone_param_prefixes": [
+        "model.0.",
+        "model.1.",
+        "model.2.",
+        "model.3.",
+        "model.4.",
+        "model.5.",
+        "model.6.",
+        "model.7.",
+        "model.8.",
+        "model.9."
+      ],
+      "cos_lr": false,
+      "deterministic": true,
+      "epochs": 100,
+      "freeze_backbone_epochs": 5,
+      "freeze_backbone_layers": 10,
+      "lr0": 0.01,
+      "momentum": 0.937,
+      "optimizer": "SGD",
+      "patience": 20,
+      "seed": 7,
+      "weight_decay": 0.0005
+    }
+  },
+  "configs/yolo/exp_b/flir_yolov8n/run_exp_b_all.yaml": {
+    "launcher": {
+      "notes": "Run with python3 -m src.cli.train_yolo --action run_exp_b_all --config configs/yolo/exp_b/flir_yolov8n/run_exp_b_all.yaml",
+      "ordered_config_paths": [
+        "configs/yolo/exp_b/flir_yolov8n/exp_plain.yaml",
+        "configs/yolo/exp_b/flir_yolov8n/exp_fm_aug.yaml",
+        "configs/yolo/exp_b/flir_yolov8n/exp_sd_aug_lora.yaml",
+        "configs/yolo/exp_b/flir_yolov8n/exp_sd_aug_unet.yaml"
+      ],
+      "ordered_labels": [
+        "plain",
+        "fm_aug",
+        "sd_aug_lora",
+        "sd_aug_unet"
+      ]
+    },
+    "output": {
+      "analysis_root": "artifacts/analysis/yolo/exp_b/flir_yolov8n"
+    }
+  },
+  "configs/yolo/exp_b/smoked_e2e/precomputed_dm.yaml": {
+    "data": {
+      "batch_size": 1,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 64,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 0
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": false,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/smoked_e2e/smoked_yolo/dm_aug/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/smoked_e2e/smoked_synthetic/dm"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/smoked_e2e/smoked_yolo/dm_aug/analysis",
+      "checkpoints_root": "artifacts/smoked_e2e/smoked_yolo/dm_aug/checkpoints",
+      "experiment_name": "smoked_yolo_dm_aug",
+      "runs_root": "artifacts/smoked_e2e/smoked_yolo/dm_aug/runs"
+    },
+    "training": {
+      "backbone_param_prefixes": [],
+      "deterministic": false,
+      "epochs": 1,
+      "freeze_backbone_epochs": 0,
+      "lr0": 0.001,
+      "optimizer": "auto",
+      "patience": 1,
+      "seed": 7
+    }
+  },
+  "configs/yolo/exp_b/smoked_e2e/precomputed_fm.yaml": {
+    "data": {
+      "batch_size": 1,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 64,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 0
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": false,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/smoked_e2e/smoked_yolo/fm_aug/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/smoked_e2e/smoked_synthetic/fm"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/smoked_e2e/smoked_yolo/fm_aug/analysis",
+      "checkpoints_root": "artifacts/smoked_e2e/smoked_yolo/fm_aug/checkpoints",
+      "experiment_name": "smoked_yolo_fm_aug",
+      "runs_root": "artifacts/smoked_e2e/smoked_yolo/fm_aug/runs"
+    },
+    "training": {
+      "backbone_param_prefixes": [],
+      "deterministic": false,
+      "epochs": 1,
+      "freeze_backbone_epochs": 0,
+      "lr0": 0.001,
+      "optimizer": "auto",
+      "patience": 1,
+      "seed": 7
+    }
+  },
+  "configs/yolo/exp_b/smoked_e2e/precomputed_sd15_finetune.yaml": {
+    "data": {
+      "batch_size": 1,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 64,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 0
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": false,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/smoked_e2e/smoked_yolo/sd15_finetune_aug/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/smoked_e2e/smoked_synthetic/sd15_finetune"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/smoked_e2e/smoked_yolo/sd15_finetune_aug/analysis",
+      "checkpoints_root": "artifacts/smoked_e2e/smoked_yolo/sd15_finetune_aug/checkpoints",
+      "experiment_name": "smoked_yolo_sd15_finetune_aug",
+      "runs_root": "artifacts/smoked_e2e/smoked_yolo/sd15_finetune_aug/runs"
+    },
+    "training": {
+      "backbone_param_prefixes": [],
+      "deterministic": false,
+      "epochs": 1,
+      "freeze_backbone_epochs": 0,
+      "lr0": 0.001,
+      "optimizer": "auto",
+      "patience": 1,
+      "seed": 7
+    }
+  },
+  "configs/yolo/exp_b/smoked_e2e/precomputed_sd15_lora.yaml": {
+    "data": {
+      "batch_size": 1,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 64,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 0
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": false,
+      "split": "val"
+    },
+    "experiment_b": {
+      "augmented_yolo_root": "artifacts/smoked_e2e/smoked_yolo/sd15_lora_aug/augmented_yolo",
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "precomputed_aug",
+      "precomputed_dataset_dir": "artifacts/smoked_e2e/smoked_synthetic/sd15_lora"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/smoked_e2e/smoked_yolo/sd15_lora_aug/analysis",
+      "checkpoints_root": "artifacts/smoked_e2e/smoked_yolo/sd15_lora_aug/checkpoints",
+      "experiment_name": "smoked_yolo_sd15_lora_aug",
+      "runs_root": "artifacts/smoked_e2e/smoked_yolo/sd15_lora_aug/runs"
+    },
+    "training": {
+      "backbone_param_prefixes": [],
+      "deterministic": false,
+      "epochs": 1,
+      "freeze_backbone_epochs": 0,
+      "lr0": 0.001,
+      "optimizer": "auto",
+      "patience": 1,
+      "seed": 7
+    }
+  },
+  "configs/yolo/exp_b/smoked_e2e/real_full_train.yaml": {
+    "data": {
+      "batch_size": 1,
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "full_train_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "image_size": 64,
+      "test_dataset_yaml": "data/derived/yolo-test-ds/test.yaml",
+      "workers": 0
+    },
+    "evaluation": {
+      "dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml",
+      "save_json": false,
+      "split": "val"
+    },
+    "experiment_b": {
+      "disable_ultralytics_augmentations": true,
+      "filter": {
+        "enabled": false
+      },
+      "mode": "plain"
+    },
+    "model": {
+      "task": "detect",
+      "weights": "yolov8n.pt"
+    },
+    "output": {
+      "analysis_root": "artifacts/smoked_e2e/smoked_yolo/real_full_train/analysis",
+      "checkpoints_root": "artifacts/smoked_e2e/smoked_yolo/real_full_train/checkpoints",
+      "experiment_name": "smoked_yolo_real_full_train",
+      "runs_root": "artifacts/smoked_e2e/smoked_yolo/real_full_train/runs"
+    },
+    "training": {
+      "backbone_param_prefixes": [],
+      "deterministic": false,
+      "epochs": 1,
+      "freeze_backbone_epochs": 0,
+      "lr0": 0.001,
+      "optimizer": "auto",
+      "patience": 1,
+      "seed": 7
+    }
+  },
+  "configs/yolo/exp_b/synthetic_generation/default.yaml": {
+    "device": "cuda:0",
+    "filter": {
+      "batch_size": 64,
+      "enabled": true,
+      "run_dir": "artifacts/checkpoints/multiclass_foreground_background_filter/runs/multiclass_fgbg_20260415_210440"
+    },
+    "generators": [
+      {
+        "backend": "regiondiff_fm",
+        "batch_size": 8,
+        "checkpoint_path": "artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip_fixed",
+        "name": "regiondiff_fm_ot_hflip_fixed",
+        "preset_path": "configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml",
+        "seed_offset": 100000,
+        "steps": 20
+      },
+      {
+        "backend": "regiondiff_sd",
+        "batch_size": 8,
+        "checkpoint_path": "artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip_fixed_x0",
+        "name": "regiondiff_sd_hflip_fixed_x0",
+        "preset_path": "configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml",
+        "seed_offset": 200000,
+        "steps": 80
+      }
+    ],
+    "max_samples": 10745,
+    "metrics": {
+      "batch_size": 16,
+      "enabled": true,
+      "feature_extractor": "inception",
+      "force": false,
+      "inception": {
+        "normalize": true,
+        "resize_to": 299
+      },
+      "kid": {
+        "seed": 7,
+        "subset_size": 1000,
+        "subsets": 100
+      },
+      "mmd": {
+        "bandwidths": [
+          0.1,
+          1.0,
+          10.0
+        ]
+      }
+    },
+    "output_root": "artifacts/generated/yolo/exp_b/precomputed_candidates",
+    "overwrite": true,
+    "retry": {
+      "enabled": true,
+      "invalid_instance_ratio_threshold": 0.5,
+      "max_tries": 3,
+      "seed_stride": 1000000
+    },
+    "sanity": {
+      "max_crops_per_sheet": 24,
+      "max_images": 24
+    },
+    "seed": 7,
+    "yolo_dataset_yaml": "data/derived/yolo-test-ds/full_train.yaml"
+  }
+}
