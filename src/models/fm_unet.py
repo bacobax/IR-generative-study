@@ -117,5 +117,14 @@ def _read_json(path: str) -> Dict[str, Any]:
 
 # ── registry ──────────────────────────────────────────────────────────────────
 from src.core.registry import REGISTRIES  # noqa: E402
+from src.models.adapters.defaults import NativeModelAdapter  # noqa: E402
 
 REGISTRIES.model_builder.register("default_unet", default=True)(build_fm_unet_from_config)
+if "native_fm_unet" not in REGISTRIES.model_adapter:
+    REGISTRIES.model_adapter.register("native_fm_unet")(
+        NativeModelAdapter(
+            build_fm_unet_from_config,
+            adapter_name="native_fm_unet",
+            component_name="unet",
+        )
+    )

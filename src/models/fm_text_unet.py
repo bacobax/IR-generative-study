@@ -64,5 +64,14 @@ def build_text_fm_unet(
 
 # ── registry ──────────────────────────────────────────────────────────────
 from src.core.registry import REGISTRIES  # noqa: E402
+from src.models.adapters.defaults import NativeModelAdapter  # noqa: E402
 
 REGISTRIES.model_builder.register("text_fm_unet")(build_text_fm_unet)
+if "text_fm_unet" not in REGISTRIES.model_adapter:
+    REGISTRIES.model_adapter.register("text_fm_unet")(
+        NativeModelAdapter(
+            build_text_fm_unet,
+            adapter_name="text_fm_unet",
+            component_name="unet",
+        )
+    )

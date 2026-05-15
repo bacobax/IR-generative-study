@@ -1,7 +1,8 @@
 """Lightweight decorator-based component registry for the FM system.
 
-Provides five named registries so that model builders, trainers, samplers,
-guidance modules, and conditioning modules can be looked up by string name.
+Provides named registries so that model builders, trainers, samplers,
+guidance modules, conditioning modules, and adapter entry points can be looked
+up by string name.
 
 Usage::
 
@@ -100,7 +101,7 @@ class Registry:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class _Registries:
-    """Container holding all five FM-system registries."""
+    """Container holding FM-system registries."""
 
     def __init__(self) -> None:
         self.model_builder = Registry("model_builder")
@@ -108,10 +109,24 @@ class _Registries:
         self.sampler = Registry("sampler")
         self.guidance = Registry("guidance")
         self.conditioning = Registry("conditioning")
+        self.model_adapter = Registry("model_adapter")
+        self.dataset_adapter = Registry("dataset_adapter")
+        self.task_adapter = Registry("task_adapter")
+        self.artifact_loader = Registry("artifact_loader")
 
     def summary(self) -> str:
         lines = []
-        for attr in ("model_builder", "trainer", "sampler", "guidance", "conditioning"):
+        for attr in (
+            "model_builder",
+            "trainer",
+            "sampler",
+            "guidance",
+            "conditioning",
+            "model_adapter",
+            "dataset_adapter",
+            "task_adapter",
+            "artifact_loader",
+        ):
             reg: Registry = getattr(self, attr)
             keys = reg.list()
             default = "__default__" in reg._entries

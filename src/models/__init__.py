@@ -1,1 +1,17 @@
-# src.models - Model definitions (VAE, UNet, ControlNet, adapters, etc.).
+"""Model definitions and extension interfaces."""
+
+from src.models.adapters import (
+    ArtifactLoadRequest,
+    ModelAdapter,
+    ModelAdapterBase,
+    ModelBuildRequest,
+    ModelBundle,
+)
+
+__all__ = [
+    "ArtifactLoadRequest",
+    "ModelAdapter",
+    "ModelAdapterBase",
+    "ModelBuildRequest",
+    "ModelBundle",
+]

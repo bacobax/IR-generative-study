@@ -74,3 +74,28 @@ def supported_dataset_ids(
     """Return the supported dataset ids."""
     active_registry = registry or DEFAULT_DATASET_TARGETS
     return active_registry.keys()
+
+
+def target_to_dataset_build_request(
+    target: DatasetTarget,
+    *,
+    split: str = "train",
+    **options,
+):
+    """Build a dataset adapter request from a resolved dataset target."""
+    from src.core.data.adapters import DatasetBuildRequest
+
+    return DatasetBuildRequest(
+        name=target.dataset_id,
+        dataset_id=target.dataset_id,
+        split=split,
+        root_dir=target.split_dir(split),
+        annotations_path=target.annotations_path(split),
+        options={"normalization_mode": target.normalization_mode, **options},
+        metadata={
+            "dataset_id": target.dataset_id,
+            "root": str(target.root),
+            "split": split,
+            "normalization_mode": target.normalization_mode,
+        },
+    )
