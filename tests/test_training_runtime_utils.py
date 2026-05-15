@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import pytest
 import torch
+from torch.utils.data import DataLoader, Dataset
 
+from src.core.training_runtime import (
+    build_ema,
+    build_lr_scheduler,
+    build_optimizer,
+    set_epoch_for_dataloader,
+    setup_precision,
+)
 from src.core.training_utils import (
     EMAState,
     TrainingProgressState,
@@ -225,3 +233,99 @@ def test_restore_training_checkpoint_validation_runs_before_state_mutation(tmp_p
         )
 
     torch.testing.assert_close(model.weight, original_weight)
+
+
+def test_runtime_build_optimizer_creates_adamw_with_expected_options() -> None:
+    model = torch.nn.Linear(2, 1)
+
+    optimizer = build_optimizer(
+        model.parameters(),
+        optimizer_name="adamw",
+        lr=0.02,
+        weight_decay=0.03,
+        beta1=0.8,
+        beta2=0.9,
+    )
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(0.02)
+    assert optimizer.param_groups[0]["weight_decay"] == pytest.approx(0.03)
+    assert optimizer.param_groups[0]["betas"] == (0.8, 0.9)
+
+
+def test_runtime_build_optimizer_rejects_unknown_optimizer() -> None:
+    model = torch.nn.Linear(2, 1)
+
+    with pytest.raises(ValueError, match="Only 'adamw'"):
+        build_optimizer(model.parameters(), optimizer_name="sgd")
+
+
+def test_runtime_scheduler_delegates_warmup_behavior() -> None:
+    model = torch.nn.Linear(2, 1)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1.0)
+
+    scheduler = build_lr_scheduler(
+        optimizer,
+        scheduler_name="constant_with_warmup",
+        total_steps=4,
+        warmup_ratio=0.5,
+    )
+
+    assert scheduler is not None
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(0.5)
+    scheduler.step()
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1.0)
+
+
+def test_runtime_setup_precision_cpu_is_noop() -> None:
+    precision, scaler = setup_precision("cpu", "auto")
+
+    assert precision.mode == "no"
+    assert precision.enabled is False
+    assert scaler is None
+
+
+def test_runtime_build_ema_respects_enabled_and_decay() -> None:
+    model = torch.nn.Linear(2, 1)
+
+    assert build_ema(model, enabled=False, decay=0.999) is None
+    assert build_ema(model, enabled=True, decay=0.0) is None
+    assert isinstance(build_ema(model, enabled=True, decay=0.9), EMAState)
+
+
+class _EpochTransform:
+    def __init__(self) -> None:
+        self.epochs: list[int] = []
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epochs.append(int(epoch))
+
+
+class _EpochDataset(Dataset):
+    def __init__(self, child: Dataset | None = None) -> None:
+        self.dataset = child
+        self.transform = _EpochTransform()
+        self.epochs: list[int] = []
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epochs.append(int(epoch))
+
+    def __len__(self) -> int:
+        return 1
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        del index
+        return torch.zeros(1)
+
+
+def test_runtime_set_epoch_reaches_nested_datasets_and_transforms() -> None:
+    inner = _EpochDataset()
+    outer = _EpochDataset(child=inner)
+    loader = DataLoader(outer, batch_size=1)
+
+    set_epoch_for_dataloader(loader, 7)
+
+    assert outer.epochs == [7]
+    assert outer.transform.epochs == [7]
+    assert inner.epochs == [7]
+    assert inner.transform.epochs == [7]

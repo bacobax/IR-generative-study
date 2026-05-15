@@ -17,32 +17,33 @@ import re
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
-import torch.nn.functional as F
-from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.algorithms.inference.flow_matching_sampler import FlowMatchingSampler, validate_t_scale
+from src.algorithms.tasks.flow_matching import FlowMatchingTask
 from src.algorithms.training.regiondiff_attention_distillation import (
     RegionDiffAttentionRecorder,
     compute_region_attention_distillation_loss,
     load_regiondiff_attention_teacher,
 )
 from src.core.artifacts import ArtifactManifest, write_artifact_manifest
-from src.core.ot import match_target_batch
 from src.core.training_utils import (
-    EMAState,
     TrainingProgressState,
     autocast_context,
     build_training_checkpoint,
-    build_grad_scaler,
-    build_scheduler,
     build_summary_writer,
     module_state_dict_cpu,
     release_cuda_cache,
     restore_training_checkpoint,
-    resolve_precision_settings,
     save_training_checkpoint,
+)
+from src.core.training_runtime import (
+    build_ema,
+    build_lr_scheduler,
+    build_optimizer,
+    set_epoch_for_dataloader,
+    setup_precision,
 )
 from src.core.visualization.layout_debug import (
     draw_bbox_overlays,
@@ -184,6 +185,12 @@ class FlowMatchingTrainer:
         self._current_global_step = 0
         self._kd_training_enabled = False
         self._last_loss_components: Dict[str, Any] = {}
+        self.flow_task = FlowMatchingTask(
+            train_target=self.train_target,
+            path_mode=self.path_mode,
+            path_solver=self.path_solver,
+            area_loss_fn=self._apply_regiondiff_area_loss_weights,
+        )
 
         # Freeze VAE if present
         if self.vae is not None:
@@ -879,21 +886,11 @@ class FlowMatchingTrainer:
         batch_size: int,
     ) -> Dict[str, Any]:
         """Keep batch-aligned conditioning tensors paired with matched targets."""
-        if permutation is None:
-            return cond_kwargs
-
-        aligned: Dict[str, Any] = {}
-        cpu_permutation = None
-        for key, value in cond_kwargs.items():
-            if torch.is_tensor(value) and value.ndim > 0 and int(value.shape[0]) == int(batch_size):
-                aligned[key] = value.index_select(0, permutation.to(value.device))
-            elif isinstance(value, list) and len(value) == int(batch_size):
-                if cpu_permutation is None:
-                    cpu_permutation = permutation.detach().cpu().tolist()
-                aligned[key] = [value[int(index)] for index in cpu_permutation]
-            else:
-                aligned[key] = value
-        return aligned
+        return FlowMatchingTask.permute_conditioning_kwargs(
+            cond_kwargs,
+            permutation,
+            batch_size,
+        )
 
     def _match_flow_targets_with_permutation(
         self,
@@ -902,22 +899,7 @@ class FlowMatchingTrainer:
         cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Apply the configured path coupling and return targets plus permutation."""
-        del cond_kwargs
-        if self.path_mode == "independent":
-            return x_fm, None
-        if self.path_mode in {"minibatch_ot", "conditional_ot"}:
-            # The base trainer has no condition-dependent cost term. In that case
-            # conditional OT reduces to plain minibatch OT instead of erroring.
-            matched, permutation, _ = match_target_batch(
-                z0,
-                x_fm,
-                solver=self.path_solver,
-            )
-            return matched, permutation
-        raise ValueError(
-            f"Unsupported path_mode={self.path_mode!r}. Expected 'independent', "
-            "'minibatch_ot', or 'conditional_ot'."
-        )
+        return self.flow_task.match_targets_with_permutation(z0, x_fm, cond_kwargs)
 
     def _match_flow_targets(
         self,
@@ -926,8 +908,7 @@ class FlowMatchingTrainer:
         cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
         """Apply the configured path coupling and return the matched targets."""
-        matched, _ = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
-        return matched
+        return self.flow_task.match_targets(z0, x_fm, cond_kwargs)
 
     def _sample_flow_matching_state(
         self,
@@ -937,12 +918,12 @@ class FlowMatchingTrainer:
         """Sample FM path variables and keep layout kwargs aligned to targets."""
         if cond_kwargs is None:
             cond_kwargs = {}
-        B = x_fm.shape[0]
+        batch_size = x_fm.shape[0]
         z0 = torch.randn_like(x_fm)
-        t = torch.rand(B, device=x_fm.device)
+        t = torch.rand(batch_size, device=x_fm.device)
         t_expanded = t[:, None, None, None]
         x_target, target_permutation = self._match_flow_targets_with_permutation(z0, x_fm, cond_kwargs)
-        cond_kwargs = self._permute_conditioning_kwargs(cond_kwargs, target_permutation, B)
+        cond_kwargs = self._permute_conditioning_kwargs(cond_kwargs, target_permutation, batch_size)
 
         zt = (1 - t_expanded) * z0 + t_expanded * x_target
         v_target = x_target - z0
@@ -969,16 +950,9 @@ class FlowMatchingTrainer:
         unet_out: torch.Tensor,
         state: Dict[str, Any],
     ) -> torch.Tensor:
-        t_expanded = state["t_expanded"]
-        if self.train_target == "x0":
-            x0_pred = unet_out
-            v_pred = (x0_pred - state["zt"]) / (1 - t_expanded).clamp(min=1e-5)
-        else:
-            v_pred = unet_out
-
-        loss = F.mse_loss(v_pred.float(), state["v_target"].float(), reduction="none")
-        loss = self._apply_regiondiff_area_loss_weights(loss, state["cond_kwargs"])
-        return loss.mean()
+        self.flow_task.train_target = self.train_target
+        self.flow_task.area_loss_fn = self._apply_regiondiff_area_loss_weights
+        return self.flow_task.loss_from_prediction(unet_out, state)
 
     def _should_apply_attention_kd(self, t: torch.Tensor) -> bool:
         if not self._uses_attention_distillation() or not self._kd_training_enabled:
@@ -1074,9 +1048,6 @@ class FlowMatchingTrainer:
             raise ValueError("eval_dataloader must be provided when using patience early stopping.")
         if patience is not None and eval_every <= 0:
             raise ValueError("eval_every must be > 0 when using patience early stopping.")
-        if str(optimizer_name).lower() != "adamw":
-            raise ValueError(f"Unsupported optimizer_name={optimizer_name!r}. Only 'adamw' is implemented.")
-
         self._ensure_dirs()
         self._save_configs()
         resume_path = self._resolve_resume_path(resume_from_checkpoint)
@@ -1098,9 +1069,8 @@ class FlowMatchingTrainer:
             self.load_unet_weights(pretrained_unet_path, strict=strict_load)
 
         total_steps = max(1, epochs * len(dataloader))
-        precision = resolve_precision_settings(self.device, mixed_precision)
+        precision, scaler = setup_precision(self.device, mixed_precision)
         self._distillation_teacher_torch_dtype = precision.dtype if precision.enabled else None
-        scaler = build_grad_scaler(precision)
         optimizer_params = self.unet.parameters()
         if self._uses_regiondiff_layout():
             optimizer_params = regiondiff_optimizer_param_groups(
@@ -1108,20 +1078,22 @@ class FlowMatchingTrainer:
                 adapter_learning_rate=getattr(self.layout_config, "adapter_learning_rate", lr),
                 backbone_learning_rate=getattr(self.layout_config, "backbone_learning_rate", lr),
             )
-        optimizer = AdamW(
+        optimizer = build_optimizer(
             optimizer_params,
+            optimizer_name=optimizer_name,
             lr=lr,
-            betas=(float(beta1), float(beta2)),
-            weight_decay=float(weight_decay),
+            weight_decay=weight_decay,
+            beta1=beta1,
+            beta2=beta2,
         )
-        scheduler = build_scheduler(
+        scheduler = build_lr_scheduler(
             optimizer,
             scheduler_name=scheduler_name,
             total_steps=total_steps,
             warmup_ratio=warmup_ratio,
             min_lr_ratio=min_lr_ratio,
         )
-        ema = EMAState(self.unet, decay=ema_decay) if ema_enabled and ema_decay > 0.0 else None
+        ema = build_ema(self.unet, enabled=ema_enabled, decay=ema_decay)
         if self._uses_attention_distillation():
             self._ensure_attention_teacher(torch_dtype=self._distillation_teacher_torch_dtype)
 
@@ -1177,18 +1149,6 @@ class FlowMatchingTrainer:
             )
             save_training_checkpoint(path, ckpt)
 
-        def _set_epoch_for_dataloader(dl: Optional[DataLoader], epoch_idx: int) -> None:
-            if dl is None:
-                return
-            current = getattr(dl, "dataset", None)
-            while current is not None:
-                if hasattr(current, "set_epoch"):
-                    current.set_epoch(epoch_idx)
-                transform = getattr(current, "transform", None)
-                if transform is not None and hasattr(transform, "set_epoch"):
-                    transform.set_epoch(epoch_idx)
-                current = getattr(current, "dataset", None)
-
         early_sanity_sample_epoch = int(early_sanity_sample_epoch)
         sampler_obj = self._make_sampler() if sample_every > 0 or early_sanity_sample_epoch > 0 else None
         fixed_batch = None
@@ -1207,8 +1167,8 @@ class FlowMatchingTrainer:
             )
 
         for epoch in range(start_epoch, epochs):
-            _set_epoch_for_dataloader(dataloader, epoch)
-            _set_epoch_for_dataloader(eval_dataloader, epoch)
+            set_epoch_for_dataloader(dataloader, epoch)
+            set_epoch_for_dataloader(eval_dataloader, epoch)
             self.unet.train()
             total_loss = 0.0
 

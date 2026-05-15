@@ -389,10 +389,19 @@ class FMTrainConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     count_filter: CountFilterConfig = field(default_factory=CountFilterConfig)
+    architecture_mode: str = "legacy"
     # Registry component names (None → use default)
     trainer_name: Optional[str] = None
     sampler_name: Optional[str] = None
     device: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.architecture_mode = str(self.architecture_mode or "legacy")
+        if self.architecture_mode not in {"legacy", "adapter_v1"}:
+            raise ValueError(
+                "architecture_mode must be 'legacy' or 'adapter_v1', "
+                f"got {self.architecture_mode!r}"
+            )
 
     def resolved_device(self) -> str:
         if self.device is not None:
@@ -508,6 +517,7 @@ class FMTrainConfig:
                 model_dir=args.model_dir,
                 resume=args.resume,
             ),
+            architecture_mode=getattr(args, "architecture_mode", "legacy"),
         )
 
 

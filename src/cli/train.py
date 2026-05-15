@@ -22,9 +22,10 @@ from torch.utils.data import DataLoader
 from src.core.configs.fm_config import FMTrainConfig
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.normalization import norm_to_display as from_norm_to_display
-from src.core.data import collate_layout_batch
+from src.core.data import DatasetBuildRequest, collate_layout_batch
 from src.core.data.datasets import AnnotationLayoutDataset
 from src.core.data.training_data import (
+    NonLayoutTrainingData,
     ResolvedTrainingData,
     apply_dataset_subset,
     build_non_layout_dataloaders,
@@ -81,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     # Config file (optional)
     parser.add_argument("--config", type=str, default=None,
                         help="Path to YAML config file. CLI flags override config values.")
+    parser.add_argument("--architecture_mode", type=str, default="legacy",
+                        choices=["legacy", "adapter_v1"],
+                        help="Opt-in construction mode. Defaults to legacy behavior.")
 
     # Data paths
     parser.add_argument("--dataset_id", type=str, default=None,
@@ -335,6 +339,7 @@ _FLAT_TO_NESTED = {
     "sample_batch_size":   "sampling.sample_batch_size",
     # Device
     "device":              "device",
+    "architecture_mode":   "architecture_mode",
 }
 
 
@@ -346,6 +351,62 @@ def _resolve_training_data(cfg: FMTrainConfig) -> ResolvedTrainingData:
 def _apply_subset(dataset, max_samples: Optional[int], strategy: str):
     """Apply a deterministic debug subset without disturbing sample order."""
     return apply_dataset_subset(dataset, max_samples, strategy)
+
+
+def _build_adapter_v1_non_layout_data(
+    cfg: FMTrainConfig,
+    *,
+    resolved_data: ResolvedTrainingData,
+    total_epochs: int,
+) -> NonLayoutTrainingData:
+    """Resolve adapter metadata, then build existing non-layout loaders."""
+    dataset_id = getattr(cfg.data, "dataset_id", None)
+    if dataset_id:
+        for split in ("train", "val"):
+            adapter = REGISTRIES.dataset_adapter.get(str(dataset_id))
+            adapter.build(
+                DatasetBuildRequest(
+                    dataset_id=str(dataset_id),
+                    split=split,
+                    options={"task": "fm_non_layout"},
+                )
+            )
+
+    return build_non_layout_dataloaders(
+        data_config=cfg.data,
+        augment_config=cfg.augment,
+        curriculum_config=cfg.curriculum,
+        total_epochs=total_epochs,
+        resolved_data=resolved_data,
+    )
+
+
+def _build_adapter_v1_trainer(cfg: FMTrainConfig):
+    """Build the experimental non-layout FM trainer through model adapters."""
+    from src.algorithms.training.flow_matching_trainer import FlowMatchingTrainer
+    from src.models.adapters.fm import FMModelAdapter
+
+    device = cfg.resolved_device()
+    model_bundle = FMModelAdapter().build_from_train_config(cfg, device=device)
+    fm_adapter = model_bundle.components["fm_adapter"]
+    return FlowMatchingTrainer(
+        fm_adapter.unet,
+        device=device,
+        t_scale=cfg.training.t_scale,
+        train_target=cfg.training.train_target,
+        model_dir=cfg.output.model_dir,
+        from_norm_to_display=from_norm_to_display,
+        unet_config=fm_adapter.unet_config,
+        vae=fm_adapter.vae,
+        vae_config=fm_adapter.vae_config,
+        path_mode=getattr(cfg.path, "mode", "independent"),
+        path_solver=getattr(cfg.path, "solver", "hungarian"),
+        layout_cost_resolution=getattr(cfg.path, "layout_cost_resolution", 16),
+        condition_weight=getattr(cfg.path, "condition_weight", 1.0),
+        layout_config=None,
+        regiondiff_trainability_info=None,
+        distillation_config=getattr(cfg, "distillation", None),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -363,6 +424,12 @@ def run_training(cfg: FMTrainConfig) -> None:
     resolved_data = _resolve_training_data(cfg)
     layout_enabled = bool(cfg.layout_conditioning.enabled)
     layout_variant = str(getattr(cfg.layout_conditioning, "variant", "raster_v1"))
+    architecture_mode = str(getattr(cfg, "architecture_mode", "legacy"))
+    if architecture_mode == "adapter_v1" and layout_enabled:
+        raise ValueError(
+            "architecture_mode='adapter_v1' is only supported for FM non-layout training. "
+            "Disable layout_conditioning or use architecture_mode='legacy'."
+        )
 
     # Propagate total_epochs into curriculum config
     if cfg.curriculum.enabled:
@@ -441,13 +508,20 @@ def run_training(cfg: FMTrainConfig) -> None:
         )
         use_annotation_ds = True
     else:
-        non_layout = build_non_layout_dataloaders(
-            data_config=cfg.data,
-            augment_config=cfg.augment,
-            curriculum_config=cfg.curriculum,
-            total_epochs=total_epochs,
-            resolved_data=resolved_data,
-        )
+        if architecture_mode == "adapter_v1":
+            non_layout = _build_adapter_v1_non_layout_data(
+                cfg,
+                resolved_data=resolved_data,
+                total_epochs=total_epochs,
+            )
+        else:
+            non_layout = build_non_layout_dataloaders(
+                data_config=cfg.data,
+                augment_config=cfg.augment,
+                curriculum_config=cfg.curriculum,
+                total_epochs=total_epochs,
+                resolved_data=resolved_data,
+            )
         train_dataset = non_layout.train_dataset
         eval_dataset = non_layout.eval_dataset
         train_loader = non_layout.train_loader
@@ -455,8 +529,11 @@ def run_training(cfg: FMTrainConfig) -> None:
         use_annotation_ds = non_layout.use_annotation_ds
 
     # ── Resolve trainer class through registry ──
-    TrainerCls = REGISTRIES.trainer.get(cfg.trainer_name)
-    trainer = TrainerCls.from_config(cfg, from_norm_to_display=from_norm_to_display)
+    if architecture_mode == "adapter_v1":
+        trainer = _build_adapter_v1_trainer(cfg)
+    else:
+        TrainerCls = REGISTRIES.trainer.get(cfg.trainer_name)
+        trainer = TrainerCls.from_config(cfg, from_norm_to_display=from_norm_to_display)
 
     # ── Save transform examples for fresh runs ──
     if cfg.output.resume is None and not use_annotation_ds:
