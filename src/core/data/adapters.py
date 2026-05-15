@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
+from src.core.data.annotations import build_category_id_to_name, load_coco_annotations
 from src.core.data.schema import CanonicalBatch, CanonicalSample, SampleKeys
 from src.core.registry import REGISTRIES
 
@@ -61,6 +62,74 @@ class DatasetAdapter(Protocol):
 
     def build(self, request: DatasetBuildRequest) -> DatasetBundle:
         """Build a dataset bundle from a structured request."""
+
+
+@dataclass(frozen=True)
+class RepoDatasetAdapter:
+    """Adapter for repo-native split/annotation based datasets."""
+
+    dataset_id: str
+    root: Path
+    normalization_mode: str
+
+    def split_dir(self, split: str) -> Path:
+        """Return the directory for one dataset split."""
+        return self.root / str(split)
+
+    def annotations_path(self, split: str) -> Path:
+        """Return the canonical COCO annotations path for one split."""
+        return self.split_dir(split) / "annotations.json"
+
+    def category_metadata(self, split: str) -> dict[int, str]:
+        """Return COCO category metadata when split annotations are present."""
+        annotations_path = self.annotations_path(split)
+        if not annotations_path.is_file():
+            return {}
+        return build_category_id_to_name(load_coco_annotations(annotations_path))
+
+    def collate_fn_for_task(self, task: str | None) -> Callable[..., Any] | None:
+        """Return the task-specific collate function, when one is defined."""
+        if task is None:
+            return None
+        normalized_task = str(task).lower().replace("-", "_")
+        if normalized_task in {"layout", "fm_layout", "layout_fm"}:
+            from src.core.data.layout_batching import collate_layout_batch
+
+            return collate_layout_batch
+        if normalized_task in {"sd_layout", "stable_diffusion_layout"}:
+            from src.algorithms.stable_diffusion.layout_data import collate_sd_layout_batch
+
+            return collate_sd_layout_batch
+        return None
+
+    def build(self, request: DatasetBuildRequest) -> DatasetBundle:
+        """Resolve repo-native dataset metadata without building dataset objects."""
+        options = dict(request.options or {})
+        split = str(request.split or options.pop("split", "train"))
+        task = options.pop("task", options.pop("collate_task", None))
+        split_dir = self.split_dir(split)
+        annotations_path = self.annotations_path(split)
+        category_id_to_name = self.category_metadata(split)
+        collate_fn = self.collate_fn_for_task(task)
+
+        metadata = dict(request.metadata or {})
+        metadata.update(
+            {
+                "dataset_id": self.dataset_id,
+                "root": str(self.root),
+                "split": split,
+                "split_dir": str(split_dir),
+                "annotations_path": str(annotations_path),
+                "normalization_mode": self.normalization_mode,
+                "category_id_to_name": category_id_to_name,
+            }
+        )
+        return DatasetBundle(
+            collate_fn=collate_fn,
+            normalization_mode=self.normalization_mode,
+            adapter_name=self.dataset_id,
+            metadata=metadata,
+        )
 
 
 def _metadata_with_aliases(sample: Mapping[str, Any]) -> dict[str, Any]:
@@ -146,6 +215,7 @@ class RepoDatasetTargetAdapter:
         if not dataset_id:
             raise ValueError("repo_dataset_target adapter requires dataset_id or name")
         target = resolve_dataset_target(str(dataset_id))
+        options = dict(request.options or {})
         metadata = dict(request.metadata or {})
         metadata.update(
             {
@@ -154,10 +224,14 @@ class RepoDatasetTargetAdapter:
                 "split": request.split,
                 "split_dir": str(target.split_dir(request.split)),
                 "annotations_path": str(target.annotations_path(request.split)),
+                "category_id_to_name": target.category_metadata(request.split),
             }
         )
         return DatasetBundle(
             dataset=target,
+            collate_fn=target.collate_fn_for_task(
+                options.get("task") or options.get("collate_task")
+            ),
             normalization_mode=target.normalization_mode,
             adapter_name="repo_dataset_target",
             metadata=metadata,
