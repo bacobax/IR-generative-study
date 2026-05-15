@@ -12,10 +12,15 @@ from src.models.adapters.defaults import (
     NativeModelAdapter,
     RegistryModelBuilderAdapter,
 )
+from src.models.adapters.diffusers import DiffusersModelAdapter
+from src.models.adapters.fm import BuiltFMModelAdapter, FMModelAdapter
 
 __all__ = [
     "ArtifactLoadRequest",
+    "BuiltFMModelAdapter",
+    "DiffusersModelAdapter",
     "ExternalModelWrapperAdapter",
+    "FMModelAdapter",
     "ModelAdapter",
     "ModelAdapterBase",
     "ModelBuildRequest",

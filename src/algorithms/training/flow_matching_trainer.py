@@ -48,7 +48,7 @@ from src.core.visualization.layout_debug import (
     render_class_layout,
     save_image_batch,
 )
-from src.models.fm_unet import save_unet_config, load_unet_config, build_fm_unet_from_config
+from src.models.fm_unet import save_unet_config
 from src.models.regiondiffusion import build_area_weight_map
 from src.models.regiondiffusion_factory import (
     build_regiondiff_wrapper,
@@ -391,32 +391,18 @@ class FlowMatchingTrainer:
         from_norm_to_display : callable, optional
             Override display normalisation if needed.
         """
-        from src.models.vae import build_vae_from_config, resolve_vae_config_from_model_config
+        from src.models.adapters.fm import FMModelAdapter
 
         device = config.resolved_device() if hasattr(config, "resolved_device") else (
             "cuda" if torch.cuda.is_available() else "cpu"
         )
 
-        unet_cfg = load_unet_config(config.model.unet_config)
-        vae_cfg = None
-        vae = None
-
-        if (
-            getattr(config.model, "vae_config", None) is not None
-            or getattr(config.model, "vae_pretrained_model_name_or_path", None) is not None
-        ):
-            vae_cfg = resolve_vae_config_from_model_config(config.model)
-            resolved_sample_size = _resolve_unet_sample_size(config, vae_cfg)
-        else:
-            resolved_sample_size = int(getattr(config.data, "image_size", unet_cfg.get("sample_size")))
-
-        if resolved_sample_size is not None:
-            unet_cfg = dict(unet_cfg)
-            unet_cfg["sample_size"] = resolved_sample_size
-
-        unet = build_fm_unet_from_config(unet_cfg, device=device)
-        if vae_cfg is not None:
-            vae = build_vae_from_config(vae_cfg, device=device)
+        model_bundle = FMModelAdapter().build_from_train_config(config, device=device)
+        fm_adapter = model_bundle.components["fm_adapter"]
+        unet = fm_adapter.unet
+        vae = fm_adapter.vae
+        unet_cfg = fm_adapter.unet_config
+        vae_cfg = fm_adapter.vae_config
 
         layout_config = getattr(config, "layout_conditioning", None)
         regiondiff_trainability_info = None
