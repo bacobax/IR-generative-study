@@ -12,6 +12,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from src.algorithms.inference import regiondiff_smoke_generation as production_generation
+from src.algorithms.inference.regiondiff import audit_filtering, backend_loaders, generation_backends, orchestration
 from src.algorithms.inference.regiondiff_smoke_generation import (
     compute_metric_summary_from_features,
     export_generated_candidate_dataset,
@@ -27,6 +28,13 @@ from src.algorithms.training.yolo_experiment_b import (
     validate_experiment_b_config,
 )
 from src.core.configs.yolo_experiment_config import YOLOExperimentConfig
+
+
+def test_regiondiff_facade_preserves_backend_registry_identity() -> None:
+    assert production_generation.GENERATOR_BACKENDS is generation_backends.GENERATOR_BACKENDS
+    assert production_generation.STREAMING_GENERATOR_BACKENDS is generation_backends.STREAMING_GENERATOR_BACKENDS
+    assert orchestration.GENERATOR_BACKENDS is generation_backends.GENERATOR_BACKENDS
+    assert production_generation.generate_production_synthetic_datasets is orchestration.generate_production_synthetic_datasets
 
 
 def _write_png(path: Path, value: int = 32) -> None:
@@ -347,7 +355,7 @@ def test_metrics_only_uses_existing_images_without_generation(tmp_path: Path, mo
         lambda **_kwargs: pytest.fail("metrics-only must not call the generator backend"),
     )
     monkeypatch.setattr(
-        production_generation,
+        audit_filtering,
         "compute_distribution_metrics",
         lambda **_kwargs: {"enabled": True, "sentinel": "metrics"},
     )
@@ -424,7 +432,7 @@ def test_regiondiff_sd_layout_streaming_backend_uses_prompts_and_label_map(
             return SimpleNamespace(images=[Image.fromarray(np.full((16, 16, 3), 128, dtype=np.uint8))])
 
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "_load_stage2_layout_pipeline",
         lambda **_kwargs: (
             FakePipeline(),
@@ -563,9 +571,9 @@ def test_generation_retries_images_above_invalid_instance_ratio_threshold(
         return {"filtered_annotation_summary": filtered_summary}, instance_rows, image_rows
 
     monkeypatch.setitem(production_generation.GENERATOR_BACKENDS, "retry_fake", _fake_backend)
-    monkeypatch.setattr(production_generation, "_load_filter", _fake_load_filter)
-    monkeypatch.setattr(production_generation, "_audit_dataset_with_loaded_filter", _fake_audit_dataset_with_loaded_filter)
-    monkeypatch.setattr(production_generation, "_export_loaded_filter_audit_results", lambda **_kwargs: None)
+    monkeypatch.setattr(audit_filtering, "_load_filter", _fake_load_filter)
+    monkeypatch.setattr(audit_filtering, "_audit_dataset_with_loaded_filter", _fake_audit_dataset_with_loaded_filter)
+    monkeypatch.setattr(audit_filtering, "_export_loaded_filter_audit_results", lambda **_kwargs: None)
     config = {
         "yolo_dataset_yaml": str(dataset_yaml),
         "output_root": str(output_root),
@@ -636,8 +644,8 @@ def test_stay_backend_reconstructs_from_checkpoint_only_artifact(tmp_path: Path,
     captured: dict[str, object] = {}
     dummy_unet = DummyUnet()
 
-    monkeypatch.setattr(production_generation, "load_unet_config", lambda _path: {"in_channels": 4})
-    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(backend_loaders, "load_unet_config", lambda _path: {"in_channels": 4})
+    monkeypatch.setattr(backend_loaders, "_build_vae_from_preset", lambda _preset, device: "vae")
 
     def _fake_build_stay(unet_cfg, **kwargs):  # noqa: ANN001
         captured["stay_kwargs"] = kwargs
@@ -649,7 +657,7 @@ def test_stay_backend_reconstructs_from_checkpoint_only_artifact(tmp_path: Path,
         captured["sampler_vae"] = vae
         return "stay_sampler"
 
-    monkeypatch.setattr(production_generation, "build_stay_layout_conditioned_unet", _fake_build_stay)
+    monkeypatch.setattr(backend_loaders, "build_stay_layout_conditioned_unet", _fake_build_stay)
     monkeypatch.setattr(production_generation.LayoutFlowMatchingSampler, "from_stable", classmethod(_fake_from_stable))
 
     sampler, image_size = production_generation._load_stay_sampler(
@@ -719,12 +727,12 @@ def test_stay_backend_uses_training_latent_size_with_pretrained_vae(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "load_unet_config",
         lambda _path: {"sample_size": 128, "in_channels": 4, "out_channels": 4},
     )
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "load_diffusers_vae_config",
         lambda *_args, **_kwargs: {
             "_backend": "diffusers_autoencoder_kl",
@@ -737,13 +745,13 @@ def test_stay_backend_uses_training_latent_size_with_pretrained_vae(
             ],
         },
     )
-    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(backend_loaders, "_build_vae_from_preset", lambda _preset, device: "vae")
 
     def _fake_build_stay(unet_cfg, **kwargs):  # noqa: ANN001
         captured["unet_cfg"] = unet_cfg
         return DummyUnet()
 
-    monkeypatch.setattr(production_generation, "build_stay_layout_conditioned_unet", _fake_build_stay)
+    monkeypatch.setattr(backend_loaders, "build_stay_layout_conditioned_unet", _fake_build_stay)
     monkeypatch.setattr(
         production_generation.LayoutFlowMatchingSampler,
         "from_stable",
@@ -804,17 +812,17 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
     dummy_wrapper = DummyWrapper()
 
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "load_unet_config",
         lambda _path: {"in_channels": 4},
     )
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "build_fm_unet_from_config",
         lambda _cfg, device: "base_unet",
     )
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "_build_vae_from_preset",
         lambda _preset, device: "vae",
     )
@@ -829,7 +837,7 @@ def test_regiondiff_backend_reconstructs_from_checkpoint_only_artifact(tmp_path:
         captured["sampler_vae"] = vae
         return "regiondiff_sampler"
 
-    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", _fake_build_regiondiff)
+    monkeypatch.setattr(backend_loaders, "build_regiondiff_wrapper", _fake_build_regiondiff)
     monkeypatch.setattr(production_generation.FlowMatchingSampler, "from_stable", classmethod(_fake_from_stable))
 
     sampler, image_size, label_id_map = production_generation._load_regiondiff_sampler(
@@ -911,12 +919,12 @@ def test_regiondiff_backend_uses_training_latent_size_with_pretrained_vae(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "load_unet_config",
         lambda _path: {"sample_size": 128, "in_channels": 4, "out_channels": 4},
     )
     monkeypatch.setattr(
-        production_generation,
+        backend_loaders,
         "load_diffusers_vae_config",
         lambda *_args, **_kwargs: {
             "_backend": "diffusers_autoencoder_kl",
@@ -934,9 +942,9 @@ def test_regiondiff_backend_uses_training_latent_size_with_pretrained_vae(
         captured["unet_cfg"] = unet_cfg
         return "base_unet"
 
-    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", _fake_build_fm)
-    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
-    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", lambda **_kwargs: DummyWrapper())
+    monkeypatch.setattr(backend_loaders, "build_fm_unet_from_config", _fake_build_fm)
+    monkeypatch.setattr(backend_loaders, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(backend_loaders, "build_regiondiff_wrapper", lambda **_kwargs: DummyWrapper())
     monkeypatch.setattr(
         production_generation.FlowMatchingSampler,
         "from_stable",
@@ -1007,10 +1015,10 @@ def test_regiondiff_sd_backend_reconstructs_from_checkpoint_only_artifact(
     captured: dict[str, object] = {}
     dummy_wrapper = DummyWrapper()
 
-    monkeypatch.setattr(production_generation, "load_unet_config", lambda _path: {"in_channels": 4})
-    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
-    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
-    monkeypatch.setattr(production_generation, "import_diffusers_attr", lambda *_args: DummyScheduler)
+    monkeypatch.setattr(backend_loaders, "load_unet_config", lambda _path: {"in_channels": 4})
+    monkeypatch.setattr(backend_loaders, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
+    monkeypatch.setattr(backend_loaders, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(backend_loaders, "import_diffusers_attr", lambda *_args: DummyScheduler)
 
     def _fake_build_regiondiff(**kwargs):  # noqa: ANN003
         captured["regiondiff_kwargs"] = kwargs
@@ -1023,7 +1031,7 @@ def test_regiondiff_sd_backend_reconstructs_from_checkpoint_only_artifact(
         captured["sampler_kwargs"] = kwargs
         return "regiondiff_sd_sampler"
 
-    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", _fake_build_regiondiff)
+    monkeypatch.setattr(backend_loaders, "build_regiondiff_wrapper", _fake_build_regiondiff)
     monkeypatch.setattr(
         production_generation.UnconditionalStableDiffusionSampler,
         "from_stable",
@@ -1089,15 +1097,15 @@ def test_regiondiff_backend_maps_compact_labels_to_checkpoint_classes(
 
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(production_generation, "load_unet_config", lambda _path: {"in_channels": 4})
-    monkeypatch.setattr(production_generation, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
-    monkeypatch.setattr(production_generation, "_build_vae_from_preset", lambda _preset, device: "vae")
+    monkeypatch.setattr(backend_loaders, "load_unet_config", lambda _path: {"in_channels": 4})
+    monkeypatch.setattr(backend_loaders, "build_fm_unet_from_config", lambda _cfg, device: "base_unet")
+    monkeypatch.setattr(backend_loaders, "_build_vae_from_preset", lambda _preset, device: "vae")
 
     def _fake_build_regiondiff(**kwargs):  # noqa: ANN003
         captured["regiondiff_kwargs"] = kwargs
         return DummyWrapper()
 
-    monkeypatch.setattr(production_generation, "build_regiondiff_wrapper", _fake_build_regiondiff)
+    monkeypatch.setattr(backend_loaders, "build_regiondiff_wrapper", _fake_build_regiondiff)
     monkeypatch.setattr(
         production_generation.FlowMatchingSampler,
         "from_stable",
