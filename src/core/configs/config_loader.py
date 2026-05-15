@@ -126,6 +126,53 @@ def dict_to_dataclass(cls: Type[T], data: Dict[str, Any]) -> T:
     return cls(**kwargs)
 
 
+def dict_to_dataclass_strict(
+    cls: Type[T],
+    data: Dict[str, Any],
+    *,
+    path: str = "<root>",
+) -> T:
+    """Instantiate a dataclass and reject unknown keys with dotted paths."""
+    if not isinstance(data, dict):
+        raise TypeError(f"{path} must be a mapping for {cls.__name__}, got {type(data).__name__}")
+
+    field_map = {f.name: f for f in fields(cls)}
+    unknown = sorted(key for key in data if key not in field_map)
+    if unknown:
+        joined = ", ".join(f"{path}.{key}" if path != "<root>" else key for key in unknown)
+        raise ValueError(f"Unknown key(s) in experimental config: {joined}")
+
+    kwargs = {}
+    for key, val in data.items():
+        actual_type = _resolve_field_type(cls, key)
+        child_path = f"{path}.{key}" if path != "<root>" else key
+        if actual_type is not None and is_dataclass(actual_type):
+            kwargs[key] = dict_to_dataclass_strict(actual_type, val, path=child_path)
+        else:
+            kwargs[key] = val
+    return cls(**kwargs)
+
+
+def is_experimental_config_shape(data: Any) -> bool:
+    """Return True when a YAML payload declares the future config shape."""
+    return (
+        isinstance(data, dict)
+        and data.get("kind") == "experimental_training_config"
+    )
+
+
+def load_experimental_config(path: str | Path):
+    """Load and strictly validate an experimental training config."""
+    from src.core.configs.future_spec import ExperimentalConfigSpec
+
+    data = load_yaml(path)
+    if not is_experimental_config_shape(data):
+        raise ValueError(
+            f"Expected experimental config kind='experimental_training_config' in {path}."
+        )
+    return dict_to_dataclass_strict(ExperimentalConfigSpec, data)
+
+
 def _resolve_field_type(cls: Type, field_name: str):
     """Return the concrete type of a dataclass field, or None."""
     import sys

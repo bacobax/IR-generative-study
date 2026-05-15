@@ -28,6 +28,7 @@ from src.algorithms.training.regiondiff_attention_distillation import (
     compute_region_attention_distillation_loss,
     load_regiondiff_attention_teacher,
 )
+from src.core.artifacts import ArtifactManifest, write_artifact_manifest
 from src.core.ot import match_target_batch
 from src.core.training_utils import (
     EMAState,
@@ -516,6 +517,72 @@ class FlowMatchingTrainer:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.vae_config, f, indent=2, sort_keys=True)
         self._save_additional_configs()
+        write_artifact_manifest(self.model_dir, self._build_artifact_manifest())
+
+    def _build_artifact_manifest(self) -> ArtifactManifest:
+        layout_variant = None
+        if self.layout_config is not None:
+            layout_variant = getattr(self.layout_config, "variant", None)
+
+        components: Dict[str, Any] = {}
+        if self.unet_config is not None:
+            components["unet"] = {
+                "kind": "unet",
+                "config": "UNET/config.json",
+            }
+        if self.vae_config is not None:
+            components["vae"] = {
+                "kind": "vae",
+                "config": "VAE/config.json",
+            }
+
+        adapters = []
+        if layout_variant:
+            adapters.append(
+                {
+                    "kind": "layout_conditioning",
+                    "variant": str(layout_variant),
+                    "trainability": self.regiondiff_trainability_info,
+                }
+            )
+
+        base_model = None
+        if isinstance(self.vae_config, dict):
+            base_model = (
+                self.vae_config.get("pretrained_model_name_or_path")
+                or self.vae_config.get("_pretrained_model_name_or_path")
+            )
+
+        return ArtifactManifest(
+            schema_version=1,
+            model_kind="native_fm_unet",
+            model_family="flow_matching",
+            base_model=base_model,
+            components=components,
+            adapters=adapters,
+            task={
+                "kind": "flow_matching",
+                "train_target": self.train_target,
+                "t_scale": self.t_scale,
+                "path_mode": self.path_mode,
+                "path_solver": self.path_solver,
+                "layout_conditioning": str(layout_variant) if layout_variant else None,
+            },
+            dataset={},
+            normalization={},
+            checkpoints={
+                "best": os.path.join("UNET", f"{self._checkpoint_stem()}_best.pt"),
+                "epoch_pattern": os.path.join("UNET", f"{self._checkpoint_stem()}_epoch_{{epoch}}.pt"),
+                "resume_pattern": os.path.join("UNET", f"{self._checkpoint_stem()}_epoch_{{epoch}}_ckpt.pt"),
+            },
+            metadata={
+                "checkpoint_metadata": self._checkpoint_metadata(),
+                "legacy_config_files": {
+                    "unet": "UNET/config.json" if self.unet_config is not None else None,
+                    "vae": "VAE/config.json" if self.vae_config is not None else None,
+                },
+            },
+        )
 
     # ------------------------------------------------------------------
     # Weight I/O

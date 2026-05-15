@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from src.core.configs.config_loader import load_yaml, merge_config_and_cli
+from src.cli.train import build_parser
+from src.core.configs.config_loader import (
+    is_experimental_config_shape,
+    load_experimental_config,
+    load_yaml,
+    merge_config_and_cli,
+)
+from src.core.configs.fm_config import FMTrainConfig
 
 
 @dataclass
@@ -174,3 +181,82 @@ nested:
     assert cfg.count == 9
     assert cfg.nested.depth == 4
     assert cfg.nested.label == "child"
+
+
+def test_old_fm_yaml_still_parses_through_permissive_loader() -> None:
+    config_path = "configs/fm/train/default.yaml"
+    parser = build_parser()
+    args = parser.parse_args(["--config", config_path])
+
+    cfg = merge_config_and_cli(
+        FMTrainConfig,
+        config_path,
+        parser,
+        args,
+        cli_argv=["--config", config_path],
+    )
+
+    assert cfg.training.train_target == "v"
+    assert cfg.model.unet_config == "configs/models/fm/stable_unet_config.json"
+
+
+def test_old_config_path_still_ignores_unknown_keys(tmp_path: Path) -> None:
+    config_path = _write_yaml(
+        tmp_path / "legacy_extra.yaml",
+        """
+unknown_top_level: ok_for_legacy
+nested:
+  depth: 5
+  ignored: true
+""",
+    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config")
+    args = parser.parse_args(["--config", str(config_path)])
+
+    cfg = merge_config_and_cli(TinyConfig, config_path, parser, args)
+
+    assert cfg.nested.depth == 5
+    assert not hasattr(cfg, "unknown_top_level")
+    assert not hasattr(cfg.nested, "ignored")
+
+
+def test_experimental_config_yaml_parses_strict_shape() -> None:
+    config_path = "configs/fm/train/presets/experimental/hf_diffusers_flir.yaml"
+
+    raw = load_yaml(config_path)
+    cfg = load_experimental_config(config_path)
+
+    assert is_experimental_config_shape(raw)
+    assert cfg.kind == "experimental_training_config"
+    assert cfg.model.kind == "hf_diffusers"
+    assert cfg.dataset.kind == "flir"
+    assert cfg.artifact.manifest_name == "artifact_manifest.json"
+
+
+def test_experimental_config_rejects_unknown_key_with_dotted_path(tmp_path: Path) -> None:
+    config_path = _write_yaml(
+        tmp_path / "bad_experimental.yaml",
+        """
+kind: experimental_training_config
+schema_version: 1
+model:
+  kind: hf_diffusers
+  family: stable_diffusion
+  unexpected_model_key: nope
+dataset:
+  kind: flir
+transform:
+  kind: resize_normalize
+task:
+  kind: flow_matching
+runtime:
+  kind: local_runtime
+artifact:
+  kind: artifact_bundle
+  output_dir: artifacts/test
+""",
+    )
+
+    with pytest.raises(ValueError, match="model\\.unexpected_model_key"):
+        load_experimental_config(config_path)

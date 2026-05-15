@@ -1,0 +1,46 @@
+kind: experimental_training_config
+schema_version: 1
+
+model:
+  kind: hf_diffusers
+  family: stable_diffusion
+  base_model: runwayml/stable-diffusion-v1-5
+  components:
+    unet:
+      source: configs/models/fm/stable_unet_x4_512.json
+    vae:
+      source: runwayml/stable-diffusion-v1-5
+      subfolder: vae
+  adapters: []
+
+dataset:
+  kind: flir
+  dataset_id: flir_private_proxy_alignment_v18
+  image_size: 512
+  train_split: train
+  val_split: val
+  annotations: coco
+
+transform:
+  kind: resize_normalize
+  normalization: flir_thermal_minus_one_to_one
+  horizontal_flip:
+    max_probability: 0.6
+
+task:
+  kind: flow_matching
+  target: v
+  t_scale: 100.0
+  conditioning: stay_v2
+
+runtime:
+  kind: local_runtime
+  device: cuda:0
+  batch_size: 8
+  epochs: 400
+  mixed_precision: auto
+
+artifact:
+  kind: artifact_bundle
+  output_dir: artifacts/checkpoints/flow_matching/serious_runs/experimental_hf_diffusers_flir
+  manifest_name: artifact_manifest.json
