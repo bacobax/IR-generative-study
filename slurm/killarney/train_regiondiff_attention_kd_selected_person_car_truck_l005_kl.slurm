@@ -72,4 +72,4 @@ if [ -n "${RESUME}" ]; then
   TRAIN_ARGS+=(--resume "${RESUME}")
 fi
 
-slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-attn-kd-selected-l005-${JOB_ID}" "RegionDiff attention KD selected-category FM" --   python -m src.cli.train "${TRAIN_ARGS[@]}" || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-attn-kd-selected-l005-${JOB_ID}" "RegionDiff attention KD selected-category FM" --   python -m src.cli.train_flow_matching "${TRAIN_ARGS[@]}" || exit $?

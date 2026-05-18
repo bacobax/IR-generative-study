@@ -10,16 +10,16 @@ intermediate latent features.
 Baseline scratch FM + RegionDiff remains:
 
 ```bash
-python -m src.cli.train --config configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
 ```
 
 Attention-KD ablations:
 
 ```bash
-python -m src.cli.train --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l001.yaml
-python -m src.cli.train --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l005.yaml
-python -m src.cli.train --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l010.yaml
-python -m src.cli.train --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l001.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l005.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l010.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml
 ```
 
 The default teacher path in the KD presets is:
@@ -37,7 +37,7 @@ artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2
 Use a CLI override if needed:
 
 ```bash
-python -m src.cli.train \
+python -m src.cli.train_flow_matching \
   --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l005.yaml \
   --distillation_teacher_checkpoint artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2
 ```
@@ -93,7 +93,7 @@ Compare all-category KD against selected `person`, `car`, `truck` KD.
 
 ## Assumptions
 
-The active student path is `src.cli.train` with `FlowMatchingTrainer` and
+The active student path is `src.cli.train_flow_matching` with `FlowMatchingTrainer` and
 `layout_conditioning.variant: regiondiff_v1`.
 
 FM and teacher latents are treated as compatible because the latent presets use

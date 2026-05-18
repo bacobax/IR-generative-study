@@ -59,6 +59,7 @@ class TrainingConfig:
     prompt_text: Optional[str] = DEFAULT_PROMPT_TEXT
     generic_prompt: bool = False
     max_train_samples: Optional[int] = None
+    subset_manifest: Optional[str] = None
     cache_dir: Optional[str] = None
 
     # Image preprocessing
@@ -181,6 +182,12 @@ class TrainingConfig:
         """Validate configuration parameters."""
         if self.dataset_name is None and self.train_data_dir is None and self.dataset_id is None:
             raise ValueError("Need either dataset_id, dataset_name, or train_data_dir.")
+
+        if self.subset_manifest is not None and self.dataset_name is not None:
+            raise ValueError(
+                "subset_manifest is only supported for local repo datasets, "
+                "not Hugging Face dataset_name inputs."
+            )
 
         if self.dataset_id is not None and self.dataset_id not in set(supported_dataset_ids()):
             raise ValueError(
@@ -408,6 +415,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use the legacy fixed generic surveillance prompt.",
     )
     data_group.add_argument("--max_train_samples", type=int, default=None)
+    data_group.add_argument(
+        "--subset_manifest",
+        type=str,
+        default=None,
+        help="Optional manifest selecting the local training split subset.",
+    )
     data_group.add_argument("--cache_dir", type=str, default=None)
 
     preprocess_group = parser.add_argument_group("Image Preprocessing")

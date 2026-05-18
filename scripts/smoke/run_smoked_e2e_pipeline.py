@@ -48,7 +48,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/fm/train/presets/smoked_e2e/uncond_latent_fm.yaml",
             output_dir="artifacts/smoked_e2e/smoked_fm_uncond",
             checkpoint_path="artifacts/smoked_e2e/smoked_fm_uncond/UNET/unet_fm_epoch_1.pt",
-            command=[_py(), "-m", "src.cli.train", "--config", "configs/fm/train/presets/smoked_e2e/uncond_latent_fm.yaml", "--device", device],
+            command=[_py(), "-m", "src.cli.train_flow_matching", "--config", "configs/fm/train/presets/smoked_e2e/uncond_latent_fm.yaml", "--device", device],
             expected_paths=["artifacts/smoked_e2e/smoked_fm_uncond/UNET/unet_fm_epoch_1.pt"],
         ),
         SmokeStage(
@@ -57,7 +57,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/sd_uncond/train/presets/smoked_e2e/uncond_latent_dm.yaml",
             output_dir="artifacts/smoked_e2e/smoked_dm_uncond",
             checkpoint_path="artifacts/smoked_e2e/smoked_dm_uncond/UNET/unet_sd_uncond_epoch_1.pt",
-            command=[_py(), "-m", "src.cli.train_sd_uncond", "--config", "configs/sd_uncond/train/presets/smoked_e2e/uncond_latent_dm.yaml", "--device", device],
+            command=[_py(), "-m", "src.cli.train_latent_diffusion", "--config", "configs/sd_uncond/train/presets/smoked_e2e/uncond_latent_dm.yaml", "--device", device],
             expected_paths=["artifacts/smoked_e2e/smoked_dm_uncond/UNET/unet_sd_uncond_epoch_1.pt"],
         ),
         SmokeStage(
@@ -66,7 +66,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/sd/train/presets/smoked_e2e/sd15_finetune.yaml",
             output_dir="artifacts/smoked_e2e/smoked_sd15_finetune",
             checkpoint_path="artifacts/smoked_e2e/smoked_sd15_finetune/checkpoint-1",
-            command=[_py(), "-m", "src.cli.train_sd", "--config", "configs/sd/train/presets/smoked_e2e/sd15_finetune.yaml"],
+            command=[_py(), "-m", "src.cli.adapt_stable_diffusion", "--config", "configs/sd/train/presets/smoked_e2e/sd15_finetune.yaml"],
             expected_paths=["artifacts/smoked_e2e/smoked_sd15_finetune/checkpoint-1", "artifacts/smoked_e2e/smoked_sd15_finetune/unet"],
         ),
         SmokeStage(
@@ -75,7 +75,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/sd/train/presets/smoked_e2e/sd15_lora.yaml",
             output_dir="artifacts/smoked_e2e/smoked_sd15_lora",
             checkpoint_path="artifacts/smoked_e2e/smoked_sd15_lora/checkpoint-1",
-            command=[_py(), "-m", "src.cli.train_sd", "--config", "configs/sd/train/presets/smoked_e2e/sd15_lora.yaml"],
+            command=[_py(), "-m", "src.cli.adapt_stable_diffusion", "--config", "configs/sd/train/presets/smoked_e2e/sd15_lora.yaml"],
             expected_paths=["artifacts/smoked_e2e/smoked_sd15_lora/checkpoint-1", "artifacts/smoked_e2e/smoked_sd15_lora/pytorch_lora_weights.safetensors"],
         ),
         SmokeStage(
@@ -85,7 +85,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/fm/train/presets/smoked_e2e/regiondiff_from_fm.yaml",
             output_dir="artifacts/smoked_e2e/smoked_regiondiff_fm",
             checkpoint_path="artifacts/smoked_e2e/smoked_regiondiff_fm/UNET/unet_fm_epoch_1.pt",
-            command=[_py(), "-m", "src.cli.train", "--config", "configs/fm/train/presets/smoked_e2e/regiondiff_from_fm.yaml", "--device", device],
+            command=[_py(), "-m", "src.cli.train_flow_matching", "--config", "configs/fm/train/presets/smoked_e2e/regiondiff_from_fm.yaml", "--device", device],
             expected_paths=["artifacts/smoked_e2e/smoked_regiondiff_fm/UNET/unet_fm_epoch_1.pt", "artifacts/smoked_e2e/smoked_regiondiff_fm/regiondiff_config.json"],
         ),
         SmokeStage(
@@ -95,7 +95,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/sd_uncond/train/presets/smoked_e2e/regiondiff_from_dm.yaml",
             output_dir="artifacts/smoked_e2e/smoked_regiondiff_dm",
             checkpoint_path="artifacts/smoked_e2e/smoked_regiondiff_dm/UNET/unet_sd_uncond_epoch_1.pt",
-            command=[_py(), "-m", "src.cli.train_sd_uncond", "--config", "configs/sd_uncond/train/presets/smoked_e2e/regiondiff_from_dm.yaml", "--device", device],
+            command=[_py(), "-m", "src.cli.train_latent_diffusion", "--config", "configs/sd_uncond/train/presets/smoked_e2e/regiondiff_from_dm.yaml", "--device", device],
             expected_paths=["artifacts/smoked_e2e/smoked_regiondiff_dm/UNET/unet_sd_uncond_epoch_1.pt", "artifacts/smoked_e2e/smoked_regiondiff_dm/regiondiff_config.json"],
         ),
         SmokeStage(
@@ -105,7 +105,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/sd_layout/train/presets/smoked_e2e/regiondiff_from_sd15_finetune.yaml",
             output_dir="artifacts/smoked_e2e/smoked_regiondiff_sd15_finetune",
             checkpoint_path="artifacts/smoked_e2e/smoked_regiondiff_sd15_finetune/regiondiff_unet.safetensors",
-            command=[_py(), "-m", "src.cli.train_sd_layout", "--config", "configs/sd_layout/train/presets/smoked_e2e/regiondiff_from_sd15_finetune.yaml"],
+            command=[_py(), "-m", "src.cli.adapt_stable_diffusion", "--config", "configs/sd_layout/train/presets/smoked_e2e/regiondiff_from_sd15_finetune.yaml"],
             expected_paths=["artifacts/smoked_e2e/smoked_regiondiff_sd15_finetune/regiondiff_unet.safetensors", "artifacts/smoked_e2e/smoked_regiondiff_sd15_finetune/stage2_layout_manifest.json"],
         ),
         SmokeStage(
@@ -115,7 +115,7 @@ def _stage_definitions(device: str) -> list[SmokeStage]:
             config_path="configs/sd_layout/train/presets/smoked_e2e/regiondiff_from_sd15_lora.yaml",
             output_dir="artifacts/smoked_e2e/smoked_regiondiff_sd15_lora",
             checkpoint_path="artifacts/smoked_e2e/smoked_regiondiff_sd15_lora/regiondiff_unet.safetensors",
-            command=[_py(), "-m", "src.cli.train_sd_layout", "--config", "configs/sd_layout/train/presets/smoked_e2e/regiondiff_from_sd15_lora.yaml"],
+            command=[_py(), "-m", "src.cli.adapt_stable_diffusion", "--config", "configs/sd_layout/train/presets/smoked_e2e/regiondiff_from_sd15_lora.yaml"],
             expected_paths=["artifacts/smoked_e2e/smoked_regiondiff_sd15_lora/regiondiff_unet.safetensors", "artifacts/smoked_e2e/smoked_regiondiff_sd15_lora/stage2_layout_manifest.json"],
         ),
         _synthetic_stage("fm", "regiondiff_fm", device),

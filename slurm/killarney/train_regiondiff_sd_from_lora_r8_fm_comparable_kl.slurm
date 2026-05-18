@@ -61,4 +61,4 @@ if [ -n "${RESUME_FROM_CHECKPOINT}" ]; then
   RESUME_ARGS=(--resume_from_checkpoint "${RESUME_FROM_CHECKPOINT}")
 fi
 
-slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-sd-lora-r8-fm-comparable-${JOB_ID}" "RegionDiff SD-layout from LoRA r8" --   python -m src.cli.train_sd_layout     --config "${CONFIG}"     --mixed_precision "${MIXED_PRECISION}"     --num_workers "${NUM_WORKERS}"     "${RESUME_ARGS[@]}" || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-sd-lora-r8-fm-comparable-${JOB_ID}" "RegionDiff SD-layout from LoRA r8" --   python -m src.cli.adapt_stable_diffusion     --config "${CONFIG}"     --mixed_precision "${MIXED_PRECISION}"     --num_workers "${NUM_WORKERS}"     "${RESUME_ARGS[@]}" || exit $?

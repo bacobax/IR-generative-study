@@ -35,6 +35,7 @@ from src.core.data.annotations import (
     load_coco_annotations,
     sample_person_crop,
 )
+from src.core.data.subset_manifest import filter_files_by_subset_manifest
 from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
 
 
@@ -97,6 +98,7 @@ class AnnotationFMDataset(Dataset):
         transform: Optional[Callable] = None,
         resize_target: int = 256,
         normalization_mode: str = RAW_UINT16_PERCENTILE,
+        subset_manifest: Optional[str] = None,
     ):
         self.root_dir = root_dir
         self.text_mode = text_mode
@@ -114,6 +116,12 @@ class AnnotationFMDataset(Dataset):
 
         # Collect .npy files
         all_files = sorted(f for f in os.listdir(root_dir) if f.endswith(".npy"))
+        all_files = filter_files_by_subset_manifest(
+            all_files,
+            subset_manifest,
+            split_dir=root_dir,
+            context="AnnotationFMDataset",
+        )
         if not all_files:
             raise RuntimeError(f"No .npy files found in {root_dir}")
 

@@ -6,6 +6,7 @@ data:
   image_size: 512
   batch_size: 32
   num_workers: 4
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/stable_unet_x4_512.json"

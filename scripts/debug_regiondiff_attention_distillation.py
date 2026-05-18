@@ -24,7 +24,7 @@ from src.algorithms.training.regiondiff_attention_distillation import (
     compute_region_attention_distillation_loss,
     load_regiondiff_attention_teacher,
 )
-from src.cli.train import _FLAT_TO_NESTED, build_parser as build_train_parser
+from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser as build_train_parser
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.configs.fm_config import FMTrainConfig
 from src.core.data.datasets import AnnotationLayoutDataset

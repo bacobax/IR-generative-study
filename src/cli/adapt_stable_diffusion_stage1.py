@@ -1,14 +1,11 @@
-"""Modular CLI entrypoint for Stage-1 Stable Diffusion IR adaptation.
+"""Stage-1 Stable Diffusion 1.5 IR adaptation implementation.
 
-This module is the **source of truth** for launching SD 1.5 LoRA training.
-The root-level ``train_sd.py`` is a thin compatibility wrapper that forwards
-to :func:`main` here.
+This module is invoked by ``src.cli.adapt_stable_diffusion`` when
+``--stage stage1`` is selected.
 
 Usage::
 
-    python -m src.cli.train_sd --pretrained_model_name_or_path runwayml/stable-diffusion-v1-5 ...
-    # or via the legacy wrapper:
-    python train_sd.py ...
+    python -m src.cli.adapt_stable_diffusion --stage stage1 --config configs/sd/train/default.yaml
 """
 
 from __future__ import annotations
@@ -48,11 +45,11 @@ from src.core.gpu_utils import get_least_used_cuda_gpu
 check_min_version("0.37.0.dev0")
 
 
-def main():
+def main(argv=None):
     """Main SD IR adaptation training function."""
     # Parse arguments first (before accelerator init)
     print("Parsing arguments...")
-    config = parse_args()
+    config = parse_args(argv)
     config.output_dir = get_canonical_output_dir(config)
 
     # Setup accelerator
@@ -134,6 +131,7 @@ def main():
                 thermal_scene_suffix="in thermal scene.",
                 use_captions_if_available=False,
                 max_samples=config.max_train_samples,
+                subset_manifest=config.subset_manifest,
             )
             config.layout_category_id_to_name = dict(layout_dataset.category_id_to_name)
             from torch.utils.data import DataLoader
@@ -164,6 +162,7 @@ def main():
                 batch_size=config.train_batch_size,
                 num_workers=config.dataloader_num_workers,
                 max_train_samples=config.max_train_samples,
+                subset_manifest=config.subset_manifest,
                 seed=config.seed,
                 use_ir_preprocessing=config.use_ir_preprocessing,
                 prompt_text=config.resolved_training_prompt_text(),

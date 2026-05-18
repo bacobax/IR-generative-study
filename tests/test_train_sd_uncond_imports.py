@@ -21,14 +21,14 @@ def test_train_sd_uncond_cli_imports() -> None:
     """Ensure pip-installed runtime dependencies for the CLI are available.
 
     Importing the CLI module exercises the same transitive imports needed to
-    start `src/cli/train_sd_uncond.py` before argument parsing and training.
+    start `src/cli/train_latent_diffusion.py` before argument parsing and training.
     """
 
     try:
-        import_module("src.cli.train_sd_uncond")
+        import_module("src.cli.train_latent_diffusion")
     except Exception as exc:  # pragma: no cover - surfaces missing deps directly
         raise AssertionError(
-            "Importing `src.cli.train_sd_uncond` failed. "
+            "Importing `src.cli.train_latent_diffusion` failed. "
             "A required runtime dependency is likely missing from the current "
             f"Python environment.\n{exc.__class__.__name__}: {exc}"
         ) from exc

@@ -9,6 +9,7 @@ data:
   annotations_path: "data/raw/v18/train/annotations.json"
   batch_size: 8
   num_workers: 4
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/stable_unet_config.json"

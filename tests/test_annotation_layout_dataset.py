@@ -129,6 +129,34 @@ def test_annotation_layout_dataset_handles_empty_annotations() -> None:
         assert sample["label_names"] == []
 
 
+def test_annotation_layout_dataset_uses_subset_manifest_order(tmp_path) -> None:
+    img_dir, annotations_path = _make_layout_test_data(str(tmp_path))
+    manifest = tmp_path / "subsets" / "train_layout.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"path": "empty.npy"},
+                    {"path": "annotated.npy"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    ds = AnnotationLayoutDataset(
+        root_dir=img_dir,
+        annotations_path=annotations_path,
+        image_size=128,
+        normalization_mode=UINT8_LINEAR,
+        subset_manifest=str(manifest),
+    )
+
+    assert ds.files == ["empty.npy", "annotated.npy"]
+    assert ds[0]["file_name"] == "empty.npy"
+
+
 def test_annotation_layout_dataset_horizontal_flip_mirrors_boxes() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         img_dir, annotations_path = _make_layout_test_data(tmpdir)

@@ -77,6 +77,10 @@ class DoctorContext:
     def smoke_outputs(self) -> Path:
         return self.artifact_root / "outputs"
 
+    @property
+    def smoke_subset_manifest(self) -> Path:
+        return self.smoke_data / "subsets" / "train_first2.json"
+
 
 class Tee:
     """Write terminal output to stdout and a log file."""
@@ -288,6 +292,20 @@ def prepare_sandbox(ctx: DoctorContext) -> None:
     shutil.copytree(ctx.smoke_data / "generated_a", gen_root / "generator_a")
     shutil.copytree(ctx.smoke_data / "generated_b", gen_root / "generator_b")
 
+    ctx.smoke_subset_manifest.parent.mkdir(parents=True, exist_ok=True)
+    ctx.smoke_subset_manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"path": "sample_00002.npy"},
+                    {"path": "sample_00000.npy"},
+                ]
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
 
 def _base_fm_overrides(ctx: DoctorContext, name: str) -> dict[str, Any]:
     output = ctx.smoke_outputs / name
@@ -302,6 +320,7 @@ def _base_fm_overrides(ctx: DoctorContext, name: str) -> dict[str, Any]:
             "num_workers": 0,
             "max_train_samples": 2,
             "max_val_samples": 2,
+            "subset_manifest": str(ctx.smoke_subset_manifest),
         },
         "training": {
             "epochs": 1,
@@ -381,6 +400,7 @@ def make_smoke_config(ctx: DoctorContext, family: str, config_path: Path) -> Pat
                 "num_train_epochs": 1,
                 "max_train_steps": 1,
                 "max_train_samples": 2,
+                "subset_manifest": str(ctx.smoke_subset_manifest),
                 "dataloader_num_workers": 0,
                 "validation_epochs": 99,
                 "num_validation_images": 1,
@@ -490,7 +510,7 @@ def make_smoke_config(ctx: DoctorContext, family: str, config_path: Path) -> Pat
 
 
 def smoke_fm_entrypoint(config_path: Path) -> str:
-    cli = importlib.import_module("src.cli.train")
+    cli = importlib.import_module("src.cli.train_flow_matching")
 
     def fake_run(cfg):
         assert cfg.data.batch_size == 1
@@ -500,11 +520,11 @@ def smoke_fm_entrypoint(config_path: Path) -> str:
 
     with patched_attr(cli, "run_training", fake_run):
         cli.main(["--config", str(config_path)])
-    return "parsed src.cli.train and invoked patched run_training"
+    return "parsed src.cli.train_flow_matching and invoked patched run_training"
 
 
 def smoke_text_fm_entrypoint(config_path: Path) -> str:
-    cli = importlib.import_module("src.cli.train_text_fm")
+    cli = importlib.import_module("src.cli.train_flow_matching")
 
     def fake_run(cfg):
         assert cfg.data.batch_size == 1
@@ -514,7 +534,7 @@ def smoke_text_fm_entrypoint(config_path: Path) -> str:
 
     with patched_attr(cli, "run_training", fake_run):
         cli.main(["--config", str(config_path)])
-    return "parsed src.cli.train_text_fm and invoked patched run_training"
+    return "parsed src.cli.train_flow_matching and invoked patched run_training"
 
 
 def smoke_sd_config(config_path: Path) -> str:
@@ -535,7 +555,7 @@ def smoke_sd_layout_config(config_path: Path) -> str:
 
 
 def smoke_sd_uncond_entrypoint(config_path: Path) -> str:
-    cli = importlib.import_module("src.cli.train_sd_uncond")
+    cli = importlib.import_module("src.cli.train_latent_diffusion")
 
     def fake_run(cfg):
         assert cfg.data.batch_size == 1
@@ -545,7 +565,7 @@ def smoke_sd_uncond_entrypoint(config_path: Path) -> str:
 
     with patched_attr(cli, "run_training", fake_run):
         cli.main(["--config", str(config_path)])
-    return "parsed src.cli.train_sd_uncond and invoked patched run_training"
+    return "parsed src.cli.train_latent_diffusion and invoked patched run_training"
 
 
 def smoke_vae_config(config_path: Path) -> str:
@@ -613,13 +633,33 @@ def smoke_data_loaders(ctx: DoctorContext) -> str:
     npy = NPYImageDataset(train_dir)
     assert tuple(npy[0].shape) == (1, 64, 64)
 
+    subset_npy = NPYImageDataset(train_dir, subset_manifest=str(ctx.smoke_subset_manifest))
+    assert subset_npy.files == ["sample_00002.npy", "sample_00000.npy"]
+
     layout = AnnotationLayoutDataset(train_dir, ann_path, image_size=32)
     layout_batch = next(iter(DataLoader(layout, batch_size=1, collate_fn=collate_layout_batch)))
     assert layout_batch["pixel_values"].shape[-2:] == (32, 32)
 
+    subset_layout = AnnotationLayoutDataset(
+        train_dir,
+        ann_path,
+        image_size=32,
+        subset_manifest=str(ctx.smoke_subset_manifest),
+    )
+    assert subset_layout.files == ["sample_00002.npy", "sample_00000.npy"]
+
     text = AnnotationFMDataset(train_dir, ann_path, text_mode=True, resize_target=32)
     text_sample = text[0]
     assert "text" in text_sample and isinstance(text_sample["pixel_values"], torch.Tensor)
+
+    subset_text = AnnotationFMDataset(
+        train_dir,
+        ann_path,
+        text_mode=True,
+        resize_target=32,
+        subset_manifest=str(ctx.smoke_subset_manifest),
+    )
+    assert subset_text.files == ["sample_00002.npy", "sample_00000.npy"]
 
     sd_loader, _ = create_dataloader(
         dataset_id=None,
@@ -637,13 +677,18 @@ def smoke_data_loaders(ctx: DoctorContext) -> str:
         caption_column="text",
         batch_size=1,
         num_workers=0,
-        max_train_samples=1,
+        max_train_samples=None,
+        subset_manifest=str(ctx.smoke_subset_manifest),
         seed=123,
         use_ir_preprocessing=True,
         prompt_text="thermal image",
     )
     sd_batch = next(iter(sd_loader))
     assert sd_batch["pixel_values"].shape[-2:] == (32, 32)
+    assert [Path(record["image"]).name for record in sd_loader.dataset.dataset.records] == [
+        "sample_00002.npy",
+        "sample_00000.npy",
+    ]
 
     sd_layout = StableDiffusionLayoutDataset(
         root_dir=train_dir,
@@ -656,7 +701,9 @@ def smoke_data_loaders(ctx: DoctorContext) -> str:
         thermal_scene_suffix="in thermal scene.",
         use_captions_if_available=False,
         max_samples=1,
+        subset_manifest=str(ctx.smoke_subset_manifest),
     )
+    assert sd_layout.files == ["sample_00002.npy"]
     sd_layout_batch = collate_sd_layout_batch([sd_layout[0]])
     assert sd_layout_batch["input_ids"].shape == (1, FakeTokenizer.model_max_length)
     return "loaded NPY, FM layout, text-FM, SD, and SD-layout smoke batches"
@@ -721,18 +768,17 @@ def run_launcher_checks(ctx: DoctorContext) -> None:
 
     print("\n=== active Python entrypoint syntax ===")
     py_files = [
-        REPO / "train_sfm.py",
-        REPO / "train_sd.py",
-        REPO / "train_sd_uncond.py",
-        REPO / "train_sd_layout.py",
+        REPO / "train_flow_matching.py",
+        REPO / "adapt_stable_diffusion.py",
+        REPO / "train_latent_diffusion.py",
         REPO / "train_vae.py",
         REPO / "generate_datasets.py",
         REPO / "scripts/standalone/analyze_distribution_shift.py",
-        REPO / "src/cli/train.py",
-        REPO / "src/cli/train_text_fm.py",
-        REPO / "src/cli/train_sd.py",
-        REPO / "src/cli/train_sd_layout.py",
-        REPO / "src/cli/train_sd_uncond.py",
+        REPO / "src/cli/train_flow_matching.py",
+        REPO / "src/cli/adapt_stable_diffusion.py",
+        REPO / "src/cli/adapt_stable_diffusion_stage1.py",
+        REPO / "src/cli/adapt_stable_diffusion_regiondiff_stage2.py",
+        REPO / "src/cli/train_latent_diffusion.py",
         REPO / "src/cli/train_vae.py",
         REPO / "src/cli/generate.py",
         REPO / "src/cli/sample.py",
@@ -914,7 +960,7 @@ def _write_full_config(ctx: DoctorContext, name: str, base: Path, updates: dict[
 
 
 def _actual_fm_training(ctx: DoctorContext, name: str, config_path: Path) -> str:
-    cli = importlib.import_module("src.cli.train")
+    cli = importlib.import_module("src.cli.train_flow_matching")
     cli.main(["--config", str(config_path)])
     data = _load_yaml(config_path)
     model_dir = Path(data["output"]["model_dir"])
@@ -926,7 +972,7 @@ def _actual_fm_training(ctx: DoctorContext, name: str, config_path: Path) -> str
 
 
 def _actual_sd_uncond_training(ctx: DoctorContext, config_path: Path) -> str:
-    cli = importlib.import_module("src.cli.train_sd_uncond")
+    cli = importlib.import_module("src.cli.train_latent_diffusion")
     cli.main(["--config", str(config_path)])
     data = _load_yaml(config_path)
     model_dir = Path(data["output"]["model_dir"])
@@ -1040,6 +1086,7 @@ def _actual_sd_stage1_training(ctx: DoctorContext, tiny_sd_dir: Path) -> Path:
             "num_train_epochs": 1,
             "max_train_steps": 1,
             "max_train_samples": 1,
+            "subset_manifest": str(ctx.smoke_subset_manifest),
             "dataloader_num_workers": 0,
             "learning_rate": 1.0e-4,
             "lr_scheduler": "constant",
@@ -1059,7 +1106,7 @@ def _actual_sd_stage1_training(ctx: DoctorContext, tiny_sd_dir: Path) -> Path:
             "prediction_type": "epsilon",
         },
     )
-    cli = importlib.import_module("src.cli.train_sd")
+    cli = importlib.import_module("src.cli.adapt_stable_diffusion_stage1")
     accelerator_cls = cli.Accelerator
 
     def cpu_accelerator(*args, **kwargs):
@@ -1069,8 +1116,7 @@ def _actual_sd_stage1_training(ctx: DoctorContext, tiny_sd_dir: Path) -> Path:
     with patched_attr(cli, "get_least_used_cuda_gpu", lambda **_: (None, "doctor cpu smoke")):
         with patched_attr(cli, "Accelerator", cpu_accelerator):
             with patched_env({"CUDA_VISIBLE_DEVICES": ""}):
-                with patched_argv(["train_sd.py", "--config", str(config)]):
-                    cli.main()
+                cli.main(["--config", str(config)])
     manifest = output_dir / "stage1_manifest.json"
     unet_config = output_dir / "unet" / "config.json"
     if not manifest.exists() or not unet_config.exists():
@@ -1134,7 +1180,7 @@ def _actual_sd_layout_training(ctx: DoctorContext, tiny_sd_dir: Path, stage1_dir
             "output": {"output_dir": str(output_dir), "logging_dir": "logs"},
         },
     )
-    cli = importlib.import_module("src.cli.train_sd_layout")
+    cli = importlib.import_module("src.cli.adapt_stable_diffusion_regiondiff_stage2")
     accelerator_cls = cli.Accelerator
 
     def cpu_accelerator(*args, **kwargs):
@@ -1144,8 +1190,7 @@ def _actual_sd_layout_training(ctx: DoctorContext, tiny_sd_dir: Path, stage1_dir
     with patched_attr(cli, "get_least_used_cuda_gpu", lambda **_: (None, "doctor cpu smoke")):
         with patched_attr(cli, "Accelerator", cpu_accelerator):
             with patched_env({"CUDA_VISIBLE_DEVICES": ""}):
-                with patched_argv(["train_sd_layout.py", "--config", str(config)]):
-                    cli.main()
+                cli.main(["--config", str(config)])
     manifest = output_dir / "stage2_layout_manifest.json"
     weights = output_dir / "regiondiff_unet.safetensors"
     if not manifest.exists() or not weights.exists():

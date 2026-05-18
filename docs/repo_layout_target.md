@@ -17,8 +17,8 @@ flow_matching_trial/
 ├── artifacts/            # All training outputs (gitignored heavy contents)
 ├── archive/              # Retired code & outputs
 ├── tests/                # Automated tests
-├── train_sfm.py          # Thin wrapper → src.cli.train
-├── train_sd.py           # Thin wrapper → src.cli.train_sd
+├── train_flow_matching.py          # Thin wrapper → src.cli.train_flow_matching
+├── adapt_stable_diffusion.py           # Thin wrapper → src.cli.adapt_stable_diffusion
 ├── train_vae.py          # Thin wrapper → src.cli.train_vae
 ├── train_controlnet.py   # Thin wrapper → src.cli.train_controlnet
 ├── generate_datasets.py  # Thin wrapper → src.cli.generate
@@ -119,7 +119,7 @@ check scripts (`check_*.py`).  Not part of the importable `src` package.
 | Category | Examples |
 |---|---|
 | Shell launchers | `train_stable_fm.sh`, `generate_dataset_fm.sh`, `analysis.sh`, … |
-| Standalone Python | `scripts/standalone/train_fm.py`, `scripts/standalone/train_count_adapter.py`, `scripts/standalone/analyze_distribution_shift.py`, … |
+| Standalone Python | `train_flow_matching.py`, `scripts/standalone/train_count_adapter.py`, `scripts/standalone/analyze_distribution_shift.py`, … |
 | Check scripts | `check_repo_paths.py`, `check_canonical_layout_only.py`, … |
 
 ---

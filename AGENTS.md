@@ -3,7 +3,7 @@
 ## Project Shape & Ownership
 Work from the repository root. `src/` is the source of truth for active Python code: CLI entry points live in `src/cli/`, reusable training and inference logic in `src/algorithms/`, shared path/config/data utilities in `src/core/`, conditioning logic in `src/conditioning/`, model definitions in `src/models/`, guidance code in `src/guidance/`, evaluation in `src/evaluation/`, and analysis code in `src/analysis/`.
 
-Root scripts such as `train_sfm.py`, `train_sd.py`, `train_sd_uncond.py`, `train_vae.py`, `train_controlnet.py`, and `generate_datasets.py` are thin wrappers around `src/cli/`. Do not add core logic to root wrappers; add or update the corresponding `src/cli/*` module and keep wrappers minimal.
+Root scripts such as `train_flow_matching.py`, `adapt_stable_diffusion.py`, `train_latent_diffusion.py`, `train_vae.py`, `train_controlnet.py`, and `generate_datasets.py` are thin wrappers around `src/cli/`. Do not add core logic to root wrappers; add or update the corresponding `src/cli/*` module and keep wrappers minimal.
 
 Keep experiment configuration under `configs/`, grouped by task such as `fm`, `sd`, `sd_uncond`, `sd_layout`, `vae`, `controlnet`, `auxiliary`, `analysis`, `eval`, `models`, and `yolo`. Put shell automation in `scripts/`, Slurm launchers in `slurm/<cluster>/`, tests in `tests/`, docs and notebooks in `docs/`, and web UI code in `frontend/flir-subgroup-analysis/`.
 
@@ -18,9 +18,9 @@ When adding a new training or generation flow, make output paths configurable an
 Use Python 3.10+. The project is config-first, so prefer exercising CLIs through YAML presets.
 
 ```bash
-python train_sfm.py --config configs/fm/train/default.yaml
-python train_sd.py --config configs/sd/train/default.yaml
-python train_sd_uncond.py --config configs/sd_uncond/train/default.yaml
+python train_flow_matching.py --config configs/fm/train/default.yaml
+python adapt_stable_diffusion.py --config configs/sd/train/default.yaml
+python train_latent_diffusion.py --config configs/sd_uncond/train/default.yaml
 python train_vae.py --config configs/vae/train/presets/vae_4x.yaml
 python generate_datasets.py --mode fm --max_samples 100
 python -m pytest tests -v

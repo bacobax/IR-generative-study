@@ -26,7 +26,7 @@ export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 #--enable_xformers_memory_efficient_attention 
 
 accelerate launch --mixed_precision=fp16 \
-  "$ROOT_DIR/train_sd.py" \
+  "$ROOT_DIR/adapt_stable_diffusion.py" \
   --pretrained_model_name_or_path "$MODEL_NAME" \
   --train_data_dir "$TRAIN_DIR" \
   --image_column "image" \

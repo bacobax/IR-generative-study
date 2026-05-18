@@ -424,6 +424,32 @@ def test_sd_layout_dataset_applies_square_pad_resize_geometry(tmp_path: Path) ->
     assert sample["prompt_text"] == "An image of person and car in thermal scene."
 
 
+def test_sd_layout_dataset_uses_subset_manifest_order(tmp_path: Path) -> None:
+    root_dir, annotations_path = _make_layout_dataset(tmp_path)
+    manifest = tmp_path / "subsets" / "train_layout.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps({"samples": [{"path": "empty.npy"}, {"path": "annotated.npy"}]}),
+        encoding="utf-8",
+    )
+
+    dataset = StableDiffusionLayoutDataset(
+        root_dir=str(root_dir),
+        annotations_path=str(annotations_path),
+        tokenizer=_MockTokenizer(),
+        resolution=64,
+        normalization_mode=UINT8_LINEAR,
+        prompt_mode="class_list",
+        constant_prompt="thermal image",
+        thermal_scene_suffix="in thermal scene.",
+        use_captions_if_available=False,
+        subset_manifest=str(manifest),
+    )
+
+    assert dataset.files == ["empty.npy", "annotated.npy"]
+    assert dataset[0]["file_name"] == "empty.npy"
+
+
 def test_build_layout_prompt_modes_and_caption_fallback() -> None:
     constant = build_layout_prompt(
         label_names=["person"],

@@ -84,7 +84,7 @@ def test_distillation_config_defaults_and_validation() -> None:
 
 
 def test_existing_regiondiff_baseline_config_remains_kd_disabled() -> None:
-    from src.cli.train import _FLAT_TO_NESTED, build_parser
+    from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser
 
     preset = "configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml"
     parser = build_parser()

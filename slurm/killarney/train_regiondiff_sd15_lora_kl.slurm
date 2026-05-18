@@ -57,4 +57,4 @@ slurm_grep_config_keys "Configured train mode:" "train_mode:" "${CONFIG}" -n | h
 slurm_grep_config_keys "Configured mixed precision:" "mixed_precision:" "${CONFIG}" -n | head -n 2 || true
 slurm_print_gpu_diagnostics
 
-slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-sd-lora-${JOB_ID}" "RegionDiff SD LoRA" --   python -m src.cli.train_sd_layout     --config "${CONFIG}"     --mixed_precision "${MIXED_PRECISION}"     --num_workers "${NUM_WORKERS}" || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-sd-lora-${JOB_ID}" "RegionDiff SD LoRA" --   python -m src.cli.adapt_stable_diffusion     --config "${CONFIG}"     --mixed_precision "${MIXED_PRECISION}"     --num_workers "${NUM_WORKERS}" || exit $?

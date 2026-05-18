@@ -3,13 +3,14 @@
 # and then loads the finetuned checkpoint weights from the same run.
 #
 # Launcher:
-#   python -m src.cli.train --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256.yaml
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256.yaml
 
 data:
   dataset_id: "v18"
   image_size: 256
   batch_size: 4
   num_workers: 4
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/stable_unet_x4_256.json"

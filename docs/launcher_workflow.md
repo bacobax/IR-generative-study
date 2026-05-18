@@ -13,7 +13,7 @@ and Python defaults.
 ```
   shell wrapper          YAML preset             Python CLI
 ┌────────────────┐   ┌────────────────── ┐   ┌──────────────────────┐
-│ scripts/train/ │──▶│ configs/fm/train/ │──▶│ src/cli/train.py     │
+│ scripts/train/ │──▶│ configs/fm/train/ │──▶│ src/cli/train_flow_matching.py │
 │ fm_stable.sh   │   │ stable_latent.yaml│   │ (FMTrainConfig)      │
 └────────────────┘   └────────────────── ┘   └──────────────────────┘
 ```
@@ -135,7 +135,7 @@ bash scripts/generate/fm_plain.sh
 
 ```bash
 # With a config preset
-python -m src.cli.train --config configs/fm/train/presets/stable_latent.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/stable_latent.yaml
 
 # With inline overrides
 python -m src.cli.generate \
@@ -149,7 +149,7 @@ python -m src.cli.train_vae --train-dir ./data/raw/v18/train --val-dir ./data/ra
 ### Via root thin wrappers (legacy convenience)
 
 ```bash
-python train_sfm.py --config configs/fm/train/presets/stable_latent.yaml
+python train_flow_matching.py --config configs/fm/train/presets/stable_latent.yaml
 python generate_datasets.py --config configs/fm/generate/presets/plain_100_steps.yaml
 ```
 

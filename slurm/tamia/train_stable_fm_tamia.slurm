@@ -26,4 +26,4 @@ slurm_grep_config_keys "Configured batch size:" "batch_size:" "${CONFIG}" -n | h
 slurm_grep_config_keys "Configured mixed precision:" "mixed_precision:" "${CONFIG}" -n | head -n 2 || true
 slurm_print_gpu_diagnostics
 
-slurm_run_timed "${PROJECT_ROOT}/logs/fm-${JOB_ID}" "FM" --   python -m src.cli.train     --config "${CONFIG}"     --mixed_precision auto || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/fm-${JOB_ID}" "FM" --   python -m src.cli.train_flow_matching     --config "${CONFIG}"     --mixed_precision auto || exit $?

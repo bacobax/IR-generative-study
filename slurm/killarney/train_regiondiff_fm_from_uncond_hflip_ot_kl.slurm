@@ -34,4 +34,4 @@ slurm_grep_config_keys "Configured mixed precision:" "mixed_precision:" "${CONFI
 slurm_grep_config_keys "Configured sampling/debug:" "^sampling:" "${CONFIG}" -n -A6
 slurm_print_gpu_diagnostics
 
-slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-fm-hflip-ot-${JOB_ID}" "RegionDiff FM hflip OT" --   python -m src.cli.train     --config "${CONFIG}"     --mixed_precision auto || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-fm-hflip-ot-${JOB_ID}" "RegionDiff FM hflip OT" --   python -m src.cli.train_flow_matching     --config "${CONFIG}"     --mixed_precision auto || exit $?

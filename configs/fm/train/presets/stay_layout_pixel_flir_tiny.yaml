@@ -1,5 +1,5 @@
 # STAY-style layout-conditioned pixel FM v1 — tiny correctness smoke run
-# Launcher: python -m src.cli.train --config configs/fm/train/presets/stay_layout_pixel_flir_tiny.yaml
+# Launcher: python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_pixel_flir_tiny.yaml
 
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
@@ -9,6 +9,7 @@ data:
   max_train_samples: 8
   max_val_samples: 4
   subset_strategy: "first_n"
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/layout_pixel_tiny_unet_config.json"

@@ -2,11 +2,11 @@
 # Matches the built-in CLI defaults exactly.
 #
 # Usage:
-#   python -m src.cli.train --config configs/fm/train/default.yaml
-#   python train_sfm.py     --config configs/fm/train/default.yaml
+#   python -m src.cli.train_flow_matching --config configs/fm/train/default.yaml
+#   python train_flow_matching.py     --config configs/fm/train/default.yaml
 #
 # Any CLI flag can override values from this file:
-#   python -m src.cli.train --config configs/fm/train/default.yaml --epochs 200
+#   python -m src.cli.train_flow_matching --config configs/fm/train/default.yaml --epochs 200
 
 data:
   dataset_id: null
@@ -16,6 +16,7 @@ data:
   image_size: 256
   batch_size: 8
   num_workers: 4
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/stable_unet_config.json"

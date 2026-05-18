@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
 from src.algorithms.training.layout_flow_matching_trainer import LayoutFMTrainer
-from src.cli.train import _FLAT_TO_NESTED, build_parser
+from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.configs.fm_config import DataConfig, FMTrainConfig, LayoutConditioningConfig, ModelConfig, OutputConfig
 from src.core.normalization import RAW_UINT16_PERCENTILE
@@ -787,7 +787,7 @@ def test_stay_v2_latent_from_config_supports_pretrained_sd15_vae(monkeypatch) ->
 
 
 def test_stay_v18_latent_preset_resolves_named_dataset_percentile_path() -> None:
-    from src.cli.train import _resolve_training_data
+    from src.cli.train_flow_matching import _resolve_training_data
 
     preset_path = Path("configs/fm/train/presets/stay_layout_latent_v18_x4_512.yaml")
     parser = build_parser()

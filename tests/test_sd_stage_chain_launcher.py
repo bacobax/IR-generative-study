@@ -105,6 +105,10 @@ def _command_module(command: list[str]) -> str:
     return command[command.index("-m") + 1]
 
 
+def _command_stage(command: list[str]) -> str:
+    return command[command.index("--stage") + 1]
+
+
 def _has_resume_latest(command: list[str]) -> bool:
     return command[-2:] == ["--resume_from_checkpoint", "latest"]
 
@@ -120,7 +124,7 @@ def test_fresh_run_calls_stage1_then_stage2_without_resume(tmp_path, monkeypatch
 
     def fake_run(command, cwd, check):
         calls.append(list(command))
-        if _command_module(list(command)) == "src.cli.train_sd":
+        if _command_stage(list(command)) == "stage1":
             _touch_lora_final(stage1_dir)
         else:
             _touch_stage2_final(stage2_dir)
@@ -140,8 +144,8 @@ def test_fresh_run_calls_stage1_then_stage2_without_resume(tmp_path, monkeypatch
     ]) == 0
 
     assert [_command_module(call) for call in calls] == [
-        "src.cli.train_sd",
-        "src.cli.train_sd_layout",
+        "src.cli.adapt_stable_diffusion",
+        "src.cli.adapt_stable_diffusion",
     ]
     assert not any(_has_resume_latest(call) for call in calls)
     assert all(["--mixed_precision", "fp16"] == call[-2:] for call in calls)
@@ -160,7 +164,7 @@ def test_interrupted_stage1_rerun_resumes_latest_stage1_checkpoint(tmp_path, mon
 
     def fake_run(command, cwd, check):
         calls.append(list(command))
-        if _command_module(list(command)) == "src.cli.train_sd":
+        if _command_stage(list(command)) == "stage1":
             _touch_lora_final(stage1_dir)
         else:
             _touch_stage2_final(stage2_dir)
@@ -170,7 +174,7 @@ def test_interrupted_stage1_rerun_resumes_latest_stage1_checkpoint(tmp_path, mon
 
     chain.main(["--project-root", str(tmp_path), "--stage1-config", str(stage1_config), "--stage2-config", str(stage2_config)])
 
-    assert _command_module(calls[0]) == "src.cli.train_sd"
+    assert _command_module(calls[0]) == "src.cli.adapt_stable_diffusion"
     assert _has_resume_latest(calls[0])
     assert not _has_resume_latest(calls[1])
 
@@ -194,7 +198,7 @@ def test_completed_stage1_missing_stage2_runs_only_stage2(tmp_path, monkeypatch)
 
     chain.main(["--project-root", str(tmp_path), "--stage1-config", str(stage1_config), "--stage2-config", str(stage2_config)])
 
-    assert [_command_module(call) for call in calls] == ["src.cli.train_sd_layout"]
+    assert [_command_module(call) for call in calls] == ["src.cli.adapt_stable_diffusion"]
     assert not _has_resume_latest(calls[0])
 
 
@@ -218,7 +222,7 @@ def test_interrupted_stage2_rerun_resumes_latest_stage2_checkpoint(tmp_path, mon
 
     chain.main(["--project-root", str(tmp_path), "--stage1-config", str(stage1_config), "--stage2-config", str(stage2_config)])
 
-    assert [_command_module(call) for call in calls] == ["src.cli.train_sd_layout"]
+    assert [_command_module(call) for call in calls] == ["src.cli.adapt_stable_diffusion"]
     assert _has_resume_latest(calls[0])
 
 
@@ -258,4 +262,4 @@ def test_full_unet_stage1_completion_uses_unet_export(tmp_path, monkeypatch) -> 
 
     chain.main(["--project-root", str(tmp_path), "--stage1-config", str(stage1_config), "--stage2-config", str(stage2_config)])
 
-    assert [_command_module(call) for call in calls] == ["src.cli.train_sd_layout"]
+    assert [_command_module(call) for call in calls] == ["src.cli.adapt_stable_diffusion"]

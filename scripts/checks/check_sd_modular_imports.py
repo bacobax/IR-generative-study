@@ -83,32 +83,31 @@ try:
 except Exception as exc:
     check(False, f"helpers constants: {exc}")
 
-# ── 5. Source inspection: train_sd.py ──────────────────────────────────
-# After Phase 17 the root train_sd.py is a thin wrapper; source of truth
-# is src/cli/train_sd.py.
-print("\n=== 5. train_sd.py uses new namespace ===")
-train_sd_sot = (ROOT / "src" / "cli" / "train_sd.py").read_text()
+# ── 5. Source inspection: adapt_stable_diffusion stage-1 ─────────────────
+# The public CLI dispatches to the stage-1 implementation for SD1.5 adaptation.
+print("\n=== 5. adapt_stable_diffusion.py uses new namespace ===")
+train_sd_sot = (ROOT / "src" / "cli" / "adapt_stable_diffusion_stage1.py").read_text()
 tree = ast.parse(train_sd_sot)
 imports_from = [
     node.module for node in ast.walk(tree)
     if isinstance(node, ast.ImportFrom) and node.module
 ]
 check(any(m.startswith("src.algorithms.stable_diffusion") for m in imports_from),
-      "train_sd.py imports from src.algorithms.stable_diffusion")
+      "adapt_stable_diffusion.py imports from src.algorithms.stable_diffusion")
 check(not any(m.startswith("sd_src.") for m in imports_from),
-      "train_sd.py does NOT import from sd_src.*")
+      "adapt_stable_diffusion.py does NOT import from sd_src.*")
 
-# Specific imports in src/cli/train_sd.py
+# Specific imports in src/cli/adapt_stable_diffusion.py
 check("src.algorithms.stable_diffusion.config" in imports_from,
-      "train_sd.py → config")
+      "adapt_stable_diffusion.py → config")
 check("src.algorithms.stable_diffusion.data" in imports_from,
-      "train_sd.py → data")
+      "adapt_stable_diffusion.py → data")
 check("src.algorithms.stable_diffusion.models" in imports_from,
-      "train_sd.py → models")
+      "adapt_stable_diffusion.py → models")
 check("src.algorithms.stable_diffusion.training" in imports_from,
-      "train_sd.py → training")
+      "adapt_stable_diffusion.py → training")
 check("src.algorithms.stable_diffusion.utils" in imports_from,
-      "train_sd.py → utils")
+      "adapt_stable_diffusion.py → utils")
 
 # ── 6. Source inspection: sd_src/__init__.py is thin compat layer ──────
 print("\n=== 6. sd_src backward-compat layer ===")

@@ -1,4 +1,9 @@
-"""Modular CLI entrypoint for unconditional latent Stable Diffusion training."""
+"""Canonical CLI for from-scratch latent diffusion training.
+
+This entrypoint covers unconditional and layout-conditioned latent diffusion
+models trained from scratch. It does not adapt pretrained Stable Diffusion 1.5;
+use ``src.cli.adapt_stable_diffusion`` for that path.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +33,7 @@ import src.algorithms.inference.unconditional_sd_sampler  # noqa: F401
 
 
 def run_training(cfg) -> None:
-    """Execute unconditional latent SD training from a structured config."""
+    """Execute from-scratch latent diffusion training from a structured config."""
     total_epochs = cfg.training.epochs
     resolved_data = resolve_training_data(cfg.data)
     layout_enabled = (
@@ -62,6 +67,7 @@ def run_training(cfg) -> None:
             normalization_mode=resolved_data.normalization_mode,
             include_label_names=True,
             horizontal_flip_schedule=train_horizontal_flip,
+            subset_manifest=resolved_data.train_subset_manifest,
         )
         eval_base_dataset = AnnotationLayoutDataset(
             root_dir=resolved_data.val_dir,
@@ -128,7 +134,7 @@ def run_training(cfg) -> None:
 
 
 def main(argv: Optional[list] = None) -> None:
-    """Parse CLI flags and launch unconditional latent SD training."""
+    """Parse CLI flags and launch from-scratch latent diffusion training."""
     cfg = parse_args(argv)
     run_training(cfg)
 

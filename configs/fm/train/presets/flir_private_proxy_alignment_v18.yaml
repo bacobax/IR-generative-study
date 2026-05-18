@@ -1,13 +1,14 @@
 # Unconditional FM training preset for the FLIR private proxy alignment dataset.
 #
 # Usage:
-#   python train_sfm.py --config configs/fm/train/presets/flir_private_proxy_alignment_v18.yaml
+#   python train_flow_matching.py --config configs/fm/train/presets/flir_private_proxy_alignment_v18.yaml
 
 data:
   dataset_id: "flir_private_proxy_alignment_v18"
   image_size: 256
   batch_size: 8
   num_workers: 4
+  subset_manifest: null
 
 model:
   vae_weights: "./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"

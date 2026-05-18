@@ -72,7 +72,7 @@ Images:
 Tiny verification run:
 
 ```bash
-conda run -n diffusers-dev python -m src.cli.train \
+conda run -n diffusers-dev python -m src.cli.train_flow_matching \
   --config configs/fm/train/presets/stay_layout_pixel_flir_tiny.yaml \
   --device cpu
 ```

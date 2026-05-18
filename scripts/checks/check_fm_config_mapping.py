@@ -71,6 +71,7 @@ check("DataConfig.val_dir", d.val_dir == "./data/raw/v18/val/")
 check("DataConfig.image_size", d.image_size == 256)
 check("DataConfig.batch_size", d.batch_size == 8)
 check("DataConfig.num_workers", d.num_workers == 4)
+check("DataConfig.subset_manifest", d.subset_manifest is None)
 
 m = ModelConfig()
 check("ModelConfig.unet_config", m.unet_config == "configs/models/fm/stable_unet_config.json")
@@ -148,6 +149,7 @@ fake_args = SimpleNamespace(
     image_size=320,
     batch_size=16,
     num_workers=2,
+    subset_manifest="train_2000_bbox_stratified.json",
     unet_config="my_unet.json",
     vae_config="my_vae.json",
     vae_weights="my_vae.pt",
@@ -190,6 +192,7 @@ check("data.dataset_id mapped", cfg.data.dataset_id == "flir_private_proxy_align
 check("data.train_dir mapped", cfg.data.train_dir == "./data/train/")
 check("data.image_size mapped", cfg.data.image_size == 320)
 check("data.batch_size mapped", cfg.data.batch_size == 16)
+check("data.subset_manifest mapped", cfg.data.subset_manifest == "train_2000_bbox_stratified.json")
 check("model.unet_config mapped", cfg.model.unet_config == "my_unet.json")
 check("model.vae_weights mapped", cfg.model.vae_weights == "my_vae.pt")
 check("augment.warmup_frac mapped", cfg.augment.warmup_frac == 0.2)
@@ -272,7 +275,7 @@ files_to_check = [
     "src/core/configs/fm_config.py",
     "src/algorithms/training/flow_matching_trainer.py",
     "src/algorithms/inference/flow_matching_sampler.py",
-    "train_sfm.py",
+    "train_flow_matching.py",
     "generate_datasets.py",
 ]
 for f in files_to_check:
@@ -285,14 +288,14 @@ for f in files_to_check:
             check(f"{f} syntax error: {e}", False)
 
 
-# ── 8. train_sfm.py uses config ─────────────────────────────────────────────
-print("\n=== 8. train_sfm.py / src.cli.train imports check ===")
-with open(os.path.join(REPO, "train_sfm.py")) as f:
+# ── 8. train_flow_matching.py uses config ─────────────────────────────────────────────
+print("\n=== 8. train_flow_matching.py / src.cli.train_flow_matching imports check ===")
+with open(os.path.join(REPO, "train_flow_matching.py")) as f:
     wrapper_src = f.read()
-# train_sfm.py is now a thin wrapper that forwards to src.cli.train
-# Accept either direct FMTrainConfig usage OR delegation to src.cli.train
-delegates = "from src.cli.train import main" in wrapper_src
-with open(os.path.join(REPO, "src", "cli", "train.py")) as f:
+# train_flow_matching.py is now a thin wrapper that forwards to src.cli.train_flow_matching
+# Accept either direct FMTrainConfig usage OR delegation to src.cli.train_flow_matching
+delegates = "from src.cli.train_flow_matching import main" in wrapper_src
+with open(os.path.join(REPO, "src", "cli", "train_flow_matching.py")) as f:
     cli_src = f.read()
 check("Imports FMTrainConfig", "FMTrainConfig" in wrapper_src or (delegates and "FMTrainConfig" in cli_src))
 check("Uses from_config or from_args", "from_config" in wrapper_src or "from_args" in wrapper_src or (delegates and ("from_config" in cli_src or "from_args" in cli_src)))

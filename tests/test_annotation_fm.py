@@ -260,6 +260,34 @@ def test_annotation_dataset_unconditional():
         assert item.shape[-1] == 256 and item.shape[-2] == 256
 
 
+def test_annotation_dataset_uses_subset_manifest_order(tmp_path):
+    from src.core.data.annotation_dataset import AnnotationFMDataset
+
+    img_dir, annot_path = _make_test_data(str(tmp_path), n_images=4)
+    manifest = tmp_path / "subsets" / "train_first2.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"path": "img_0003.npy"},
+                    {"path": "img_0001.npy"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    ds = AnnotationFMDataset(
+        root_dir=img_dir,
+        annotations_path=annot_path,
+        text_mode=False,
+        subset_manifest=str(manifest),
+    )
+
+    assert ds.files == ["img_0003.npy", "img_0001.npy"]
+
+
 def test_annotation_dataset_text_mode():
     from src.core.data.annotation_dataset import AnnotationFMDataset
 

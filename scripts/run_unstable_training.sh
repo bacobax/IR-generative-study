@@ -48,7 +48,7 @@ P_ROT_FINAL=0.05
 RESUME_CKPT=
 # Build the command
 CMD=(
-    python "$ROOT_DIR/scripts/standalone/train_fm.py"
+    python "$ROOT_DIR/train_flow_matching.py"
     --train_dir "$TRAIN_DIR"
     --val_dir "$VAL_DIR"
     --unet_config "$UNET_CONFIG"

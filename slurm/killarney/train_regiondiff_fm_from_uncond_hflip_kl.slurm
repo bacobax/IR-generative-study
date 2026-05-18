@@ -31,4 +31,4 @@ slurm_grep_config_keys "Configured horizontal flip probabilities:" "p_hflip_" "$
 slurm_grep_config_keys "Configured mixed precision:" "mixed_precision:" "${CONFIG}" -n | head -n 2 || true
 slurm_print_gpu_diagnostics
 
-slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-fm-hflip-${JOB_ID}" "RegionDiff FM hflip" --   python -m src.cli.train     --config "${CONFIG}"     --mixed_precision auto || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-fm-hflip-${JOB_ID}" "RegionDiff FM hflip" --   python -m src.cli.train_flow_matching     --config "${CONFIG}"     --mixed_precision auto || exit $?

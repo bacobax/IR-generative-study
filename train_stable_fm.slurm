@@ -35,7 +35,7 @@ grep -n "mixed_precision:" "${CONFIG}" | head -n 1 || true
 nvidia-smi || true
 
 set +e
-/usr/bin/time -v python -m src.cli.train \
+/usr/bin/time -v python -m src.cli.train_flow_matching \
   --config "${CONFIG}" \
   --mixed_precision auto \
   > "logs/fm-${JOB_ID}.out" 2> "logs/fm-${JOB_ID}.err"

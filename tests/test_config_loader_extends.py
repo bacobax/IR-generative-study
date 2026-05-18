@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.cli.train import build_parser
+from src.cli.train_flow_matching import build_parser
 from src.core.configs.config_loader import (
     is_experimental_config_shape,
     load_experimental_config,

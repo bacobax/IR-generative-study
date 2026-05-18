@@ -3,6 +3,7 @@ pretrained_model_name_or_path: runwayml/stable-diffusion-v1-5
 baseline_mode: sd_ir_lora
 dataset_id: flir_private_proxy_alignment_v18
 train_split: train
+subset_manifest: null
 prompt_text: "thermal image"
 resolution: 512
 train_batch_size: 16

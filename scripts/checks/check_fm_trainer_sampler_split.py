@@ -7,7 +7,7 @@ Checks:
   3. FlowMatchingTrainer instantiation (pixel & stable).
   4. Trainer.flow_matching_step produces a scalar loss.
   5. Sampler.sample_euler produces correct-shape output.
-  6. train_sfm.py no longer imports from the old pipeline.
+  6. train_flow_matching.py no longer imports from the old pipeline.
   7. Old pipeline classes still importable (legacy / ControlNet).
   8. Syntax check of all touched files.
 """
@@ -142,16 +142,16 @@ with tempfile.TemporaryDirectory() as tmpdir:
     check("VAE config saved", os.path.isfile(os.path.join(tmpdir, "VAE", "config.json")))
 
 
-# ── 6. train_sfm.py uses new modules ────────────────────────────────────────
-print("\n=== 6. train_sfm.py imports ===")
-train_sfm_path = os.path.join(REPO, "train_sfm.py")
+# ── 6. train_flow_matching.py uses new modules ────────────────────────────────────────
+print("\n=== 6. train_flow_matching.py imports ===")
+train_sfm_path = os.path.join(REPO, "train_flow_matching.py")
 with open(train_sfm_path) as f:
     src = f.read()
-# train_sfm.py may be a thin wrapper forwarding to src.cli.train
-delegates = "from src.cli.train import main" in src
+# train_flow_matching.py may be a thin wrapper forwarding to src.cli.train_flow_matching
+delegates = "from src.cli.train_flow_matching import main" in src
 cli_src = ""
 if delegates:
-    with open(os.path.join(REPO, "src", "cli", "train.py")) as f:
+    with open(os.path.join(REPO, "src", "cli", "train_flow_matching.py")) as f:
         cli_src = f.read()
 
 check("No StableFlowMatchingPipeline import", "StableFlowMatchingPipeline" not in src)
@@ -181,7 +181,7 @@ files_to_check = [
     "src/algorithms/training/flow_matching_trainer.py",
     "src/models/vae.py",
     "src/models/fm_unet.py",
-    "train_sfm.py",
+    "train_flow_matching.py",
     "archive/legacy_code/fm_src/pipelines/flow_matching_pipeline.py",
 ]
 for f in files_to_check:

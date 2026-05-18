@@ -7,6 +7,7 @@ resolution: 512
 train_batch_size: 2
 dataloader_num_workers: 0
 max_train_samples: 8
+subset_manifest: null
 prompt_text: thermal image
 rank: 8
 lora_alpha_scale: 1.0

@@ -22,5 +22,5 @@ echo "TensorBoard:"
 echo "  tensorboard --logdir $LOG_DIR"
 
 
-python -m src.cli.train --config "$CONFIG_PATH" --resume /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/flow_matching/serious_runs/stay_layout_pixel_flir_v2/UNET/unet_fm_epoch_90_ckpt.pt "$@"
+python -m src.cli.train_flow_matching --config "$CONFIG_PATH" --resume /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/flow_matching/serious_runs/stay_layout_pixel_flir_v2/UNET/unet_fm_epoch_90_ckpt.pt "$@"
 

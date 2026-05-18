@@ -34,4 +34,4 @@ slurm_grep_config_keys "Selected training settings:" "^(baseline_mode|unet_train
 slurm_grep_config_keys "Selected DomainStudio settings:" "^(domainstudio_enabled|domainstudio_source_prompt|domainstudio_target_prompt|domainstudio_lambda_|domainstudio_loss_every_n_steps|domainstudio_min_pairwise_batch|domainstudio_prior_data_dir|domainstudio_prior_cache_dir|domainstudio_generate_prior_if_missing):" "${CONFIG}" -nE
 slurm_print_gpu_diagnostics
 
-slurm_run_timed "${PROJECT_ROOT}/logs/sd-domainstudio-unet-${JOB_ID}" "DomainStudio full U-Net Stage-1" --   python -m src.cli.train_sd     --config "${CONFIG}" || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/sd-domainstudio-unet-${JOB_ID}" "DomainStudio full U-Net Stage-1" --   python -m src.cli.adapt_stable_diffusion     --config "${CONFIG}" || exit $?

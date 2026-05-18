@@ -2,8 +2,8 @@
 # Matches the built-in CLI defaults exactly.
 #
 # Usage:
-#   python -m src.cli.train_sd_uncond --config configs/sd_uncond/train/default.yaml
-#   python train_sd_uncond.py        --config configs/sd_uncond/train/default.yaml
+#   python -m src.cli.train_latent_diffusion --config configs/sd_uncond/train/default.yaml
+#   python train_latent_diffusion.py        --config configs/sd_uncond/train/default.yaml
 
 data:
   dataset_id: null
@@ -16,6 +16,7 @@ data:
   max_train_samples: null
   max_val_samples: null
   subset_strategy: "first_n"
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/stable_unet_config.json"

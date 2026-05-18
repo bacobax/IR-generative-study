@@ -24,7 +24,7 @@ def check(label, cond):
 
 
 print("\n=== 1. Module imports ===")
-from src.cli.train_sd_uncond import build_parser, main, run_training
+from src.cli.train_latent_diffusion import build_parser, main, run_training
 from src.core.configs.sd_uncond_config import SDUncondTrainConfig, _FLAT_TO_NESTED
 
 check("build_parser importable", callable(build_parser))
@@ -36,6 +36,7 @@ print("\n=== 2. Argument parser ===")
 parser = build_parser()
 defaults = vars(parser.parse_args([]))
 check("--dataset_id default == None", defaults.get("dataset_id") is None)
+check("--subset_manifest default == None", defaults.get("subset_manifest") is None)
 check("--image_size default == 256", defaults.get("image_size") == 256)
 check("--model_dir default contains uncond_runs", "uncond_runs" in defaults.get("model_dir", ""))
 check("--prediction_type default == 'epsilon'", defaults.get("prediction_type") == "epsilon")
@@ -49,17 +50,17 @@ check(
 )
 
 print("\n=== 4. Wrapper forwarding ===")
-wrapper_path = os.path.join(REPO, "train_sd_uncond.py")
+wrapper_path = os.path.join(REPO, "train_latent_diffusion.py")
 wrapper_src = open(wrapper_path, encoding="utf-8").read()
-check("train_sd_uncond.py imports from src.cli.train_sd_uncond",
-      "from src.cli.train_sd_uncond import main" in wrapper_src)
-check("train_sd_uncond.py calls main()", "main()" in wrapper_src)
-check("train_sd_uncond.py has no argparse", "argparse" not in wrapper_src)
+check("train_latent_diffusion.py imports from src.cli.train_latent_diffusion",
+      "from src.cli.train_latent_diffusion import main" in wrapper_src)
+check("train_latent_diffusion.py calls main()", "main()" in wrapper_src)
+check("train_latent_diffusion.py has no argparse", "argparse" not in wrapper_src)
 
 print("\n=== 5. Syntax check ===")
 for rel in (
-    "src/cli/train_sd_uncond.py",
-    "train_sd_uncond.py",
+    "src/cli/train_latent_diffusion.py",
+    "train_latent_diffusion.py",
     "src/core/configs/sd_uncond_config.py",
     "src/algorithms/training/unconditional_sd_trainer.py",
     "src/algorithms/inference/unconditional_sd_sampler.py",

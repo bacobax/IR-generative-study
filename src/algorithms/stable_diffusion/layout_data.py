@@ -22,6 +22,7 @@ from src.core.data.annotations import (
 )
 from src.core.data.dataset_targets import resolve_dataset_target
 from src.core.data.layout_batching import collate_layout_batch
+from src.core.data.subset_manifest import filter_files_by_subset_manifest
 from src.core.normalization import RAW_UINT16_PERCENTILE
 
 
@@ -154,6 +155,7 @@ class StableDiffusionLayoutDataset(Dataset):
         thermal_scene_suffix: str,
         use_captions_if_available: bool,
         max_samples: Optional[int] = None,
+        subset_manifest: Optional[str] = None,
     ) -> None:
         self.root_dir = root_dir
         self.annotations_path = annotations_path
@@ -173,8 +175,14 @@ class StableDiffusionLayoutDataset(Dataset):
 
         images_dir = os.path.join(root_dir, "images")
         self.images_dir = images_dir if os.path.isdir(images_dir) else root_dir
-        self.files = sorted(
+        files = sorted(
             file_name for file_name in os.listdir(self.images_dir) if file_name.endswith(".npy")
+        )
+        self.files = filter_files_by_subset_manifest(
+            files,
+            subset_manifest,
+            split_dir=root_dir,
+            context="StableDiffusionLayoutDataset",
         )
         if max_samples is not None:
             self.files = self.files[: int(max_samples)]
@@ -303,6 +311,7 @@ def create_layout_dataloaders(
         thermal_scene_suffix=config.prompt.thermal_scene_suffix,
         use_captions_if_available=config.prompt.use_captions_if_available,
         max_samples=config.data.max_train_samples,
+        subset_manifest=getattr(config.data, "subset_manifest", None),
     )
     val_dataset = StableDiffusionLayoutDataset(
         root_dir=val_split.root_dir,
@@ -344,4 +353,3 @@ def build_fixed_validation_batch(
         return None
     examples = [dataset[index] for index in range(min(len(dataset), int(max_examples)))]
     return collate_sd_layout_batch(examples)
-

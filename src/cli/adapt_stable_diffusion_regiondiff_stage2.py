@@ -1,9 +1,10 @@
-"""CLI entrypoint for RegionDiff-style SD layout stage-2 training."""
+"""RegionDiff Stage-2 Stable Diffusion 1.5 adaptation implementation."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Optional
 
 import torch
 from accelerate import Accelerator
@@ -35,9 +36,9 @@ from src.core.gpu_utils import get_least_used_cuda_gpu
 check_min_version("0.37.0.dev0")
 
 
-def main() -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     """Main entrypoint for SD layout stage-2 training."""
-    config = parse_args()
+    config = parse_args(argv)
 
     if "RANK" not in os.environ:
         device, smi_out = get_least_used_cuda_gpu(

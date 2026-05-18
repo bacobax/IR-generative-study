@@ -9,6 +9,7 @@ data:
   max_train_samples: 200
   max_val_samples: 32
   subset_strategy: "first_n"
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/non_stable_unet_config.json"

@@ -28,6 +28,7 @@ class DatasetSpec:
     train_split: Optional[str] = None
     val_split: Optional[str] = None
     annotations: Optional[str] = None
+    subset_manifest: Optional[str] = None
     options: dict[str, Any] = field(default_factory=dict)
 
 

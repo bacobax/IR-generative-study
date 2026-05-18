@@ -2,6 +2,9 @@
 # Launcher: scripts/train/fm_stable.sh
 # Only values that differ from FMTrainConfig defaults are listed.
 
+data:
+  subset_manifest: null
+
 model:
   vae_weights: ./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt
 

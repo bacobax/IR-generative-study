@@ -126,7 +126,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
 # ── 7. Syntax check updated scripts ─────────────────────────────────────────
 print("\n=== 7. Syntax check scripts ===")
-for script in ["train_sfm.py", "scripts/standalone/train_fm.py", "train_vae.py"]:
+for script in ["train_flow_matching.py", "train_flow_matching.py", "train_vae.py"]:
     path = os.path.join(REPO, script)
     with open(path) as f:
         try:

@@ -6,7 +6,7 @@ This project is entering an **incremental refactor** toward a modular `src/` pac
 
 ## Current State
 
-- All existing entry points (`train_sfm.py`, `train_sd.py`, `train_vae.py`, `train_controlnet.py`, `generate_datasets.py`, etc.) remain the **source of truth** and are unchanged.
+- All existing entry points (`train_flow_matching.py`, `adapt_stable_diffusion.py`, `train_vae.py`, `train_controlnet.py`, `generate_datasets.py`, etc.) remain the **source of truth** and are unchanged.
 - A new `src/` package tree has been created with empty sub-packages as scaffolding for future code migration.
 
 ## Target Package Layout

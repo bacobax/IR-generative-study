@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Smoke-check: verify the modular training CLI (src.cli.train).
+"""Smoke-check: verify the modular training CLI (src.cli.train_flow_matching).
 
 Checks:
   1. Module and key symbols import cleanly.
   2. Argument parser exposes all expected flags with correct defaults.
   3. FMTrainConfig is built correctly from parsed args.
   4. Trainer is resolved through the registry (default and explicit).
-  5. train_sfm.py forwards to src.cli.train.main.
+  5. train_flow_matching.py forwards to src.cli.train_flow_matching.main.
   6. run_training builds the trainer via registry (mock check).
   7. Syntax check on all touched files.
 """
@@ -38,7 +38,13 @@ def check(label, cond):
 # 1. Imports
 # ======================================================================
 print("\n=== 1. Module imports ===")
-from src.cli.train import build_parser, main, run_training, _resolve_training_data
+from src.cli.train_flow_matching import (
+    _run_general_fm_training,
+    _resolve_training_data,
+    build_parser,
+    main,
+    run_training,
+)
 check("build_parser importable", callable(build_parser))
 check("main importable", callable(main))
 check("run_training importable", callable(run_training))
@@ -59,6 +65,7 @@ defaults = vars(parser.parse_args([]))
 
 expected_defaults = {
     "dataset_id": None,
+    "subset_manifest": None,
     "train_dir": "./data/raw/v18/train/",
     "val_dir": "./data/raw/v18/val/",
     "image_size": 256,
@@ -126,6 +133,7 @@ cfg = FMTrainConfig.from_args(args)
 check("cfg.training.epochs == 50", cfg.training.epochs == 50)
 check("cfg.output.model_dir == '/tmp/test_run'", cfg.output.model_dir == "/tmp/test_run")
 check("cfg.data.dataset_id default is None", cfg.data.dataset_id is None)
+check("cfg.data.subset_manifest default is None", cfg.data.subset_manifest is None)
 check("cfg.data.train_dir matches default", cfg.data.train_dir == "./data/raw/v18/train/")
 check("cfg.data.image_size matches default", cfg.data.image_size == 256)
 check("cfg.trainer_name is None (default)", cfg.trainer_name is None)
@@ -188,18 +196,18 @@ check("Explicit 'default_fm' resolves to FlowMatchingTrainer",
       TrainerCls2 is FlowMatchingTrainer)
 
 # ======================================================================
-# 5. train_sfm.py forwards to src.cli.train
+# 5. train_flow_matching.py forwards to src.cli.train_flow_matching
 # ======================================================================
 print("\n=== 5. Wrapper forwarding ===")
-wrapper_path = os.path.join(REPO, "train_sfm.py")
+wrapper_path = os.path.join(REPO, "train_flow_matching.py")
 with open(wrapper_path) as f:
     wrapper_src = f.read()
 
-check("train_sfm.py imports from src.cli.train",
-      "from src.cli.train import main" in wrapper_src)
-check("train_sfm.py calls main()",
+check("train_flow_matching.py imports from src.cli.train_flow_matching",
+      "from src.cli.train_flow_matching import main" in wrapper_src)
+check("train_flow_matching.py calls main()",
       "main()" in wrapper_src)
-check("train_sfm.py has no argparse (delegated)",
+check("train_flow_matching.py has no argparse (delegated)",
       "argparse" not in wrapper_src)
 
 # ======================================================================
@@ -207,7 +215,7 @@ check("train_sfm.py has no argparse (delegated)",
 # ======================================================================
 print("\n=== 6. run_training uses registry ===")
 import inspect
-run_src = inspect.getsource(run_training)
+run_src = inspect.getsource(_run_general_fm_training)
 check("run_training calls REGISTRIES.trainer.get",
       "REGISTRIES.trainer.get" in run_src)
 check("run_training uses cfg.trainer_name",
@@ -222,8 +230,8 @@ check("run_training calls train_from_config",
 # ======================================================================
 print("\n=== 7. Syntax check ===")
 files_to_check = [
-    "src/cli/train.py",
-    "train_sfm.py",
+    "src/cli/train_flow_matching.py",
+    "train_flow_matching.py",
     "src/core/registry.py",
     "src/core/configs/fm_config.py",
 ]

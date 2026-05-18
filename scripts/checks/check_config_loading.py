@@ -110,6 +110,7 @@ d = dataclass_to_dict(default_train)
 check(isinstance(d, dict), "dataclass_to_dict returns dict")
 check("data" in d and "model" in d, "nested sub-configs present")
 check(d["data"]["dataset_id"] is None, "dataset_id default is None")
+check(d["data"]["subset_manifest"] is None, "subset_manifest default is None")
 check(d["data"]["train_dir"] == "./data/raw/v18/train/", "nested value correct")
 check(d["data"]["image_size"] == 256, "image_size default is 256")
 
@@ -130,7 +131,7 @@ check(rs.steps == 50, "flat round-trip correct")
 # D. FM training: defaults → YAML → CLI merge
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== D. FM train config merge chain ===")
-from src.cli.train import build_parser as train_build_parser, _FLAT_TO_NESTED as TRAIN_MAP
+from src.cli.train_flow_matching import build_parser as train_build_parser, _FLAT_TO_NESTED as TRAIN_MAP
 
 train_parser = train_build_parser()
 
@@ -140,6 +141,7 @@ cfg_d1 = merge_config_and_cli(FMTrainConfig, None, train_parser, args_d1,
                                 flat_to_nested=TRAIN_MAP)
 check(cfg_d1.data.train_dir == "./data/raw/v18/train/", "no-config: train_dir default")
 check(cfg_d1.data.dataset_id is None, "no-config: dataset_id default")
+check(cfg_d1.data.subset_manifest is None, "no-config: subset_manifest default")
 check(cfg_d1.data.image_size == 256, "no-config: image_size default")
 check(cfg_d1.training.epochs == 100, "no-config: epochs default")
 check(cfg_d1.augment.p_rot_max == 0.30, "no-config: p_rot_max default")
@@ -175,6 +177,13 @@ cfg_d4b = merge_config_and_cli(FMTrainConfig, None, train_parser, args_d4b,
                                  flat_to_nested=TRAIN_MAP)
 check(cfg_d4b.data.dataset_id == "flir_private_proxy_alignment_v18", "cli-only: dataset_id overridden")
 check(cfg_d4b.data.image_size == 320, "cli-only: image_size overridden")
+
+# D4c: subset_manifest CLI override
+args_d4c = train_parser.parse_args(["--subset_manifest", "train_2000_bbox_stratified.json"])
+cfg_d4c = merge_config_and_cli(FMTrainConfig, None, train_parser, args_d4c,
+                                 flat_to_nested=TRAIN_MAP)
+check(cfg_d4c.data.subset_manifest == "train_2000_bbox_stratified.json",
+      "cli-only: subset_manifest overridden")
 
 # D5: Check _FLAT_TO_NESTED covers all CLI args (except --config)
 all_cli_args = {a.dest for a in train_parser._actions if a.dest not in ("help", "config")}
@@ -225,10 +234,10 @@ check(any(a.dest == "config" for a in train_parser._actions),
 check(any(a.dest == "config" for a in sample_parser._actions),
       "sample parser has --config flag")
 
-# Source inspection: train.py imports merge_config_and_cli
-train_src = (ROOT / "src" / "cli" / "train.py").read_text()
-check("merge_config_and_cli" in train_src, "train.py uses merge_config_and_cli")
-check("_FLAT_TO_NESTED" in train_src, "train.py defines _FLAT_TO_NESTED")
+# Source inspection: train_flow_matching.py imports merge_config_and_cli
+train_src = (ROOT / "src" / "cli" / "train_flow_matching.py").read_text()
+check("merge_config_and_cli" in train_src, "train_flow_matching.py uses merge_config_and_cli")
+check("_FLAT_TO_NESTED" in train_src, "train_flow_matching.py defines _FLAT_TO_NESTED")
 
 sample_src = (ROOT / "src" / "cli" / "sample.py").read_text()
 check("merge_config_and_cli" in sample_src, "sample.py uses merge_config_and_cli")
@@ -239,13 +248,13 @@ check("load_yaml" in sample_src, "sample.py handles YAML for extra fields")
 # G. Wrapper scripts still work (source inspection)
 # ══════════════════════════════════════════════════════════════════════════
 print("\n=== G. Wrapper scripts ===")
-wrapper = (ROOT / "train_sfm.py").read_text()
-check("from src.cli.train import main" in wrapper,
-      "train_sfm.py still delegates to src.cli.train")
+wrapper = (ROOT / "train_flow_matching.py").read_text()
+check("from src.cli.train_flow_matching import main" in wrapper,
+      "train_flow_matching.py still delegates to src.cli.train_flow_matching")
 
 tree = ast.parse(wrapper)
 # Should not have its own argparse or config loading
-check("argparse" not in wrapper, "train_sfm.py has no argparse (thin wrapper)")
+check("argparse" not in wrapper, "train_flow_matching.py has no argparse (thin wrapper)")
 
 
 # ══════════════════════════════════════════════════════════════════════════

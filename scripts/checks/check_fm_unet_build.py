@@ -117,8 +117,8 @@ print("\n=== 6. Syntax checks ===")
 for f in [
     "archive/legacy_code/fm_src/pipelines/flow_matching_pipeline.py",
     "src/models/fm_unet.py",
-    "train_sfm.py",
-    "scripts/standalone/train_fm.py",
+    "train_flow_matching.py",
+    "train_flow_matching.py",
     "train_vae.py",
 ]:
     path = os.path.join(REPO, f)

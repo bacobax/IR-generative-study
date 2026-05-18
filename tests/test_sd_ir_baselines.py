@@ -409,6 +409,60 @@ def test_local_dataloader_does_not_require_huggingface_datasets(tmp_path: Path, 
     assert batch["input_ids"].shape == (1, 8)
 
 
+def test_local_dataloader_uses_subset_manifest_order(tmp_path: Path):
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+    for index, name in enumerate(["a.npy", "b.npy", "c.npy"]):
+        np.save(images_dir / name, np.full((8, 8), index, dtype=np.uint8))
+    manifest = tmp_path / "subsets" / "train_subset.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps({"samples": [{"path": "c.npy"}, {"path": "a.npy"}]}),
+        encoding="utf-8",
+    )
+
+    dataloader, _ = create_dataloader(
+        dataset_id=None,
+        dataset_name=None,
+        dataset_config_name=None,
+        train_data_dir=str(tmp_path),
+        train_split="train",
+        cache_dir=None,
+        tokenizer=_MockTokenizer(),
+        resolution=8,
+        center_crop=False,
+        random_flip=False,
+        interpolation_mode="nearest",
+        image_column="image",
+        caption_column="text",
+        batch_size=1,
+        num_workers=0,
+        max_train_samples=None,
+        subset_manifest=str(manifest),
+        seed=7,
+        prompt_text="thermal image",
+    )
+
+    assert dataloader.dataset.dataset.records == [
+        {"image": str(images_dir / "c.npy"), "text": ""},
+        {"image": str(images_dir / "a.npy"), "text": ""},
+    ]
+
+
+def test_sd_config_rejects_subset_manifest_with_hf_dataset_name(tmp_path: Path):
+    with pytest.raises(ValueError, match="subset_manifest"):
+        parse_args(
+            [
+                "--dataset_name",
+                "lambdalabs/naruto-blip-captions",
+                "--subset_manifest",
+                str(tmp_path / "subset.json"),
+                "--output_dir",
+                str(tmp_path / "sd_run"),
+            ]
+        )
+
+
 def test_setup_logging_does_not_import_huggingface_datasets(monkeypatch):
     real_import = __import__
 

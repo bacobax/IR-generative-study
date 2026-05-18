@@ -17,7 +17,7 @@ echo "Model dir:   $MODEL_DIR"
 echo "Log dir:     $LOG_DIR"
 echo "Debug dir:   $DEBUG_DIR"
 
-python -m src.cli.train --config "$CONFIG_PATH" "$@"
+python -m src.cli.train_flow_matching --config "$CONFIG_PATH" "$@"
 
 echo ""
 echo "TensorBoard:"

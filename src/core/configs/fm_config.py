@@ -1,7 +1,7 @@
 """Structured configuration objects for flow-matching training and sampling.
 
 These dataclasses replace the loose argparse values that were previously
-threaded through ``train_sfm.py``, ``FlowMatchingTrainer``, and
+threaded through ``train_flow_matching.py``, ``FlowMatchingTrainer``, and
 ``FlowMatchingSampler``.  They are **not** Hydra configs — just plain
 ``dataclasses.dataclass`` objects with default values that match the
 existing CLI defaults.
@@ -82,6 +82,7 @@ class DataConfig:
     max_train_samples: Optional[int] = None
     max_val_samples: Optional[int] = None
     subset_strategy: str = "first_n"
+    subset_manifest: Optional[str] = None
 
     def __post_init__(self) -> None:
         self.image_size = _validate_image_size(self.image_size)
@@ -370,7 +371,7 @@ class FMTrainConfig:
     """Complete configuration for a flow-matching training run.
 
     Aggregates all sub-configs and provides a ``from_args`` factory that
-    mirrors the existing ``argparse`` interface in ``train_sfm.py``.
+    mirrors the existing ``argparse`` interface in ``train_flow_matching.py``.
     """
 
     data: DataConfig = field(default_factory=DataConfig)
@@ -429,6 +430,7 @@ class FMTrainConfig:
                 max_train_samples=getattr(args, "max_train_samples", None),
                 max_val_samples=getattr(args, "max_val_samples", None),
                 subset_strategy=getattr(args, "subset_strategy", "first_n"),
+                subset_manifest=getattr(args, "subset_manifest", None),
             ),
             model=ModelConfig(
                 unet_config=args.unet_config,

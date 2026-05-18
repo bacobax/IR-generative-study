@@ -188,14 +188,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     stage1_command = [
         sys.executable,
         "-m",
-        "src.cli.train_sd",
+        "src.cli.adapt_stable_diffusion",
+        "--stage",
+        "stage1",
         "--config",
         str(stage1_config_path),
     ]
     stage2_command = [
         sys.executable,
         "-m",
-        "src.cli.train_sd_layout",
+        "src.cli.adapt_stable_diffusion",
+        "--stage",
+        "regiondiff-stage2",
         "--config",
         str(stage2_config_path),
     ]

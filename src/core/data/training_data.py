@@ -23,6 +23,7 @@ class ResolvedTrainingData:
     train_annotations_path: Optional[str]
     val_annotations_path: Optional[str]
     normalization_mode: str
+    train_subset_manifest: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ def resolve_training_data(data_config: Any) -> ResolvedTrainingData:
     train_annotations_path = getattr(data_config, "annotations_path", None)
     val_annotations_path = getattr(data_config, "annotations_path", None)
     normalization_mode = RAW_UINT16_PERCENTILE
+    train_subset_manifest = getattr(data_config, "subset_manifest", None)
 
     dataset_id = getattr(data_config, "dataset_id", None)
     if dataset_id is not None:
@@ -63,6 +65,7 @@ def resolve_training_data(data_config: Any) -> ResolvedTrainingData:
         train_annotations_path=train_annotations_path,
         val_annotations_path=val_annotations_path,
         normalization_mode=normalization_mode,
+        train_subset_manifest=train_subset_manifest,
     )
 
 
@@ -119,6 +122,7 @@ def build_non_layout_dataloaders(
             transform=train_transform,
             resize_target=data_config.image_size,
             normalization_mode=resolved_data.normalization_mode,
+            subset_manifest=resolved_data.train_subset_manifest,
         )
         eval_base_dataset = AnnotationFMDataset(
             root_dir=resolved_data.val_dir,
@@ -133,6 +137,7 @@ def build_non_layout_dataloaders(
         train_base_dataset = NPYImageDataset(
             root_dir=resolved_data.train_dir,
             transform=train_transform,
+            subset_manifest=resolved_data.train_subset_manifest,
         )
         eval_base_dataset = NPYImageDataset(
             root_dir=resolved_data.val_dir,

@@ -9,6 +9,7 @@ freeze_text_encoder: true
 
 dataset_id: "flir_private_proxy_alignment_v18"
 train_split: "train"
+subset_manifest: null
 prompt_text: "thermal image of a road scene"
 
 resolution: 512

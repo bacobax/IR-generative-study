@@ -26,4 +26,4 @@ slurm_grep_config_keys "Configured batch size:" "batch_size:" "${CONFIG}" -n | h
 slurm_grep_config_keys "Configured mixed precision:" "mixed_precision:" "${CONFIG}" -n | head -n 2 || true
 slurm_print_gpu_diagnostics
 
-slurm_run_timed "${PROJECT_ROOT}/logs/sduncond-${JOB_ID}" "SD Uncond" --   python -m src.cli.train_sd_uncond     --config "${CONFIG}"     --mixed_precision auto || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/sduncond-${JOB_ID}" "SD Uncond" --   python -m src.cli.train_latent_diffusion     --config "${CONFIG}"     --mixed_precision auto || exit $?

@@ -16,6 +16,7 @@ from src.core.data.annotations import (
     index_annotations,
     load_coco_annotations,
 )
+from src.core.data.subset_manifest import filter_files_by_subset_manifest
 from src.core.data.transforms import horizontal_flip
 from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
 
@@ -31,11 +32,22 @@ class NPYImageDataset(Dataset):
         Applied to the raw float tensor after loading.
     """
 
-    def __init__(self, root_dir: str, transform: Optional[Callable] = None):
+    def __init__(
+        self,
+        root_dir: str,
+        transform: Optional[Callable] = None,
+        subset_manifest: Optional[str] = None,
+    ):
         self.root_dir = root_dir
         self.transform = transform
-        self.files = sorted(
+        files = sorted(
             f for f in os.listdir(root_dir) if f.endswith(".npy")
+        )
+        self.files = filter_files_by_subset_manifest(
+            files,
+            subset_manifest,
+            split_dir=root_dir,
+            context="NPYImageDataset",
         )
         if len(self.files) == 0:
             raise RuntimeError("No .npy files found")
@@ -235,6 +247,7 @@ class AnnotationLayoutDataset(Dataset):
         normalization_mode: str = RAW_UINT16_PERCENTILE,
         include_label_names: bool = True,
         horizontal_flip_schedule=None,
+        subset_manifest: Optional[str] = None,
     ):
         self.root_dir = root_dir
         self.image_size = int(image_size)
@@ -242,8 +255,14 @@ class AnnotationLayoutDataset(Dataset):
         self.include_label_names = include_label_names
         self.horizontal_flip_schedule = horizontal_flip_schedule
 
-        self.files = sorted(
+        files = sorted(
             f for f in os.listdir(root_dir) if f.endswith(".npy")
+        )
+        self.files = filter_files_by_subset_manifest(
+            files,
+            subset_manifest,
+            split_dir=root_dir,
+            context="AnnotationLayoutDataset",
         )
         if not self.files:
             raise RuntimeError(f"No .npy files found in {root_dir}")

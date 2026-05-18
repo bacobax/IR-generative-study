@@ -97,7 +97,7 @@ Scalars now also include:
 Tiny v2 verification run:
 
 ```bash
-conda run -n diffusers-dev python -m src.cli.train \
+conda run -n diffusers-dev python -m src.cli.train_flow_matching \
   --config configs/fm/train/presets/stay_layout_pixel_flir_v2_tiny.yaml \
   --device cpu
 ```
@@ -105,7 +105,7 @@ conda run -n diffusers-dev python -m src.cli.train \
 Short CUDA smoke run:
 
 ```bash
-conda run -n diffusers-dev python -m src.cli.train \
+conda run -n diffusers-dev python -m src.cli.train_flow_matching \
   --config configs/fm/train/presets/stay_layout_pixel_flir_v2_tiny.yaml \
   --max_train_samples 2 \
   --max_val_samples 2 \

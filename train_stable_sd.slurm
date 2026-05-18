@@ -35,7 +35,7 @@ grep -n "mixed_precision:" "${CONFIG}" | head -n 1 || true
 nvidia-smi || true
 
 set +e
-/usr/bin/time -v python -m src.cli.train_sd_uncond \
+/usr/bin/time -v python -m src.cli.train_latent_diffusion \
   --config "${CONFIG}" \
   --mixed_precision auto \
   > "logs/sduncond-${JOB_ID}.out" 2> "logs/sduncond-${JOB_ID}.err"

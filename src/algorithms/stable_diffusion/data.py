@@ -19,6 +19,7 @@ from torchvision import transforms
 from torchvision.transforms import functional as TF
 
 from src.core.data.dataset_targets import resolve_dataset_target
+from src.core.data.subset_manifest import filter_files_by_subset_manifest
 from src.core.normalization import (
     RAW_UINT16_PERCENTILE,
     UINT8_LINEAR,
@@ -414,6 +415,7 @@ def _build_local_training_dataset(
     train_data_dir: str,
     image_column: str,
     caption_column: str,
+    subset_manifest: Optional[str] = None,
 ) -> Tuple[Dataset, str, str]:
     if os.path.isdir(os.path.join(train_data_dir, "images")):
         images_dir = os.path.join(train_data_dir, "images")
@@ -423,11 +425,21 @@ def _build_local_training_dataset(
     if not os.path.isdir(images_dir):
         raise ValueError(f"Expected training data directory at: {images_dir}")
 
-    npy_paths = sorted(
-        os.path.join(images_dir, fn)
+    npy_files = sorted(
+        fn
         for fn in os.listdir(images_dir)
         if fn.lower().endswith(".npy")
     )
+    npy_files = filter_files_by_subset_manifest(
+        npy_files,
+        subset_manifest,
+        split_dir=train_data_dir,
+        context="Stable Diffusion stage-1 dataset",
+    )
+    npy_paths = [
+        os.path.join(images_dir, fn)
+        for fn in npy_files
+    ]
     if len(npy_paths) == 0:
         raise ValueError(f"No .npy files found in {images_dir}")
 
@@ -463,8 +475,14 @@ def load_training_dataset(
     cache_dir: Optional[str] = None,
     image_column: str = "image",
     caption_column: str = "text",
+    subset_manifest: Optional[str] = None,
 ) -> Tuple[Dataset, str, str]:
     if dataset_name is not None:
+        if subset_manifest is not None:
+            raise ValueError(
+                "subset_manifest is only supported for local repo datasets, "
+                "not Hugging Face dataset_name inputs."
+            )
         try:
             from datasets import load_dataset
         except ImportError as exc:
@@ -500,7 +518,12 @@ def load_training_dataset(
     if train_data_dir is None:
         raise ValueError("train_data_dir must be provided when dataset_name is None")
 
-    return _build_local_training_dataset(train_data_dir, image_column, caption_column)
+    return _build_local_training_dataset(
+        train_data_dir,
+        image_column,
+        caption_column,
+        subset_manifest=subset_manifest,
+    )
 
 
 def create_dataloader(
@@ -521,6 +544,7 @@ def create_dataloader(
     batch_size: int,
     num_workers: int = 0,
     max_train_samples: Optional[int] = None,
+    subset_manifest: Optional[str] = None,
     seed: Optional[int] = None,
     use_ir_preprocessing: bool = True,
     prompt_text: Optional[str] = None,
@@ -541,6 +565,7 @@ def create_dataloader(
         cache_dir=cache_dir,
         image_column=image_column,
         caption_column=caption_column,
+        subset_manifest=subset_manifest,
     )
 
     if max_train_samples is not None:

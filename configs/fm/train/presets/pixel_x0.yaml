@@ -1,8 +1,21 @@
 # Pixel-space Flow Matching: x0-prediction (no VAE)
-# Launcher: scripts/train/fm_pixel.sh
-# Only values that differ from scripts/standalone/train_fm.py defaults are listed.
-model_dir: ./artifacts/checkpoints/flow_matching/serious_runs/pixel_fm_x0/
-epochs: 300              # default 100
-save_every_n_epochs: 30  # default 10
-train_target: x0         # default v
-ramp_frac: 0.4           # default 0.3
+# Launcher: scripts/train/unstable_fm.sh
+# Only values that differ from train_flow_matching.py defaults are listed.
+data:
+  subset_manifest: null
+
+model:
+  unet_config: configs/models/fm/non_stable_unet_config.json
+  vae_config: null
+  vae_weights: null
+
+output:
+  model_dir: ./artifacts/checkpoints/flow_matching/serious_runs/pixel_fm_x0/
+
+training:
+  epochs: 300
+  save_every_n_epochs: 30
+  train_target: x0
+
+augment:
+  ramp_frac: 0.4

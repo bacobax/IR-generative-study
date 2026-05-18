@@ -33,6 +33,11 @@ from src.core.data.schema import (
     TextFields,
     TokenizerFields,
 )
+from src.core.data.subset_manifest import (
+    filter_files_by_subset_manifest,
+    load_subset_manifest_file_names,
+    resolve_subset_manifest_path,
+)
 from src.core.data.training_data import (
     NonLayoutTrainingData,
     ResolvedTrainingData,
@@ -69,7 +74,10 @@ __all__ = [
     "canonical_sample_from_mapping",
     "collate_foreground_background_batch",
     "collate_layout_batch",
+    "filter_files_by_subset_manifest",
+    "load_subset_manifest_file_names",
     "normalize_batch",
     "normalize_sample",
     "resolve_training_data",
+    "resolve_subset_manifest_path",
 ]

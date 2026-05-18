@@ -47,14 +47,14 @@ flow_matching_trial/
 └── .gitignore
 ```
 
-Root-level Python scripts (`train_sfm.py`, `train_sd.py`, `train_vae.py`,
+Root-level Python scripts (`train_flow_matching.py`, `adapt_stable_diffusion.py`, `train_vae.py`,
 `train_controlnet.py`, `generate_datasets.py`, `serve_flir_analysis.py`) are
 **thin wrappers** that delegate to the corresponding module inside `src/cli/`.
 
 | Root wrapper           | Source of truth              | Purpose                                  |
 | ---------------------- | ---------------------------- | ---------------------------------------- |
-| `train_sfm.py`         | `src/cli/train.py`           | Flow-Matching training (YAML config)     |
-| `train_sd.py`          | `src/cli/train_sd.py`        | Stable Diffusion 1.5 LoRA fine-tuning    |
+| `train_flow_matching.py`         | `src/cli/train_flow_matching.py`           | Flow-Matching training (YAML config)     |
+| `adapt_stable_diffusion.py`          | `src/cli/adapt_stable_diffusion.py`        | Stable Diffusion 1.5 LoRA fine-tuning    |
 | `train_vae.py`         | `src/cli/train_vae.py`       | VAE (KL) training                        |
 | `train_controlnet.py`  | `src/cli/train_controlnet.py`| ControlNet training                      |
 | `generate_datasets.py` | `src/cli/generate.py`        | Synthetic dataset generation (SD / FM)   |
@@ -73,7 +73,7 @@ root-level invocation paths are kept as thin compatibility wrappers where used.
 
 | Script                                             | Purpose                                          |
 | -------------------------------------------------- | ------------------------------------------------ |
-| `scripts/standalone/train_fm.py`                   | Pixel-space flow matching training (no VAE)      |
+| `train_flow_matching.py`                   | Pixel-space flow matching training (no VAE)      |
 | `scripts/standalone/train_count_adapter.py`        | Count-conditioned DINO adapter training          |
 | `scripts/standalone/analyze_distribution_shift.py` | Distribution shift analysis (FID, MMD, etc.)     |
 
@@ -86,10 +86,10 @@ Retired meta-learning and MoE flow-matching curriculum tools are preserved under
 
 ```bash
 # Train flow-matching model (config-driven)
-python train_sfm.py --config configs/fm/train/default.yaml
+python train_flow_matching.py --config configs/fm/train/default.yaml
 
 # Train SD 1.5 LoRA
-python train_sd.py  # edit src/cli/train_sd.py defaults or pass flags
+python adapt_stable_diffusion.py --stage stage1 --config configs/sd/train/default.yaml
 
 # Train VAE
 python train_vae.py --train-dir ./data/raw/v18/train --val-dir ./data/raw/v18/val

@@ -5,4 +5,4 @@ ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "
 cd "$ROOT_DIR"
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:256"
 accelerate launch --mixed_precision=fp16 \
-  -m src.cli.train_sd --config configs/sd/train/presets/flir_lora_stage1.yaml "$@"
+  -m src.cli.adapt_stable_diffusion --config configs/sd/train/presets/flir_lora_stage1.yaml "$@"

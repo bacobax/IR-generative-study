@@ -60,6 +60,7 @@ def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
             [
                 "data:",
                 "  dataset_id: flir_private_proxy_alignment_v18",
+                "  subset_manifest: train_2000_bbox_stratified.json",
                 "training:",
                 "  epochs: 12",
                 "diffusion:",
@@ -82,6 +83,7 @@ def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
     )
 
     assert cfg.data.dataset_id == "flir_private_proxy_alignment_v18"
+    assert cfg.data.subset_manifest == "train_2000_bbox_stratified.json"
     assert cfg.training.epochs == 3
     assert cfg.training.eval_every == 1
     assert cfg.diffusion.prediction_type == "v_prediction"

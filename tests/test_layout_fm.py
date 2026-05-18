@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 
 from src.algorithms.inference.layout_flow_matching_sampler import LayoutFlowMatchingSampler
 from src.algorithms.training.layout_flow_matching_trainer import LayoutFMTrainer
-from src.cli.train import _FLAT_TO_NESTED, build_parser
+from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser
 from src.core.configs.config_loader import merge_config_and_cli
 from src.core.configs.fm_config import FMTrainConfig, LayoutConditioningConfig
 from src.core.data.layout_batching import collate_layout_batch

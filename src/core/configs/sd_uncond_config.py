@@ -145,6 +145,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Deterministic limit on validation samples (debug only).")
     parser.add_argument("--subset_strategy", type=str, default="first_n",
                         help="Dataset subsetting policy for debug runs.")
+    parser.add_argument("--subset_manifest", type=str, default=None,
+                        help="Optional manifest selecting the training split subset.")
 
     parser.add_argument("--unet_config", type=str, default="configs/models/fm/stable_unet_config.json",
                         help="UNet config JSON")
@@ -271,6 +273,7 @@ _FLAT_TO_NESTED = {
     "max_train_samples": "data.max_train_samples",
     "max_val_samples": "data.max_val_samples",
     "subset_strategy": "data.subset_strategy",
+    "subset_manifest": "data.subset_manifest",
     "unet_config": "model.unet_config",
     "vae_config": "model.vae_config",
     "vae_weights": "model.vae_weights",

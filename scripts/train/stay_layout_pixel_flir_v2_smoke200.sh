@@ -22,5 +22,5 @@ echo "TensorBoard:"
 echo "  tensorboard --logdir $LOG_DIR"
 
 
-python -m src.cli.train --config "$CONFIG_PATH" "$@"
+python -m src.cli.train_flow_matching --config "$CONFIG_PATH" "$@"
 

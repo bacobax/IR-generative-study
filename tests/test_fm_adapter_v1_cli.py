@@ -7,7 +7,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.cli.train import (
+from src.cli.train_flow_matching import (
     _FLAT_TO_NESTED,
     _build_adapter_v1_non_layout_data,
     _build_adapter_v1_trainer,
@@ -82,7 +82,7 @@ def test_adapter_v1_non_layout_data_resolves_dataset_adapter_before_existing_loa
         assert kwargs["data_config"].dataset_id == dataset_id
         return expected
 
-    monkeypatch.setattr("src.cli.train.build_non_layout_dataloaders", fake_build_non_layout_dataloaders)
+    monkeypatch.setattr("src.cli.train_flow_matching.build_non_layout_dataloaders", fake_build_non_layout_dataloaders)
     cfg = FMTrainConfig(data=DataConfig(dataset_id=dataset_id))
     resolved = ResolvedTrainingData(
         train_dir="/tmp/train",

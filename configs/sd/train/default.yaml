@@ -1,12 +1,13 @@
 # Stage-1 Stable Diffusion IR adaptation default configuration.
 #
 # Source of truth:
-#   python -m src.cli.train_sd --config configs/sd/train/default.yaml
+#   python -m src.cli.adapt_stable_diffusion --config configs/sd/train/default.yaml
 
 pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
 baseline_mode: "sd_ir_lora"
 dataset_id: "flir_private_proxy_alignment_v18"
 train_split: "train"
+subset_manifest: null
 prompt_text: "thermal image"
 
 freeze_vae: true

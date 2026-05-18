@@ -32,19 +32,15 @@ def check(cond: bool, msg: str):
 
 # Mapping: root wrapper file -> (expected import source, source-of-truth file)
 WRAPPER_MAP = {
-    "train_sfm.py":         ("src.cli.train",            "src/cli/train.py"),
-    "train_sd.py":          ("src.cli.train_sd",         "src/cli/train_sd.py"),
-    "train_sd_uncond.py":   ("src.cli.train_sd_uncond",  "src/cli/train_sd_uncond.py"),
+    "train_flow_matching.py":         ("src.cli.train_flow_matching",            "src/cli/train_flow_matching.py"),
+    "adapt_stable_diffusion.py":          ("src.cli.adapt_stable_diffusion",         "src/cli/adapt_stable_diffusion.py"),
+    "train_latent_diffusion.py":   ("src.cli.train_latent_diffusion",  "src/cli/train_latent_diffusion.py"),
     "train_vae.py":         ("src.cli.train_vae",        "src/cli/train_vae.py"),
     "train_controlnet.py":  ("src.cli.train_controlnet", "src/cli/train_controlnet.py"),
     "generate_datasets.py": ("src.cli.generate",         "src/cli/generate.py"),
 }
 
 STANDALONE_WRAPPER_MAP = {
-    "train_fm.py": (
-        "scripts.standalone.train_fm",
-        "scripts/standalone/train_fm.py",
-    ),
     "analyze_distribution_shift.py": (
         "scripts.standalone.analyze_distribution_shift",
         "scripts/standalone/analyze_distribution_shift.py",
@@ -99,7 +95,7 @@ for wrapper_name, (expected_import, _) in WRAPPER_MAP.items():
         continue
 
     source = wrapper_path.read_text()
-    # Look for e.g. "from src.cli.train_sd import main"
+    # Look for e.g. "from src.cli.adapt_stable_diffusion import main"
     found_import = False
     try:
         tree = ast.parse(source)

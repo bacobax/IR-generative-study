@@ -210,7 +210,7 @@ def test_cfg_sampler():
 def test_config_system():
     from src.core.configs.text_fm_config import TextFMTrainConfig, TextFMSampleConfig
     from src.core.configs.config_loader import merge_config_and_cli, load_yaml
-    from src.cli.train_text_fm import build_parser, _FLAT_TO_NESTED
+    from src.cli.train_flow_matching import _TEXT_FLAT_TO_NESTED, build_text_parser
 
     cfg = TextFMTrainConfig()
     assert cfg.trainer_name == "text_fm_cfg"
@@ -221,13 +221,19 @@ def test_config_system():
     assert "conditioning" in yaml_data
     assert yaml_data["training"]["eval_every"] == 1
 
-    parser = build_parser()
+    parser = build_text_parser()
     args = parser.parse_args([
         "--config", "configs/fm/train/presets/text_cfg.yaml",
         "--epochs", "5",
         "--eval_every", "3",
     ])
-    merged = merge_config_and_cli(TextFMTrainConfig, args.config, parser, args, flat_to_nested=_FLAT_TO_NESTED)
+    merged = merge_config_and_cli(
+        TextFMTrainConfig,
+        args.config,
+        parser,
+        args,
+        flat_to_nested=_TEXT_FLAT_TO_NESTED,
+    )
     assert merged.training.epochs == 5
     assert merged.training.eval_every == 3
     assert merged.conditioning.cond_drop_prob == 0.1

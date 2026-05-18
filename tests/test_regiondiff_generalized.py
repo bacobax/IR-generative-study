@@ -537,7 +537,7 @@ def test_sd_uncond_regiondiff_config_parses_preset_fields() -> None:
 
 
 def test_regiondiff_fm_ot_flir_preset_is_fixed_quality_first() -> None:
-    from src.cli.train import _FLAT_TO_NESTED, build_parser
+    from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser
     from src.core.configs.config_loader import merge_config_and_cli
     from src.core.configs.fm_config import FMTrainConfig
 

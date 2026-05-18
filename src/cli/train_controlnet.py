@@ -10,7 +10,7 @@ that follows the ControlNet architecture from the paper
 (`Zhang et al., 2023 <https://arxiv.org/abs/2302.05543>`_)
 adapted for ``diffusers.UNet2DModel`` flow-matching pipelines.
 
-Configuration uses a 3-layer merge (like ``src.cli.train``):
+Configuration uses a 3-layer merge (like ``src.cli.train_flow_matching``):
     1. Dataclass defaults (``CNTrainConfig``)
     2. YAML config file (``--config``)
     3. CLI flag overrides

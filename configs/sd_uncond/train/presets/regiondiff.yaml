@@ -8,6 +8,7 @@ data:
   max_train_samples: 8
   max_val_samples: 4
   subset_strategy: first_n
+  subset_manifest: null
 
 model:
   unet_config: "configs/models/fm/stable_unet_config.json"
