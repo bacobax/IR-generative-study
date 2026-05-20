@@ -18,17 +18,17 @@ model:
   pretrained_unet_path: null
 
 augment:
-  warmup_frac: 0.0
-  ramp_frac: 0.0
+  warmup_frac: 0.10
+  ramp_frac: 0.30
   p_crop_warmup: 0.0
   p_crop_max: 0.0
   p_crop_final: 0.0
   p_rot_warmup: 0.0
   p_rot_max: 0.0
   p_rot_final: 0.0
-  p_hflip_warmup: 0.5
-  p_hflip_max: 0.5
-  p_hflip_final: 0.5
+  p_hflip_warmup: 0.0
+  p_hflip_max: 0.6
+  p_hflip_final: 0.3
 
 training:
   epochs: 300

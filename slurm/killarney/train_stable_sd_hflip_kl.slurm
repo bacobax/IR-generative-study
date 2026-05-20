@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/common.sh"
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="diffusers-dev"
-CONFIG_REL="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml"
+CONFIG_REL="${CONFIG_REL:-configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml}"
 CONFIG="$(slurm_config_path "${CONFIG_REL}")"
 
 slurm_init_runtime

@@ -68,7 +68,7 @@ path:
   solver: "hungarian"
 
 sampling:
-  sample_every: 10
+  sample_every: 50
   sample_steps: 40
   sample_batch_size: 4
   sample_shape: null
