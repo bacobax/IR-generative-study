@@ -69,8 +69,8 @@ diffusion:
   snr_gamma: null
 
 sampling:
-  sample_every: 10
-  sample_steps: 40
+  sample_every: 50
+  sample_steps: 80
   sample_batch_size: 4
   sample_shape: null
   fixed_validation_examples: 4
