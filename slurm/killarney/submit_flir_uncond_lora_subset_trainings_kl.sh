@@ -12,13 +12,22 @@ set -euo pipefail
 #   FM/SD full: 24h -> 5k: 12h, 2k: 5h
 #   LoRA full: 12h -> 5k: 6h, 2k: 3h
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
   if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "${SLURM_SUBMIT_DIR}/configs" ]]; then
-    PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
+    PROJECT_ROOT="$(cd "${SLURM_SUBMIT_DIR}" && pwd -P)"
   else
-    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
   fi
+else
+  PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd -P)"
+fi
+
+if [[ "${PROJECT_ROOT}" == /home/* ]]; then
+  echo "ERROR: Killarney does not allow sbatch submissions from /home." >&2
+  echo "       Run this from the repo path under /project or /scratch, or set PROJECT_ROOT to that path." >&2
+  echo "       Current resolved PROJECT_ROOT: ${PROJECT_ROOT}" >&2
+  exit 1
 fi
 DRY_RUN="${DRY_RUN:-0}"
 
