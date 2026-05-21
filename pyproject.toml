@@ -7,6 +7,7 @@ name = "flow-matching-trial"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "lpips>=0.1.4,<0.2",
     "scipy>=1.10,<2",
 ]
 

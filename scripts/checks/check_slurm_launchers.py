@@ -314,17 +314,32 @@ if actual != expected:
     print(f"    missing={sorted(expected - actual)}")
 
 print("\n=== Migrated launchers ===")
+DIRECT_RUNTIME_LAUNCHERS = {
+    "slurm/killarney/train_flir_unet_full_domainstudio_512_kl.slurm",
+    "slurm/killarney/train_stable_fm_hflip_ot_kl.slurm",
+    "slurm/killarney/train_stable_sd_hflip_kl.slurm",
+}
 for rel_path in sorted(expected):
     path = ROOT / rel_path
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     check(path.is_file(), f"{rel_path} exists")
     check(slurm_header(text) == EXPECTED_HEADERS[rel_path], f"{rel_path} preserves #SBATCH header")
-    check('source "${SCRIPT_DIR}/../lib/common.sh"' in text, f"{rel_path} sources Slurm common helper")
-    check("slurm_init_runtime" in text, f"{rel_path} initializes shared runtime")
-    check("slurm_run_timed" in text, f"{rel_path} uses timed command helper")
-    check("/usr/bin/time -v" not in text, f"{rel_path} does not duplicate raw time invocation")
+    if rel_path in DIRECT_RUNTIME_LAUNCHERS:
+        check('source "${SCRIPT_DIR}/../lib/common.sh"' not in text, f"{rel_path} is self-contained")
+        check("slurm_" not in text, f"{rel_path} avoids custom Slurm helper calls")
+        check("set -euo pipefail" in text, f"{rel_path} enables strict shell mode")
+        check("conda activate" in text, f"{rel_path} activates the Conda environment directly")
+        check("/usr/bin/time -v" not in text, f"{rel_path} uses Slurm logs directly")
+    else:
+        check('source "${SCRIPT_DIR}/../lib/common.sh"' in text, f"{rel_path} sources Slurm common helper")
+        check("slurm_init_runtime" in text, f"{rel_path} initializes shared runtime")
+        check("slurm_run_timed" in text, f"{rel_path} uses timed command helper")
+        check("/usr/bin/time -v" not in text, f"{rel_path} does not duplicate raw time invocation")
     if "CONFIG_REL" in text or "PRESET_PATH" in text:
-        check("slurm_config_path" in text or "slurm_require_file" in text, f"{rel_path} resolves/checks config-like paths")
+        check(
+            "slurm_config_path" in text or "slurm_require_file" in text or '[[ ! -f "${CONFIG}" ]]' in text,
+            f"{rel_path} resolves/checks config-like paths",
+        )
     for ref in sorted(config_refs(text)):
         check((ROOT / ref).is_file(), f"{rel_path} referenced config exists: {ref}")
 

@@ -8,22 +8,55 @@
 #SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out
 #SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+set -euo pipefail
+
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
-ENV_NAME="diffusers-dev"
+ENV_NAME="${ENV_NAME:-diffusers-dev}"
 CONFIG_REL="${CONFIG_REL:-configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml}"
-CONFIG="$(slurm_config_path "${CONFIG_REL}")"
+if [[ "${CONFIG_REL}" = /* ]]; then
+  CONFIG="${CONFIG_REL}"
+else
+  CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
+fi
 
-slurm_init_runtime
+cd "${PROJECT_ROOT}"
+mkdir -p logs
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 
+if [[ -n "${CONDA_ACTIVATE_PATH:-}" ]]; then
+  source "${CONDA_ACTIVATE_PATH}"
+elif command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)"
+  conda activate "${ENV_NAME}"
+else
+  echo "ERROR: conda not found in PATH" >&2
+  exit 1
+fi
+
+echo "Host: $(hostname)"
+echo "Start time: $(date)"
+echo "Project root: ${PROJECT_ROOT}"
+echo "Conda env: ${ENV_NAME}"
 echo "Config: ${CONFIG}"
-slurm_print_python_diagnostics
-slurm_require_file "${CONFIG}" "config"
+echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
+echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
+echo "SLURM_SUBMIT_DIR: ${SLURM_SUBMIT_DIR:-<unset>}"
+which python
+python --version
 
-slurm_grep_config_keys "Configured batch size:" "batch_size:" "${CONFIG}" -n | head -n 2 || true
-slurm_grep_config_keys "Configured horizontal flip probabilities:" "p_hflip_" "${CONFIG}" -n
-slurm_grep_config_keys "Configured mixed precision:" "mixed_precision:" "${CONFIG}" -n | head -n 2 || true
-slurm_print_gpu_diagnostics
+if [[ ! -f "${CONFIG}" ]]; then
+  echo "ERROR: config not found: ${CONFIG}" >&2
+  exit 1
+fi
 
-slurm_run_timed "${PROJECT_ROOT}/logs/sd-hflip-${JOB_ID}" "SD hflip" --   python -m src.cli.train_latent_diffusion     --config "${CONFIG}"     --mixed_precision auto || exit $?
+echo "Configured batch size:"
+grep -n "batch_size:" "${CONFIG}" | head -n 2 || true
+echo "Configured horizontal flip probabilities:"
+grep -n "p_hflip_" "${CONFIG}" || true
+echo "Configured mixed precision:"
+grep -n "mixed_precision:" "${CONFIG}" | head -n 2 || true
+nvidia-smi || true
+
+python -m src.cli.train_latent_diffusion \
+  --config "${CONFIG}" \
+  --mixed_precision auto

@@ -1,0 +1,74 @@
+# Standalone post-training checkpoint selection for completed FLIR runs.
+runs:
+  - run_identifier: "subset_2000_seed_42"
+    run_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_2000"
+    model_type: null
+    sampler_name: null
+    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8_train_2000.yaml"
+    generation_entrypoint: null
+
+  - run_identifier: "subset_5000_seed_42"
+    run_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_5000"
+    model_type: null
+    sampler_name: null
+    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8_train_5000.yaml"
+    generation_entrypoint: null
+
+checkpoint_min_epoch: 50
+checkpoint_min_step: null
+
+stage1_num_images: 200
+stage2_extra_images: 800
+stage3_extra_images: 1000
+top_k_checkpoints: 3
+
+kid_weight: 0.8
+fid_weight: 0.2
+selection_primary_metric: "KID"
+selection_score_mode: "weighted_normalized_kid_fid"
+
+dataset_id: null
+real_reference_split: "val"
+real_reference_num_samples: null
+real_reference_path: null
+
+metric_feature_extractor: "inception"
+metric_batch_size: null
+compute_kid: true
+compute_fid: true
+compute_mmd: true
+compute_intra_lpips: true
+
+kid:
+  subsets: 100
+  subset_size: 1000
+
+mmd:
+  kernel: "rbf"
+  bandwidths: [0.1, 1.0, 10.0]
+
+lpips_metric_type: "intra_lpips"
+lpips_backbone: "alex"
+lpips_batch_size: 8
+lpips_reference_split: "train"
+
+generation_batch_size: null
+generation_seed: 1234
+stage1_seed_offset: 0
+stage2_seed_offset: 100000
+stage3_seed_offset: 200000
+
+generation_prompt: null
+negative_prompt: ""
+num_inference_steps: 40
+guidance_scale: 1.0
+height: 512
+width: 512
+image_size: 512
+mixed_precision: "auto"
+device: null
+
+output_root: "/scratch/bacobax02"
+save_generated_format: "npy"
+overwrite_existing_generations: false
+overwrite_existing_metrics: false
