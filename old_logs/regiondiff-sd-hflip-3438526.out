@@ -1,0 +1,6 @@
+[HorizontalFlipSchedule] start: epoch=0 p_hflip=0.000
+[load_unet_weights] target=unet.base_model strict=True
+  Missing RegionDiff adapter keys were initialized from scratch (66 keys).
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[HorizontalFlipSchedule] warmup: epoch=0 p_hflip=0.000
+[SDUncond Epoch 1] loss: 0.293253

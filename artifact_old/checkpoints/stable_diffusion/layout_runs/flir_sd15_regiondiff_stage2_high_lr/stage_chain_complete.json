@@ -1,0 +1,7 @@
+{
+  "completed_at": "2026-05-01T19:46:20+00:00",
+  "stage1_config": "/project/6109890/bacobax2/ir-generative-study/configs/sd/train/presets/flir_unet_full_stage1.yaml",
+  "stage1_output_dir": "/project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_stage1",
+  "stage2_config": "/project/6109890/bacobax2/ir-generative-study/configs/sd_layout/train/presets/flir_regiondiff_sd15_stage2.yaml",
+  "stage2_output_dir": "/project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2"
+}

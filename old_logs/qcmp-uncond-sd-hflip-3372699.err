@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "/project/6109890/bacobax2/ir-generative-study/scripts/standalone/generate_checkpoint_quality_comparison.py", line 25, in <module>
+    from src.algorithms.inference.rare_layout_dataset_tools import (
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/inference/rare_layout_dataset_tools.py", line 19, in <module>
+    import matplotlib
+ModuleNotFoundError: No module named 'matplotlib'
+Command exited with non-zero status 1
+	Command being timed: "python scripts/standalone/generate_checkpoint_quality_comparison.py --weights_dir artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET --preset_path configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml --output_dir artifacts/generated/checkpoint_compare/uncond_sd_latent_flir_sd15_512_hflip --model_family sd --split train --max_samples 100 --steps 50 --batch_size 8 --seed 0 --device cuda"
+	User time (seconds): 3.94
+	System time (seconds): 0.83
+	Percent of CPU this job got: 78%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:06.09
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 554476
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 140541
+	Voluntary context switches: 8860
+	Involuntary context switches: 185
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 32
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

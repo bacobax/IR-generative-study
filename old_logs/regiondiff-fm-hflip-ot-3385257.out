@@ -1,0 +1,271 @@
+[HorizontalFlipSchedule] start: epoch=0 p_hflip=0.000
+[load_unet_weights] target=unet.base_model strict=True
+  Missing RegionDiff adapter keys were initialized from scratch (66 keys).
+[FM Resume] Loading checkpoint from ./artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip_last_ckpt/UNET/unet_sd_uncond_epoch_25_ckpt.pt
+[FM Resume] Resuming from epoch 25, global_step=4200, best_eval=0.157307
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[HorizontalFlipSchedule] ramp: epoch=25 p_hflip=0.050
+[FM Epoch 26] loss: 1.587445
+  [Eval loss: 2.667473]
+[FM Epoch 27] loss: 1.407126
+[FM Epoch 28] loss: 1.385394
+  [Eval loss: 1.721439]
+[FM Epoch 29] loss: 1.374350
+[FM Epoch 30] loss: 1.367281
+  [Eval loss: 1.461462]
+[FM Epoch 31] loss: 1.358755
+[FM Epoch 32] loss: 1.353756
+  [Eval loss: 1.385282]
+[FM Epoch 33] loss: 1.348649
+[FM Epoch 34] loss: 1.346652
+  [Eval loss: 1.357892]
+[FM Epoch 35] loss: 1.345788
+[FM Epoch 36] loss: 1.340759
+  [Eval loss: 1.348349]
+[FM Epoch 37] loss: 1.338402
+[FM Epoch 38] loss: 1.337072
+  [Eval loss: 1.341884]
+[FM Epoch 39] loss: 1.336707
+[FM Epoch 40] loss: 1.334254
+  [Eval loss: 1.337364]
+[FM Epoch 41] loss: 1.333250
+[FM Epoch 42] loss: 1.331265
+  [Eval loss: 1.334174]
+[FM Epoch 43] loss: 1.331391
+[FM Epoch 44] loss: 1.329609
+  [Eval loss: 1.330133]
+[FM Epoch 45] loss: 1.329128
+[FM Epoch 46] loss: 1.327998
+  [Eval loss: 1.326879]
+[FM Epoch 47] loss: 1.326579
+[FM Epoch 48] loss: 1.325575
+  [Eval loss: 1.324163]
+[FM Epoch 49] loss: 1.324334
+[FM Epoch 50] loss: 1.324177
+  [Eval loss: 1.326583]
+[FM Epoch 51] loss: 1.322385
+[FM Epoch 52] loss: 1.321716
+  [Eval loss: 1.322386]
+[FM Epoch 53] loss: 1.321465
+[FM Epoch 54] loss: 1.320689
+  [Eval loss: 1.321780]
+[FM Epoch 55] loss: 1.319656
+[FM Epoch 56] loss: 1.318227
+  [Eval loss: 1.320625]
+[FM Epoch 57] loss: 1.318039
+[FM Epoch 58] loss: 1.316562
+  [Eval loss: 1.317029]
+[FM Epoch 59] loss: 1.315100
+[FM Epoch 60] loss: 1.314482
+  [Eval loss: 1.317014]
+[FM Epoch 61] loss: 1.313755
+[FM Epoch 62] loss: 1.313860
+  [Eval loss: 1.316050]
+[FM Epoch 63] loss: 1.312436
+[FM Epoch 64] loss: 1.312499
+  [Eval loss: 1.312995]
+[FM Epoch 65] loss: 1.310730
+[FM Epoch 66] loss: 1.309557
+  [Eval loss: 1.311236]
+[FM Epoch 67] loss: 1.309396
+[FM Epoch 68] loss: 1.309842
+  [Eval loss: 1.311064]
+[FM Epoch 69] loss: 1.310925
+[FM Epoch 70] loss: 1.308123
+  [Eval loss: 1.309143]
+[FM Epoch 71] loss: 1.307733
+[FM Epoch 72] loss: 1.307355
+  [Eval loss: 1.309667]
+[FM Epoch 73] loss: 1.306248
+[FM Epoch 74] loss: 1.306957
+  [Eval loss: 1.305583]
+[FM Epoch 75] loss: 1.306160
+[FM Epoch 76] loss: 1.305457
+  [Eval loss: 1.305602]
+[FM Epoch 77] loss: 1.305312
+[FM Epoch 78] loss: 1.303865
+  [Eval loss: 1.305143]
+[FM Epoch 79] loss: 1.304084
+[FM Epoch 80] loss: 1.303756
+  [Eval loss: 1.304207]
+[HorizontalFlipSchedule] decay: epoch=80 p_hflip=0.600
+[FM Epoch 81] loss: 1.303319
+[FM Epoch 82] loss: 1.303583
+  [Eval loss: 1.302511]
+[FM Epoch 83] loss: 1.302599
+[FM Epoch 84] loss: 1.304110
+  [Eval loss: 1.304352]
+[FM Epoch 85] loss: 1.303298
+[FM Epoch 86] loss: 1.302949
+  [Eval loss: 1.302158]
+[FM Epoch 87] loss: 1.300922
+[FM Epoch 88] loss: 1.301123
+  [Eval loss: 1.303602]
+[FM Epoch 89] loss: 1.301905
+[FM Epoch 90] loss: 1.302706
+  [Eval loss: 1.302447]
+[FM Epoch 91] loss: 1.301255
+[FM Epoch 92] loss: 1.301606
+  [Eval loss: 1.300739]
+[FM Epoch 93] loss: 1.300918
+[FM Epoch 94] loss: 1.301328
+  [Eval loss: 1.300045]
+[FM Epoch 95] loss: 1.301382
+[FM Epoch 96] loss: 1.299203
+  [Eval loss: 1.299727]
+[FM Epoch 97] loss: 1.301265
+[FM Epoch 98] loss: 1.299534
+  [Eval loss: 1.299004]
+[FM Epoch 99] loss: 1.300645
+[FM Epoch 100] loss: 1.299014
+  [Eval loss: 1.299961]
+[FM Epoch 101] loss: 1.299300
+[FM Epoch 102] loss: 1.298244
+  [Eval loss: 1.298139]
+[FM Epoch 103] loss: 1.299523
+[FM Epoch 104] loss: 1.298494
+  [Eval loss: 1.298379]
+[FM Epoch 105] loss: 1.298687
+[FM Epoch 106] loss: 1.298421
+  [Eval loss: 1.298517]
+[FM Epoch 107] loss: 1.298204
+[FM Epoch 108] loss: 1.297853
+  [Eval loss: 1.297958]
+[FM Epoch 109] loss: 1.296760
+[FM Epoch 110] loss: 1.297190
+  [Eval loss: 1.297267]
+[FM Epoch 111] loss: 1.297414
+[FM Epoch 112] loss: 1.297579
+  [Eval loss: 1.297298]
+[FM Epoch 113] loss: 1.296961
+[FM Epoch 114] loss: 1.296121
+  [Eval loss: 1.297893]
+[FM Epoch 115] loss: 1.296724
+[FM Epoch 116] loss: 1.297055
+  [Eval loss: 1.295848]
+[FM Epoch 117] loss: 1.296166
+[FM Epoch 118] loss: 1.296884
+  [Eval loss: 1.297237]
+[FM Epoch 119] loss: 1.296096
+[FM Epoch 120] loss: 1.295517
+  [Eval loss: 1.295162]
+[FM Epoch 121] loss: 1.296063
+[FM Epoch 122] loss: 1.295269
+  [Eval loss: 1.294450]
+[FM Epoch 123] loss: 1.295054
+[FM Epoch 124] loss: 1.295397
+  [Eval loss: 1.296485]
+[FM Epoch 125] loss: 1.295647
+[FM Epoch 126] loss: 1.295577
+  [Eval loss: 1.295612]
+[FM Epoch 127] loss: 1.294799
+[FM Epoch 128] loss: 1.294532
+  [Eval loss: 1.294784]
+[FM Epoch 129] loss: 1.294895
+[FM Epoch 130] loss: 1.294923
+  [Eval loss: 1.293960]
+[FM Epoch 131] loss: 1.294960
+[FM Epoch 132] loss: 1.294933
+  [Eval loss: 1.295266]
+[FM Epoch 133] loss: 1.293612
+[FM Epoch 134] loss: 1.294123
+  [Eval loss: 1.294165]
+[FM Epoch 135] loss: 1.294187
+[FM Epoch 136] loss: 1.293947
+  [Eval loss: 1.293658]
+[FM Epoch 137] loss: 1.293561
+[FM Epoch 138] loss: 1.294065
+  [Eval loss: 1.291284]
+[FM Epoch 139] loss: 1.293571
+[FM Epoch 140] loss: 1.295636
+  [Eval loss: 1.292576]
+[FM Epoch 141] loss: 1.296149
+[FM Epoch 142] loss: 1.295229
+  [Eval loss: 1.295001]
+[FM Epoch 143] loss: 1.294023
+[FM Epoch 144] loss: 1.293239
+  [Eval loss: 1.293157]
+[FM Epoch 145] loss: 1.292700
+[FM Epoch 146] loss: 1.292780
+  [Eval loss: 1.292724]
+[FM Epoch 147] loss: 1.291992
+[FM Epoch 148] loss: 1.292212
+  [Eval loss: 1.292744]
+[FM Epoch 149] loss: 1.291696
+[FM Epoch 150] loss: 1.292484
+  [Eval loss: 1.292194]
+[FM Epoch 151] loss: 1.292952
+[FM Epoch 152] loss: 1.293078
+  [Eval loss: 1.290742]
+[FM Epoch 153] loss: 1.291664
+[FM Epoch 154] loss: 1.290977
+  [Eval loss: 1.291356]
+[FM Epoch 155] loss: 1.291783
+[FM Epoch 156] loss: 1.291200
+  [Eval loss: 1.290914]
+[FM Epoch 157] loss: 1.291404
+[FM Epoch 158] loss: 1.289929
+  [Eval loss: 1.290299]
+[FM Epoch 159] loss: 1.291291
+[FM Epoch 160] loss: 1.291562
+  [Eval loss: 1.290993]
+[FM Epoch 161] loss: 1.291229
+[FM Epoch 162] loss: 1.290293
+  [Eval loss: 1.291344]
+[FM Epoch 163] loss: 1.290692
+[FM Epoch 164] loss: 1.290304
+  [Eval loss: 1.291379]
+[FM Epoch 165] loss: 1.291678
+[FM Epoch 166] loss: 1.290542
+  [Eval loss: 1.289824]
+[FM Epoch 167] loss: 1.290181
+[FM Epoch 168] loss: 1.289997
+  [Eval loss: 1.290220]
+[FM Epoch 169] loss: 1.291056
+[FM Epoch 170] loss: 1.290171
+  [Eval loss: 1.289406]
+[FM Epoch 171] loss: 1.289413
+[FM Epoch 172] loss: 1.291254
+  [Eval loss: 1.291385]
+[FM Epoch 173] loss: 1.289866
+[FM Epoch 174] loss: 1.289264
+  [Eval loss: 1.290344]
+[FM Epoch 175] loss: 1.289467
+[FM Epoch 176] loss: 1.289529
+  [Eval loss: 1.288395]
+[FM Epoch 177] loss: 1.289248
+[FM Epoch 178] loss: 1.289734
+  [Eval loss: 1.289656]
+[FM Epoch 179] loss: 1.289274
+[FM Epoch 180] loss: 1.290956
+  [Eval loss: 1.289128]
+[FM Epoch 181] loss: 1.289442
+[FM Epoch 182] loss: 1.289288
+  [Eval loss: 1.289738]
+[FM Epoch 183] loss: 1.289601
+[FM Epoch 184] loss: 1.290511
+  [Eval loss: 1.288229]
+[FM Epoch 185] loss: 1.289804
+[FM Epoch 186] loss: 1.288796
+  [Eval loss: 1.288751]
+[FM Epoch 187] loss: 1.288067
+[FM Epoch 188] loss: 1.289716
+  [Eval loss: 1.289171]
+[FM Epoch 189] loss: 1.289979
+[FM Epoch 190] loss: 1.288656
+  [Eval loss: 1.288078]
+[FM Epoch 191] loss: 1.289683
+[FM Epoch 192] loss: 1.289090
+  [Eval loss: 1.288737]
+[FM Epoch 193] loss: 1.289347
+[FM Epoch 194] loss: 1.288659
+  [Eval loss: 1.288966]
+[FM Epoch 195] loss: 1.287880
+[FM Epoch 196] loss: 1.288303
+  [Eval loss: 1.288330]
+[FM Epoch 197] loss: 1.289622
+[FM Epoch 198] loss: 1.288860
+  [Eval loss: 1.287692]
+[FM Epoch 199] loss: 1.288679
+[FM Epoch 200] loss: 1.289663
+  [Eval loss: 1.290059]

@@ -1,0 +1,38 @@
+Host: kn173
+Start time: Fri May  1 09:12:50 EDT 2026
+Project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+CUDA_VISIBLE_DEVICES from Slurm: 0
+SLURM_JOB_ID: 3381617
+SLURM_CPUS_PER_TASK: 10
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Fri May  1 09:12:50 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.148.08             Driver Version: 570.148.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:4C:00.0 Off |                    0 |
+| N/A   45C    P0             74W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[chain] Project root: /project/6109890/bacobax2/ir-generative-study
+[chain] Stage-1 output: /project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8
+[chain] Stage-2 output: /project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8
+[chain] Stage-1 final artifacts found; skipping Stage-1.
+[chain] /home/bacobax2/miniforge3/envs/diffusers-dev/bin/python -m src.cli.train_sd_layout --config /project/6109890/bacobax2/ir-generative-study/configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml --mixed_precision fp16 --resume_from_checkpoint latest
+Selected GPU: cuda:0
+GPU Info:
+0, GPU-af249ec4-d164-e88f-2a76-1b8743077ded, NVIDIA H100 80GB HBM3, 4, 81559, 0
+Resuming from checkpoint checkpoint-1000

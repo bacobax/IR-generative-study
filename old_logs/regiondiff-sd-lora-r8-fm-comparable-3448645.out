@@ -1,0 +1,5 @@
+Selected GPU: cuda:0
+GPU Info:
+0, GPU-6c20c597-b65d-9786-f7ae-85b6f641e650, NVIDIA H100 80GB HBM3, 4, 81559, 0
+Checkpoint 'latest' not found. Starting new training run.
+pixel_values: torch.Size([32, 3, 512, 512]) torch.float32 min=-1.000 max=1.000 mean=-0.163 std=0.568

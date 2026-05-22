@@ -1,0 +1,80 @@
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/utils/import_utils.py", line 1010, in _get_module
+    return importlib.import_module("." + module_name, self.__name__)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py", line 24, in <module>
+    from ...loaders import FromSingleFileMixin, IPAdapterMixin, StableDiffusionLoraLoaderMixin, TextualInversionLoaderMixin
+ImportError: cannot import name 'FromSingleFileMixin' from 'diffusers.loaders' (unknown location)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train.py", line 498, in <module>
+    main()
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train.py", line 494, in main
+    run_training(cfg)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train.py", line 469, in run_training
+    trainer.train_from_config(cfg, train_loader, eval_loader)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 472, in train_from_config
+    self.train(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 1072, in train
+    self._ensure_attention_teacher(torch_dtype=self._distillation_teacher_torch_dtype)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 258, in _ensure_attention_teacher
+    self._attention_teacher = load_regiondiff_attention_teacher(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/regiondiff_attention_distillation.py", line 349, in load_regiondiff_attention_teacher
+    from src.algorithms.stable_diffusion.layout_models import load_stage2_layout_pipeline
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/layout_models.py", line 20, in <module>
+    from diffusers import (
+  File "<frozen importlib._bootstrap>", line 1075, in _handle_fromlist
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/utils/import_utils.py", line 1001, in __getattr__
+    value = getattr(module, name)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/utils/import_utils.py", line 1001, in __getattr__
+    value = getattr(module, name)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/utils/import_utils.py", line 1000, in __getattr__
+    module = self._get_module(self._class_to_module[name])
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/utils/import_utils.py", line 1012, in _get_module
+    raise RuntimeError(
+RuntimeError: Failed to import diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion because of the following error (look up to see its traceback):
+cannot import name 'FromSingleFileMixin' from 'diffusers.loaders' (unknown location)
+Command exited with non-zero status 1
+	Command being timed: "python -m src.cli.train --config /project/6109890/bacobax2/ir-generative-study/configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml --mixed_precision auto --num_workers 4"
+	User time (seconds): 14.68
+	System time (seconds): 6.08
+	Percent of CPU this job got: 52%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:39.58
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 3403644
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2605
+	Minor (reclaiming a frame) page faults: 1605959
+	Voluntary context switches: 44643
+	Involuntary context switches: 97
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 432
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

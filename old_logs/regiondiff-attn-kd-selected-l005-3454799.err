@@ -1,0 +1,53 @@
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train.py", line 498, in <module>
+    main()
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train.py", line 494, in main
+    run_training(cfg)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train.py", line 469, in run_training
+    trainer.train_from_config(cfg, train_loader, eval_loader)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 472, in train_from_config
+    self.train(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 1072, in train
+    self._ensure_attention_teacher(torch_dtype=self._distillation_teacher_torch_dtype)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 258, in _ensure_attention_teacher
+    self._attention_teacher = load_regiondiff_attention_teacher(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/regiondiff_attention_distillation.py", line 351, in load_regiondiff_attention_teacher
+    artifact_dir, override_weights = _find_stage2_artifact_dir(teacher_checkpoint)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/regiondiff_attention_distillation.py", line 202, in _find_stage2_artifact_dir
+    raise FileNotFoundError(
+FileNotFoundError: Could not resolve an SD RegionDiff stage-2 artifact from 'artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable'.
+Command exited with non-zero status 1
+	Command being timed: "python -m src.cli.train --config /project/6109890/bacobax2/ir-generative-study/configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml --mixed_precision auto --num_workers 4"
+	User time (seconds): 12.51
+	System time (seconds): 5.24
+	Percent of CPU this job got: 45%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:38.73
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 3406376
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2608
+	Minor (reclaiming a frame) page faults: 1474480
+	Voluntary context switches: 47987
+	Involuntary context switches: 711
+	Swaps: 0
+	File system inputs: 64
+	File system outputs: 168
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
