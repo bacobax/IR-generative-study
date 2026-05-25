@@ -1,0 +1,119 @@
+[HorizontalFlipSchedule] start: epoch=0 p_hflip=0.000
+[FM Resume] Ignoring pretrained_unet_path because a full resume checkpoint was provided.
+[FM Resume] Loading checkpoint from artifacts/checkpoints/flow_matching/serious_runs/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005/UNET/unet_fm_epoch_125_ckpt.pt
+[FM Resume] Resuming from epoch 125, global_step=42000, best_eval=0.629970
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[HorizontalFlipSchedule] decay: epoch=125 p_hflip=0.487
+[FM Epoch 126] loss: 0.515675
+  [Eval loss: 0.648626]
+[FM Epoch 127] loss: 0.517627
+[FM Epoch 128] loss: 0.516853
+  [Eval loss: 0.663859]
+[FM Epoch 129] loss: 0.516470
+[FM Epoch 130] loss: 0.512844
+  [Eval loss: 0.660868]
+[FM Epoch 131] loss: 0.514542
+[FM Epoch 132] loss: 0.513635
+  [Eval loss: 0.658826]
+[FM Epoch 133] loss: 0.508879
+[FM Epoch 134] loss: 0.513520
+  [Eval loss: 0.652623]
+[FM Epoch 135] loss: 0.512954
+[FM Epoch 136] loss: 0.511805
+  [Eval loss: 0.656702]
+[FM Epoch 137] loss: 0.514332
+[FM Epoch 138] loss: 0.510108
+  [Eval loss: 0.651635]
+[FM Epoch 139] loss: 0.509158
+[FM Epoch 140] loss: 0.510433
+  [Eval loss: 0.656517]
+[FM Epoch 141] loss: 0.511722
+[FM Epoch 142] loss: 0.508504
+  [Eval loss: 0.663038]
+[FM Epoch 143] loss: 0.509610
+[FM Epoch 144] loss: 0.512402
+  [Eval loss: 0.663172]
+[FM Epoch 145] loss: 0.505232
+[FM Epoch 146] loss: 0.510480
+  [Eval loss: 0.668194]
+[FM Epoch 147] loss: 0.506366
+[FM Epoch 148] loss: 0.508520
+  [Eval loss: 0.663381]
+[FM Epoch 149] loss: 0.507577
+[FM Epoch 150] loss: 0.505845
+  [Eval loss: 0.662735]
+[FM Epoch 151] loss: 0.508797
+[FM Epoch 152] loss: 0.505661
+  [Eval loss: 0.668582]
+[FM Epoch 153] loss: 0.505639
+[FM Epoch 154] loss: 0.508734
+  [Eval loss: 0.660766]
+[FM Epoch 155] loss: 0.507543
+[FM Epoch 156] loss: 0.507301
+  [Eval loss: 0.658497]
+[FM Epoch 157] loss: 0.507388
+[FM Epoch 158] loss: 0.507333
+  [Eval loss: 0.668403]
+[FM Epoch 159] loss: 0.506758
+[FM Epoch 160] loss: 0.504739
+  [Eval loss: 0.665827]
+[FM Epoch 161] loss: 0.506255
+[FM Epoch 162] loss: 0.506063
+  [Eval loss: 0.677052]
+[FM Epoch 163] loss: 0.503808
+[FM Epoch 164] loss: 0.501847
+  [Eval loss: 0.660479]
+[FM Epoch 165] loss: 0.504896
+[FM Epoch 166] loss: 0.503291
+  [Eval loss: 0.671923]
+[FM Epoch 167] loss: 0.503350
+[FM Epoch 168] loss: 0.502967
+  [Eval loss: 0.677682]
+[FM Epoch 169] loss: 0.503597
+[FM Epoch 170] loss: 0.497071
+  [Eval loss: 0.670951]
+[FM Epoch 171] loss: 0.500642
+[FM Epoch 172] loss: 0.500511
+  [Eval loss: 0.665866]
+[FM Epoch 173] loss: 0.494403
+[FM Epoch 174] loss: 0.499616
+  [Eval loss: 0.682981]
+[FM Epoch 175] loss: 0.501014
+[FM Epoch 176] loss: 0.498204
+  [Eval loss: 0.671763]
+[FM Epoch 177] loss: 0.493469
+[FM Epoch 178] loss: 0.498034
+  [Eval loss: 0.672411]
+[FM Epoch 179] loss: 0.497846
+[FM Epoch 180] loss: 0.499312
+  [Eval loss: 0.661154]
+[FM Epoch 181] loss: 0.495620
+[FM Epoch 182] loss: 0.496845
+  [Eval loss: 0.674596]
+[FM Epoch 183] loss: 0.495335
+[FM Epoch 184] loss: 0.496425
+  [Eval loss: 0.677134]
+[FM Epoch 185] loss: 0.501155
+[FM Epoch 186] loss: 0.496765
+  [Eval loss: 0.677147]
+[FM Epoch 187] loss: 0.495560
+[FM Epoch 188] loss: 0.499524
+  [Eval loss: 0.682974]
+[FM Epoch 189] loss: 0.494997
+[FM Epoch 190] loss: 0.497932
+  [Eval loss: 0.669659]
+[FM Epoch 191] loss: 0.496136
+[FM Epoch 192] loss: 0.493039
+  [Eval loss: 0.686337]
+[FM Epoch 193] loss: 0.491149
+[FM Epoch 194] loss: 0.497179
+  [Eval loss: 0.683628]
+[FM Epoch 195] loss: 0.493809
+[FM Epoch 196] loss: 0.493876
+  [Eval loss: 0.675318]
+[FM Epoch 197] loss: 0.495113
+[FM Epoch 198] loss: 0.494712
+  [Eval loss: 0.668775]
+[FM Epoch 199] loss: 0.492766
+[FM Epoch 200] loss: 0.490232
+  [Eval loss: 0.673878]

@@ -1,0 +1,28 @@
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+Command terminated by signal 9
+	Command being timed: "python scripts/standalone/generate_checkpoint_quality_comparison.py --weights_dir artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip/UNET --preset_path configs/fm/train/presets/stay_layout_latent_flir_sd15_512_b64.yaml --output_dir artifacts/generated/checkpoint_compare/stay_layout_latent_flir_sd15_512_hflip --model_family fm --split train --max_samples 100 --steps 50 --batch_size 8 --seed 0 --device cuda"
+	User time (seconds): 5.45
+	System time (seconds): 20.43
+	Percent of CPU this job got: 56%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:45.61
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 15905616
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 328
+	Minor (reclaiming a frame) page faults: 4015794
+	Voluntary context switches: 47771
+	Involuntary context switches: 35745
+	Swaps: 0
+	File system inputs: 20128
+	File system outputs: 400
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

@@ -1,0 +1,4 @@
+Selected GPU: cuda:0
+GPU Info:
+0, GPU-58c2cd8c-d3bf-eda3-e17f-a6c22353e019, NVIDIA H100 80GB HBM3, 4, 81559, 0
+Resuming from checkpoint checkpoint-13000

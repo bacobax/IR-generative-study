@@ -1,0 +1,40 @@
+Host: kn170
+Start time: Thu Apr 30 19:22:03 EDT 2026
+Project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+Run: unconditional FM hflip OT
+Weights dir: artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot/UNET
+Preset path: configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml
+Output dir: artifacts/generated/checkpoint_compare/uncond_latent_flir_sd15_512_hflip_ot
+Max samples: 100
+Steps: 50
+Batch size: 8
+Seed: 0
+Device: cuda
+Overwrite: 0
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Thu Apr 30 19:22:03 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.148.08             Driver Version: 570.148.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:5D:00.0 Off |                    0 |
+| N/A   41C    P0             73W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Exit code: 1
+Stdout log: /project/6109890/bacobax2/ir-generative-study/logs/qcmp-uncond-fm-hflip-ot-3372698.out
+Stderr log: /project/6109890/bacobax2/ir-generative-study/logs/qcmp-uncond-fm-hflip-ot-3372698.err
+End time: Thu Apr 30 19:22:09 EDT 2026

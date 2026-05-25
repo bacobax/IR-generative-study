@@ -1,0 +1,9 @@
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 12: /cm/local/apps/slurm/var/spool/job3685302/../lib/common.sh: No such file or directory
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 16: slurm_config_path: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 26: slurm_init_runtime: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 30: slurm_print_python_diagnostics: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 31: slurm_require_file: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 33: slurm_grep_config_keys: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 34: slurm_grep_config_keys: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 35: slurm_print_gpu_diagnostics: command not found
+/cm/local/apps/slurm/var/spool/job3685302/slurm_script: line 37: slurm_run_timed: command not found

@@ -1,0 +1,49 @@
+Host: kn176
+Start time: Tue May  5 12:37:12 EDT 2026
+Project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+CUDA_VISIBLE_DEVICES from Slurm: 0
+SLURM_JOB_ID: 3435159
+SLURM_CPUS_PER_TASK: 10
+Config: /project/6109890/bacobax2/ir-generative-study/configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8_fm_comparable.yaml
+Stage-1 LoRA dir: /project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8
+MIXED_PRECISION: bf16
+NUM_WORKERS: 0
+PYTORCH_CUDA_ALLOC_CONF: max_split_size_mb:256
+DEBUG_SEGFAULT: 0
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Configured batch size:
+10:  batch_size: 32
+Configured num workers:
+11:  num_workers: 4
+Configured Stage-1 source:
+15:  stage1_dir: artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8
+16:  stage1_checkpoint: null
+Configured train mode and epochs:
+39:  train_mode: adapters_plus_partial_unet
+43:  num_train_epochs: 200
+Configured mixed precision:
+49:  mixed_precision: fp16
+Tue May  5 12:37:13 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.148.08             Driver Version: 570.148.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:19:00.0 Off |                    0 |
+| N/A   71C    P0             89W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+RegionDiff SD-layout from LoRA r8 exit code: 139
+End time: Tue May  5 14:55:38 EDT 2026

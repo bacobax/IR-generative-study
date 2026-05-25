@@ -1,0 +1,21 @@
+[HorizontalFlipSchedule] start: epoch=0 p_hflip=0.000
+[load_unet_weights] target=unet.base_model strict=True
+  Missing RegionDiff adapter keys were initialized from scratch (66 keys).
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[HorizontalFlipSchedule] warmup: epoch=0 p_hflip=0.000
+[FM Epoch 1] loss: 0.519472
+[FM Epoch 2] loss: 0.521168
+  [Eval loss: 0.608270]
+  ✅ New best eval_loss=0.608270 at epoch 2 -> saved UNET/unet_fm_best.pt
+[FM Epoch 3] loss: 0.517733
+[FM Epoch 4] loss: 0.517617
+  [Eval loss: 0.615315]
+[FM Epoch 5] loss: 0.516015
+[FM Epoch 6] loss: 0.517056
+  [Eval loss: 0.624133]
+[FM Epoch 7] loss: 0.517664
+[FM Epoch 8] loss: 0.519414
+  [Eval loss: 0.611112]
+[FM Epoch 9] loss: 0.519256
+[FM Epoch 10] loss: 0.515877
+  [Eval loss: 0.613323]

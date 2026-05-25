@@ -1,0 +1,153 @@
+05/11/2026 12:32:11 - INFO - __main__ - [RANK 0] Distributed environment: NO
+Num processes: 1
+Process index: 0
+Local process index: 0
+Device: cuda
+
+Mixed precision type: fp16
+
+05/11/2026 12:32:11 - INFO - __main__ - [RANK 0] Loading models...
+05/11/2026 12:32:11 - INFO - src.algorithms.stable_diffusion.models - Loading model components...
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+05/11/2026 12:32:11 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/scheduler/scheduler_config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:11 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/scheduler/scheduler_config.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+05/11/2026 12:32:11 - WARNING - huggingface_hub.utils._http - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+05/11/2026 12:32:11 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/scheduler%2Fscheduler_config.json "HTTP/1.1 200 OK"
+{'timestep_spacing', 'clip_sample_range', 'variance_type', 'rescale_betas_zero_snr', 'thresholding', 'sample_max_value', 'prediction_type', 'dynamic_thresholding_ratio'} was not found in config. Values will be initialized to default values.
+05/11/2026 12:32:11 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/tokenizer/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/tokenizer/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/tokenizer%2Ftokenizer_config.json "HTTP/1.1 200 OK"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/runwayml/stable-diffusion-v1-5/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/runwayml/stable-diffusion-v1-5/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/text_encoder%2Fconfig.json "HTTP/1.1 200 OK"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/text_encoder%2Fconfig.json "HTTP/1.1 200 OK"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/text_encoder/model.safetensors "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/model.safetensors "HTTP/1.1 302 Found"
+Loading weights:   0%|          | 0/196 [00:00<?, ?it/s]Loading weights: 100%|██████████| 196/196 [00:00<00:00, 3880.86it/s]
+05/11/2026 12:32:12 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/vae/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/vae/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/vae%2Fconfig.json "HTTP/1.1 200 OK"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/vae/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/vae/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 404 Not Found"
+{'latents_mean', 'use_quant_conv', 'shift_factor', 'mid_block_add_attention', 'scaling_factor', 'latents_std', 'use_post_quant_conv', 'force_upcast'} was not found in config. Values will be initialized to default values.
+All model checkpoint weights were used when initializing AutoencoderKL.
+
+All the weights of AutoencoderKL were initialized from the model checkpoint at runwayml/stable-diffusion-v1-5.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use AutoencoderKL for predictions without further training.
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/unet/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/unet/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet%2Fconfig.json "HTTP/1.1 200 OK"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:13 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 404 Not Found"
+{'mid_block_only_cross_attention', 'projection_class_embeddings_input_dim', 'resnet_skip_time_act', 'time_embedding_dim', 'time_cond_proj_dim', 'resnet_out_scale_factor', 'time_embedding_type', 'timestep_post_act', 'cross_attention_norm', 'time_embedding_act_fn', 'class_embed_type', 'addition_embed_type', 'only_cross_attention', 'addition_embed_type_num_heads', 'dual_cross_attention', 'attention_type', 'conv_in_kernel', 'encoder_hid_dim', 'num_class_embeds', 'use_linear_projection', 'reverse_transformer_layers_per_block', 'resnet_time_scale_shift', 'dropout', 'conv_out_kernel', 'class_embeddings_concat', 'transformer_layers_per_block', 'mid_block_type', 'upcast_attention', 'num_attention_heads', 'addition_time_embed_dim', 'encoder_hid_dim_type'} was not found in config. Values will be initialized to default values.
+All model checkpoint weights were used when initializing UNet2DConditionModel.
+
+All the weights of UNet2DConditionModel were initialized from the model checkpoint at runwayml/stable-diffusion-v1-5.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use UNet2DConditionModel for predictions without further training.
+05/11/2026 12:32:20 - INFO - __main__ - [RANK 0] Creating dataloader...
+05/11/2026 12:32:20 - INFO - __main__ - [RANK 0] Configuring Stage-1 adaptation baseline: sd_ir_unet
+05/11/2026 12:32:20 - INFO - src.algorithms.stable_diffusion.models - UNet parameters: trainable=859,520,964 / total=859,520,964 (100.00%)
+05/11/2026 12:32:20 - INFO - src.algorithms.stable_diffusion.models - Text encoder parameters: trainable=0 / total=123,060,480 (0.00%)
+05/11/2026 12:32:20 - INFO - src.algorithms.stable_diffusion.models - VAE parameters: trainable=0 / total=83,653,863 (0.00%)
+05/11/2026 12:32:20 - INFO - __main__ - [RANK 0] Creating trainer...
+05/11/2026 12:32:20 - INFO - src.algorithms.stable_diffusion.training - [RANK 0] Setting up training components...
+05/11/2026 12:32:20 - INFO - src.algorithms.stable_diffusion.models - Saved stage-1 manifest to ./artifacts/checkpoints/stable_diffusion/unet_runs/flir_sd15_unet_full_domainstudio_512/stage1_manifest.json
+05/11/2026 12:32:20 - INFO - src.algorithms.stable_diffusion.training - [RANK 0] Loading frozen DomainStudio source teacher U-Net...
+05/11/2026 12:32:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/unet/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/unet/config.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet%2Fconfig.json "HTTP/1.1 200 OK"
+05/11/2026 12:32:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 307 Temporary Redirect"
+05/11/2026 12:32:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 404 Not Found"
+{'mid_block_only_cross_attention', 'projection_class_embeddings_input_dim', 'resnet_skip_time_act', 'time_embedding_dim', 'time_cond_proj_dim', 'resnet_out_scale_factor', 'time_embedding_type', 'timestep_post_act', 'cross_attention_norm', 'time_embedding_act_fn', 'class_embed_type', 'addition_embed_type', 'only_cross_attention', 'addition_embed_type_num_heads', 'dual_cross_attention', 'attention_type', 'conv_in_kernel', 'encoder_hid_dim', 'num_class_embeds', 'use_linear_projection', 'reverse_transformer_layers_per_block', 'resnet_time_scale_shift', 'dropout', 'conv_out_kernel', 'class_embeddings_concat', 'transformer_layers_per_block', 'mid_block_type', 'upcast_attention', 'num_attention_heads', 'addition_time_embed_dim', 'encoder_hid_dim_type'} was not found in config. Values will be initialized to default values.
+All model checkpoint weights were used when initializing UNet2DConditionModel.
+
+All the weights of UNet2DConditionModel were initialized from the model checkpoint at runwayml/stable-diffusion-v1-5.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use UNet2DConditionModel for predictions without further training.
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0] Training setup complete
+05/11/2026 12:32:21 - INFO - __main__ - [RANK 0] Starting training...
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0] ***** Running training *****
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Num examples = 10742
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Num Epochs = 4
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Batch size per device = 8
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Gradient Accumulation steps = 2
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Total optimization steps = 2500
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Baseline mode = sd_ir_unet
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Normalization mode = uint8_linear
+05/11/2026 12:32:21 - INFO - src.algorithms.stable_diffusion.training - [RANK 0]   Total train batch size = 16
+Steps:   0%|          | 0/2500 [00:00<?, ?it/s]Steps:   0%|          | 0/2500 [00:03<?, ?it/s, lr=1e-6, step_loss=4.72]Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_sd.py", line 214, in <module>
+    main()
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_sd.py", line 191, in main
+    trainer.train()
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/training.py", line 573, in train
+    train_loss = self._train_epoch(epoch, progress_bar)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/training.py", line 606, in _train_epoch
+    loss = self._train_step(batch)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/training.py", line 695, in _train_step
+    domainstudio_losses = self._compute_domainstudio_train_losses(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/training.py", line 803, in _compute_domainstudio_train_losses
+    img_prior_hat = decode_latents_to_images(self.models.vae, z0_prior_hat)
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/domainstudio.py", line 44, in decode_latents_to_images
+    decoded = vae.decode(latents)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/utils/accelerate_utils.py", line 46, in wrapper
+    return method(self, *args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/models/autoencoders/autoencoder_kl.py", line 235, in decode
+    decoded = self._decode(z).sample
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/models/autoencoders/autoencoder_kl.py", line 206, in _decode
+    dec = self.decoder(z)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/models/autoencoders/vae.py", line 301, in forward
+    sample = up_block(sample, latent_embeds)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/models/unets/unet_2d_blocks.py", line 2639, in forward
+    hidden_states = resnet(hidden_states, temb=temb)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/diffusers/models/resnet.py", line 375, in forward
+    output_tensor = (input_tensor + hidden_states) / self.output_scale_factor
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 512.00 MiB. GPU 0 has a total capacity of 79.19 GiB of which 103.00 MiB is free. Including non-PyTorch memory, this process has 79.08 GiB memory in use. Of the allocated memory 77.82 GiB is allocated by PyTorch, and 531.28 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Steps:   0%|          | 0/2500 [00:04<?, ?it/s, lr=1e-6, step_loss=4.72]
+Command exited with non-zero status 1
+	Command being timed: "python -m src.cli.train_sd --config /project/6109890/bacobax2/ir-generative-study/configs/sd/train/presets/flir_unet_full_domainstudio_512.yaml"
+	User time (seconds): 18.10
+	System time (seconds): 6.04
+	Percent of CPU this job got: 75%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.03
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 4111044
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1152
+	Minor (reclaiming a frame) page faults: 1349559
+	Voluntary context switches: 32278
+	Involuntary context switches: 3338
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 2216
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

@@ -1,0 +1,56 @@
+Host: kn174
+Start time: Mon May 11 12:31:55 EDT 2026
+Project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+Config: /project/6109890/bacobax2/ir-generative-study/configs/sd/train/presets/flir_unet_full_domainstudio_512.yaml
+CUDA_VISIBLE_DEVICES from Slurm: 0
+SLURM_JOB_ID: 3511700
+SLURM_SUBMIT_DIR: /project/6109890/bacobax2/ir-generative-study
+SLURM_CPUS_PER_TASK: 10
+SLURM_MEM_PER_NODE: 49152
+SLURM_MEM_PER_CPU: <unset>
+CPU count: 10
+PYTORCH_CUDA_ALLOC_CONF: max_split_size_mb:256
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Selected training settings:
+5:baseline_mode: "sd_ir_unet"
+6:unet_train_mode: "full"
+14:resolution: 512
+20:train_batch_size: 8
+21:gradient_accumulation_steps: 2
+24:max_train_steps: 2500
+27:learning_rate: 1.0e-6
+64:mixed_precision: "fp16"
+66:enable_xformers_memory_efficient_attention: false
+Selected DomainStudio settings:
+37:domainstudio_enabled: true
+38:domainstudio_source_prompt: "a photo of a road scene"
+39:domainstudio_target_prompt: "thermal image of a road scene"
+47:domainstudio_loss_every_n_steps: 2
+48:domainstudio_min_pairwise_batch: 2
+51:domainstudio_prior_data_dir: "data/derived/domainstudio_priors/photo_sd15_512"
+52:domainstudio_prior_cache_dir: "artifacts/cache/domainstudio_priors/photo_sd15_512"
+54:domainstudio_generate_prior_if_missing: true
+Mon May 11 12:31:55 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.148.08             Driver Version: 570.148.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:9B:00.0 Off |                    0 |
+| N/A   48C    P0             76W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+DomainStudio full U-Net Stage-1 exit code: 1
+End time: Mon May 11 12:32:27 EDT 2026

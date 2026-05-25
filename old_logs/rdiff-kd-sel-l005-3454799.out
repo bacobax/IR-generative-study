@@ -1,0 +1,71 @@
+Host: kn177
+Start time: Wed May  6 20:24:48 EDT 2026
+Project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+CUDA_VISIBLE_DEVICES from Slurm: 0
+SLURM_JOB_ID: 3454799
+SLURM_SUBMIT_DIR: /project/6109890/bacobax2/ir-generative-study
+SLURM_CPUS_PER_TASK: 10
+SLURM_MEM_PER_NODE: 40960
+Config: /project/6109890/bacobax2/ir-generative-study/configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml
+Pretrained UNet: /project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot/UNET/unet_fm_epoch_300.pt
+Default teacher checkpoint: /project/6109890/bacobax2/ir-generative-study/artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable
+Teacher checkpoint override: <config default>
+Resume checkpoint: <disabled>
+MIXED_PRECISION: auto
+NUM_WORKERS: 4
+PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Configured batch size:
+7:  batch_size: 32
+Configured num workers:
+8:  num_workers: 4
+Configured distillation block:
+49:distillation:
+50-  enabled: true
+51-  teacher_checkpoint: "artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable"
+52-  teacher_model_type: "sd15_regiondiff"
+53-  loss_type: "attention_kl"
+54-  lambda_attn: 0.05
+55-  warmup_epochs: 80
+56-  selected_categories: ["person", "car", "truck"]
+57-  selected_region_layers: []
+58-  timestep_range: [0.2, 0.8]
+59-  detach_teacher: true
+60-  normalize_attention: true
+61-  bbox_mask_only: true
+62-  log_attention_maps_every: 1000
+63-
+Configured selected categories:
+56:  selected_categories: ["person", "car", "truck"]
+Configured output:
+109:output:
+110-  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005"
+111-  log_dir: "./artifacts/runs/main/flow_matching/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005"
+112-  debug_dir: "./artifacts/debug/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005"
+113-  resume: null
+Wed May  6 20:24:48 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.148.08             Driver Version: 570.148.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:5D:00.0 Off |                    0 |
+| N/A   41C    P0             75W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+RegionDiff attention KD selected-category FM exit code: 1
+Stdout log: /project/6109890/bacobax2/ir-generative-study/logs/regiondiff-attn-kd-selected-l005-3454799.out
+Stderr log: /project/6109890/bacobax2/ir-generative-study/logs/regiondiff-attn-kd-selected-l005-3454799.err
+End time: Wed May  6 20:25:27 EDT 2026
