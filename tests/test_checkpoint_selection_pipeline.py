@@ -127,3 +127,19 @@ def test_weighted_normalized_ranking_handles_identical_values() -> None:
     assert [row["checkpoint_identifier"] for row in ranked] == ["a", "c", "b"]
     assert all(row["normalized_KID"] == 0.0 for row in ranked)
     assert [row["rank"] for row in ranked] == [1, 2, 3]
+
+
+def test_preview_writer_accepts_channel_first_arrays(tmp_path: Path) -> None:
+    arr = (255 * pipeline.np.ones((1, 8, 8), dtype=pipeline.np.uint8))
+    image_path = tmp_path / "sample_000000.npy"
+    pipeline.np.save(image_path, arr)
+
+    pipeline._save_preview_contact_sheet(
+        [image_path],
+        tmp_path / "preview_grid.png",
+        normalization_mode=pipeline.UINT8_LINEAR,
+        columns=1,
+        tile_size=16,
+    )
+
+    assert (tmp_path / "preview_grid.png").is_file()

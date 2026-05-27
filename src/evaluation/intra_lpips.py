@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Sequence
 
 import numpy as np
 import torch
 from PIL import Image
+from tqdm.auto import tqdm
 
 from src.core.normalization import UINT8_LINEAR
 from src.evaluation.feature_extractors import load_image_rgb
@@ -36,8 +37,19 @@ class IntraLPIPSResult:
         }
 
 
-def _image_to_lpips_tensor(image: Image.Image, *, device: torch.device) -> torch.Tensor:
-    arr = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
+def _image_to_lpips_tensor(
+    image: Image.Image,
+    *,
+    device: torch.device,
+    resize_to: int | None,
+) -> torch.Tensor:
+    rgb = image.convert("RGB")
+    if resize_to is not None:
+        size = int(resize_to)
+        if size <= 0:
+            raise ValueError(f"LPIPS resize_to must be positive, got {resize_to}.")
+        rgb = rgb.resize((size, size), resample=Image.BILINEAR)
+    arr = np.asarray(rgb, dtype=np.float32) / 255.0
     tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
     return (tensor * 2.0 - 1.0).to(device=device, dtype=torch.float32)
 
@@ -47,11 +59,13 @@ def _load_lpips_batch(
     *,
     normalization_mode: str,
     device: torch.device,
+    resize_to: int | None,
 ) -> torch.Tensor:
     tensors = [
         _image_to_lpips_tensor(
             load_image_rgb(path, normalization_mode=normalization_mode),
             device=device,
+            resize_to=resize_to,
         )
         for path in paths
     ]
@@ -84,6 +98,100 @@ def _pairwise_lpips(
     return torch.cat(rows, dim=0)
 
 
+def _path_batch(
+    paths: Sequence[str | Path],
+    *,
+    start: int,
+    batch_size: int,
+) -> Sequence[str | Path]:
+    return paths[start : start + batch_size]
+
+
+@torch.no_grad()
+def _find_nearest_real_indices(
+    *,
+    model,
+    real_paths: Sequence[str | Path],
+    generated_paths: Sequence[str | Path],
+    batch_size: int,
+    device: torch.device,
+    real_normalization_mode: str,
+    generated_normalization_mode: str,
+    resize_to: int | None,
+) -> list[int]:
+    nearest_real_indices: list[int] = []
+    gen_ranges = range(0, len(generated_paths), batch_size)
+    for gen_start in tqdm(gen_ranges, desc="Intra-LPIPS nearest real", unit="gen-batch"):
+        gen_batch_paths = _path_batch(generated_paths, start=gen_start, batch_size=batch_size)
+        gen_chunk = _load_lpips_batch(
+            gen_batch_paths,
+            normalization_mode=generated_normalization_mode,
+            device=device,
+            resize_to=resize_to,
+        )
+        best_dist = torch.full((gen_chunk.shape[0],), float("inf"))
+        best_idx = torch.zeros((gen_chunk.shape[0],), dtype=torch.long)
+        for real_start in range(0, len(real_paths), batch_size):
+            real_chunk = _load_lpips_batch(
+                _path_batch(real_paths, start=real_start, batch_size=batch_size),
+                normalization_mode=real_normalization_mode,
+                device=device,
+                resize_to=resize_to,
+            )
+            distances = _pairwise_lpips(model, gen_chunk, real_chunk, batch_size=batch_size)
+            values, indices = distances.min(dim=1)
+            update = values < best_dist
+            best_dist[update] = values[update]
+            best_idx[update] = indices[update] + real_start
+            del real_chunk, distances
+        nearest_real_indices.extend(int(idx) for idx in best_idx.tolist())
+        del gen_chunk
+    return nearest_real_indices
+
+
+@torch.no_grad()
+def _cluster_average_pairwise_lpips(
+    *,
+    model,
+    member_paths: Sequence[str | Path],
+    batch_size: int,
+    device: torch.device,
+    normalization_mode: str,
+    resize_to: int | None,
+) -> float:
+    total = 0.0
+    count = 0
+    for left_start in range(0, len(member_paths), batch_size):
+        left_paths = _path_batch(member_paths, start=left_start, batch_size=batch_size)
+        left = _load_lpips_batch(
+            left_paths,
+            normalization_mode=normalization_mode,
+            device=device,
+            resize_to=resize_to,
+        )
+        for right_start in range(left_start, len(member_paths), batch_size):
+            right_paths = _path_batch(member_paths, start=right_start, batch_size=batch_size)
+            right = _load_lpips_batch(
+                right_paths,
+                normalization_mode=normalization_mode,
+                device=device,
+                resize_to=resize_to,
+            )
+            distances = _pairwise_lpips(model, left, right, batch_size=batch_size)
+            if right_start == left_start:
+                n = distances.shape[0]
+                upper = torch.triu_indices(n, n, offset=1)
+                values = distances[upper[0], upper[1]]
+            else:
+                values = distances.reshape(-1)
+            if values.numel() > 0:
+                total += float(values.sum().item())
+                count += int(values.numel())
+            del right, distances
+        del left
+    return total / max(count, 1)
+
+
 def compute_intra_lpips(
     *,
     real_paths: Sequence[str | Path],
@@ -93,6 +201,7 @@ def compute_intra_lpips(
     batch_size: int = 16,
     real_normalization_mode: str = UINT8_LINEAR,
     generated_normalization_mode: str = UINT8_LINEAR,
+    resize_to: int | None = 256,
 ) -> IntraLPIPSResult:
     """Compute DomainStudio/CDC-style Intra-LPIPS.
 
@@ -121,30 +230,16 @@ def compute_intra_lpips(
     active_device = torch.device(device)
     model = lpips.LPIPS(net=str(backbone)).to(active_device).eval()
 
-    real = _load_lpips_batch(
-        real_paths,
-        normalization_mode=real_normalization_mode,
+    nearest_real_indices = _find_nearest_real_indices(
+        model=model,
+        real_paths=real_paths,
+        generated_paths=generated_paths,
+        batch_size=batch_size,
         device=active_device,
+        real_normalization_mode=real_normalization_mode,
+        generated_normalization_mode=generated_normalization_mode,
+        resize_to=resize_to,
     )
-    generated = _load_lpips_batch(
-        generated_paths,
-        normalization_mode=generated_normalization_mode,
-        device=active_device,
-    )
-
-    nearest_real_indices = []
-    for gen_start in range(0, generated.shape[0], batch_size):
-        gen_chunk = generated[gen_start : gen_start + batch_size]
-        best_dist = torch.full((gen_chunk.shape[0],), float("inf"))
-        best_idx = torch.zeros((gen_chunk.shape[0],), dtype=torch.long)
-        for real_start in range(0, real.shape[0], batch_size):
-            real_chunk = real[real_start : real_start + batch_size]
-            distances = _pairwise_lpips(model, gen_chunk, real_chunk, batch_size=batch_size)
-            values, indices = distances.min(dim=1)
-            update = values < best_dist
-            best_dist[update] = values[update]
-            best_idx[update] = indices[update] + real_start
-        nearest_real_indices.extend(int(idx) for idx in best_idx.tolist())
 
     clusters: dict[int, list[int]] = {}
     for gen_idx, real_idx in enumerate(nearest_real_indices):
@@ -152,16 +247,22 @@ def compute_intra_lpips(
 
     cluster_values = []
     singleton_count = 0
-    for member_indices in clusters.values():
+    for member_indices in tqdm(list(clusters.values()), desc="Intra-LPIPS clusters", unit="cluster"):
         if len(member_indices) < 2:
             singleton_count += 1
             cluster_values.append(0.0)
             continue
-        cluster = generated[member_indices]
-        distances = _pairwise_lpips(model, cluster, cluster, batch_size=batch_size)
-        n = distances.shape[0]
-        upper = torch.triu_indices(n, n, offset=1)
-        cluster_values.append(float(distances[upper[0], upper[1]].mean().item()))
+        cluster_paths = [generated_paths[index] for index in member_indices]
+        cluster_values.append(
+            _cluster_average_pairwise_lpips(
+                model=model,
+                member_paths=cluster_paths,
+                batch_size=batch_size,
+                device=active_device,
+                normalization_mode=generated_normalization_mode,
+                resize_to=resize_to,
+            )
+        )
 
     return IntraLPIPSResult(
         value=float(np.mean(cluster_values)) if cluster_values else 0.0,
@@ -171,4 +272,3 @@ def compute_intra_lpips(
         num_assigned_clusters=len(clusters),
         num_singleton_clusters=singleton_count,
     )
-
