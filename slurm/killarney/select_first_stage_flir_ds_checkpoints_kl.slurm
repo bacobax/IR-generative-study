@@ -8,13 +8,16 @@
 #SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out
 #SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
 CONFIG_REL="${CONFIG_REL:-configs/eval/checkpoint_selection_first_stage_flir_ds_trainings.yaml}"
-CONFIG="$(slurm_config_path "${CONFIG_REL}")"
+if [[ "${CONFIG_REL}" = /* ]]; then
+  CONFIG="${CONFIG_REL}"
+else
+  CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
+fi
 PREFLIGHT="${PREFLIGHT:-0}"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
@@ -25,14 +28,39 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-1}}"
 
-slurm_init_runtime
+cd "${PROJECT_ROOT}"
+mkdir -p logs
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 
+if [[ -n "${CONDA_ACTIVATE_PATH:-}" ]]; then
+  source "${CONDA_ACTIVATE_PATH}"
+elif command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)"
+  conda activate "${ENV_NAME}"
+else
+  echo "ERROR: conda not found in PATH" >&2
+  exit 1
+fi
+
+echo "Host: $(hostname)"
+echo "Start time: $(date)"
+echo "Project root: ${PROJECT_ROOT}"
+echo "Conda env: ${ENV_NAME}"
 echo "Checkpoint-selection config: ${CONFIG}"
 echo "PREFLIGHT: ${PREFLIGHT}"
 echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
-slurm_print_python_diagnostics
-slurm_print_gpu_diagnostics
-slurm_require_file "${CONFIG}" "checkpoint-selection config"
+echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
+echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
+echo "SLURM_SUBMIT_DIR: ${SLURM_SUBMIT_DIR:-<unset>}"
+echo "SLURM_CPUS_PER_TASK: ${SLURM_CPUS_PER_TASK:-<unset>}"
+which python
+python --version
+nvidia-smi || true
+
+if [[ ! -f "${CONFIG}" ]]; then
+  echo "ERROR: checkpoint-selection config not found: ${CONFIG}" >&2
+  exit 1
+fi
 
 echo "Configured runs:"
 grep -n "run_identifier:" "${CONFIG}" || true
@@ -44,7 +72,8 @@ if [ "${PREFLIGHT}" = "1" ] || [ "${PREFLIGHT}" = "true" ]; then
   EXTRA_ARGS+=(--preflight)
 fi
 
-slurm_run_timed "${PROJECT_ROOT}/logs/select-flir-stage1-${JOB_ID}" "FLIR first-stage checkpoint selection" -- \
-  python scripts/select_best_checkpoint_and_compute_metrics.py \
-    --config "${CONFIG}" \
-    "${EXTRA_ARGS[@]}" || exit $?
+python scripts/select_best_checkpoint_and_compute_metrics.py \
+  --config "${CONFIG}" \
+  "${EXTRA_ARGS[@]}"
+
+echo "End time: $(date)"
