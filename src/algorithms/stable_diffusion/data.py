@@ -20,7 +20,10 @@ from torchvision.transforms import functional as TF
 
 from src.core.data.dataset_targets import resolve_dataset_target
 from src.core.data.datasets import load_single_channel_array
-from src.core.data.subset_manifest import filter_files_by_subset_manifest
+from src.core.data.subset_manifest import (
+    filter_files_by_subset_manifest,
+    filter_manifest_records_by_subset_manifest,
+)
 from src.core.normalization import (
     RAW_UINT16_PERCENTILE,
     UINT8_LINEAR,
@@ -75,6 +78,8 @@ def _load_local_manifest_records(
     *,
     image_column: str,
     caption_column: str,
+    subset_manifest: Optional[str] = None,
+    split_dir: str | None = None,
 ) -> List[Dict[str, object]]:
     records: List[Dict[str, object]] = []
     repo = Path(__file__).resolve().parents[3]
@@ -84,7 +89,10 @@ def _load_local_manifest_records(
             if not line:
                 continue
             obj = json.loads(line)
-            raw_path = obj.get("image_path", obj.get("path", obj.get("file_name")))
+            raw_path = obj.get(
+                "image_path",
+                obj.get("path", obj.get("file_name", obj.get("filename"))),
+            )
             if not isinstance(raw_path, str) or not raw_path:
                 raise ValueError(
                     f"Manifest {manifest_path} line {line_number} is missing image_path"
@@ -106,10 +114,18 @@ def _load_local_manifest_records(
                     image_column: str(image_path),
                     caption_column: caption,
                     "metadata": obj,
+                    "image_path": str(image_path),
+                    "file_name": image_path.name,
                 }
             )
     if not records:
         raise ValueError(f"No image records found in manifest {manifest_path}")
+    records = filter_manifest_records_by_subset_manifest(
+        records,
+        subset_manifest,
+        split_dir=split_dir,
+        context="Stable Diffusion stage-1 manifest dataset",
+    )
     return records
 
 
@@ -482,6 +498,8 @@ def _build_local_training_dataset(
                     manifest_path,
                     image_column=image_column,
                     caption_column=caption_column,
+                    subset_manifest=subset_manifest,
+                    split_dir=train_data_dir,
                 )
             ),
             image_column,

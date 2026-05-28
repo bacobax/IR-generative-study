@@ -9,7 +9,9 @@ import pytest
 from src.core.data.datasets import NPYImageDataset
 from src.core.data.subset_manifest import (
     filter_files_by_subset_manifest,
+    filter_manifest_records_by_subset_manifest,
     load_subset_manifest_file_names,
+    resolve_subset_manifest_path,
 )
 
 
@@ -36,11 +38,96 @@ def test_subset_manifest_preserves_order_and_deduplicates(tmp_path: Path) -> Non
     ) == ["c.npy", "a.npy", "b.npy"]
 
 
+def test_subset_manifest_accepts_tiff_image_path_field(tmp_path: Path) -> None:
+    manifest = tmp_path / "subsets" / "bigearth_subset.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"image_path": "data/derived/images/train/b.tif"},
+                    {"image_path": "data/derived/images/train/a.tif"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_subset_manifest_file_names(manifest) == ["b.tif", "a.tif"]
+    assert filter_files_by_subset_manifest(
+        ["a.tif", "b.tif", "c.tif"],
+        "bigearth_subset.json",
+        split_dir=tmp_path / "images" / "train",
+    ) == ["b.tif", "a.tif"]
+
+
+def test_subset_manifest_resolves_from_manifest_backed_dataset_root(tmp_path: Path) -> None:
+    manifest = _write_manifest(
+        tmp_path / "subsets" / "train_subset.json",
+        ["a.tif"],
+    )
+
+    assert resolve_subset_manifest_path(
+        "train_subset.json",
+        split_dir=tmp_path / "images" / "train",
+    ) == manifest.resolve()
+
+
 def test_subset_manifest_reports_missing_files(tmp_path: Path) -> None:
     manifest = _write_manifest(tmp_path / "subset.json", ["present.npy", "missing.npy"])
 
     with pytest.raises(FileNotFoundError, match="missing.npy"):
         filter_files_by_subset_manifest(["present.npy"], manifest, split_dir=tmp_path)
+
+
+def test_filter_manifest_records_by_subset_manifest_preserves_subset_order(tmp_path: Path) -> None:
+    manifest = tmp_path / "subsets" / "train_subset.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"path": "images/train/c.tif"},
+                    {"path": "images/train/a.tif"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    records = [
+        {"image_path": str(tmp_path / "images" / "train" / "a.tif"), "value": "a"},
+        {"image_path": str(tmp_path / "images" / "train" / "b.tif"), "value": "b"},
+        {"image_path": str(tmp_path / "images" / "train" / "c.tif"), "value": "c"},
+    ]
+
+    selected = filter_manifest_records_by_subset_manifest(
+        records,
+        "train_subset.json",
+        split_dir=tmp_path / "images" / "train",
+    )
+
+    assert [record["value"] for record in selected] == ["c", "a"]
+
+
+def test_filter_manifest_records_by_subset_manifest_accepts_filename_field(tmp_path: Path) -> None:
+    manifest = tmp_path / "subsets" / "train_subset.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"samples": [{"filename": "b.tif"}, {"filename": "a.tif"}]}),
+        encoding="utf-8",
+    )
+    records = [
+        {"filename": "a.tif", "value": "a"},
+        {"filename": "b.tif", "value": "b"},
+    ]
+
+    selected = filter_manifest_records_by_subset_manifest(
+        records,
+        "train_subset.json",
+        split_dir=tmp_path / "images" / "train",
+    )
+
+    assert [record["value"] for record in selected] == ["b", "a"]
 
 
 def test_npy_image_dataset_uses_subset_manifest_order(tmp_path: Path) -> None:

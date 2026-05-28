@@ -87,7 +87,7 @@ metric_batch_size: 8
 compute_kid: true
 compute_fid: true
 compute_mmd: true
-compute_intra_lpips: true
+compute_intra_lpips: false
 
 kid:
   subsets: 100

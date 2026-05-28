@@ -472,6 +472,52 @@ def test_local_training_dataset_accepts_manifest_backed_tiffs(tmp_path: Path):
     assert dataset[0]["text"] == "Arable land, Pastures"
 
 
+def test_local_training_manifest_dataset_uses_subset_manifest_order(tmp_path: Path):
+    image_dir = tmp_path / "images" / "train"
+    image_dir.mkdir(parents=True)
+    for index, name in enumerate(["a.tif", "b.tif", "c.tif"]):
+        Image.fromarray(np.full((8, 8), index, dtype=np.uint16)).save(image_dir / name)
+    manifest = tmp_path / "manifests" / "train.jsonl"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "image_path": str(image_dir / name),
+                    "labels": [name.removesuffix(".tif")],
+                }
+            )
+            + "\n"
+            for name in ["a.tif", "b.tif", "c.tif"]
+        ),
+        encoding="utf-8",
+    )
+    subset = tmp_path / "subsets" / "train_subset.json"
+    subset.parent.mkdir()
+    subset.write_text(
+        json.dumps({"samples": [{"image_path": "c.tif"}, {"image_path": "a.tif"}]}),
+        encoding="utf-8",
+    )
+
+    dataset, image_column, caption_column = load_training_dataset(
+        dataset_name=None,
+        dataset_config_name=None,
+        train_data_dir=str(image_dir),
+        image_column="image",
+        caption_column="text",
+        manifest_path=str(manifest),
+        subset_manifest="train_subset.json",
+    )
+
+    assert image_column == "image"
+    assert caption_column == "text"
+    assert [record["image"] for record in dataset.records] == [
+        str(image_dir / "c.tif"),
+        str(image_dir / "a.tif"),
+    ]
+    assert [record["text"] for record in dataset.records] == ["c", "a"]
+
+
 def test_local_dataloader_uses_subset_manifest_order(tmp_path: Path):
     images_dir = tmp_path / "images"
     images_dir.mkdir()

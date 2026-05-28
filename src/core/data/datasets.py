@@ -17,7 +17,10 @@ from src.core.data.annotations import (
     index_annotations,
     load_coco_annotations,
 )
-from src.core.data.subset_manifest import filter_files_by_subset_manifest
+from src.core.data.subset_manifest import (
+    filter_files_by_subset_manifest,
+    filter_manifest_records_by_subset_manifest,
+)
 from src.core.data.transforms import horizontal_flip
 from src.core.paths import repo_root
 from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
@@ -73,7 +76,10 @@ def _load_manifest_records(
             if not line:
                 continue
             record = json.loads(line)
-            raw_path = record.get("image_path", record.get("path", record.get("file_name")))
+            raw_path = record.get(
+                "image_path",
+                record.get("path", record.get("file_name", record.get("filename"))),
+            )
             if not isinstance(raw_path, str) or not raw_path:
                 raise ValueError(
                     f"Manifest {manifest_path} line {line_number} is missing image_path"
@@ -150,6 +156,12 @@ class SingleChannelImageDataset(Dataset):
 
         if manifest_path is not None:
             self.records = _load_manifest_records(manifest_path, root_dir=root_dir)
+            self.records = filter_manifest_records_by_subset_manifest(
+                self.records,
+                subset_manifest,
+                split_dir=root_dir,
+                context="SingleChannelImageDataset",
+            )
         else:
             files = sorted(
                 f

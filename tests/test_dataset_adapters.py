@@ -116,6 +116,37 @@ def test_single_channel_dataset_loads_tiff_and_applies_sentinel2_normalization(t
     assert torch.allclose(sample, expected)
 
 
+def test_single_channel_manifest_dataset_uses_subset_manifest_order(tmp_path: Path) -> None:
+    image_dir = tmp_path / "images" / "train"
+    image_dir.mkdir(parents=True)
+    for index, name in enumerate(["a.tif", "b.tif", "c.tif"]):
+        Image.fromarray(np.full((2, 2), index, dtype=np.uint16)).save(image_dir / name)
+    manifest = tmp_path / "manifests" / "train.jsonl"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        "".join(
+            json.dumps({"image_path": str(image_dir / name), "sample_id": name}) + "\n"
+            for name in ["a.tif", "b.tif", "c.tif"]
+        ),
+        encoding="utf-8",
+    )
+    subset = tmp_path / "subsets" / "train_subset.json"
+    subset.parent.mkdir()
+    subset.write_text(
+        json.dumps({"samples": [{"image_path": "c.tif"}, {"image_path": "a.tif"}]}),
+        encoding="utf-8",
+    )
+
+    dataset = SingleChannelImageDataset(
+        str(image_dir),
+        manifest_path=str(manifest),
+        subset_manifest="train_subset.json",
+    )
+
+    assert dataset.files == ["c.tif", "a.tif"]
+    assert len(dataset) == 2
+
+
 def test_adapter_split_and_annotation_resolution_for_arbitrary_split(tmp_path: Path) -> None:
     adapter = RepoDatasetAdapter(
         dataset_id="unit",
