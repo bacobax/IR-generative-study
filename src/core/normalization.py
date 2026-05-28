@@ -31,6 +31,7 @@ from src.core.constants import (
 
 RAW_UINT16_PERCENTILE = "raw_uint16_percentile"
 UINT8_LINEAR = "uint8_linear"
+SENTINEL2_REFLECTANCE = "sentinel2_reflectance"
 
 
 # ── Percentile-based normalization ────────────────────────────────────────────
@@ -89,6 +90,11 @@ def uint8_to_norm(x: torch.Tensor) -> torch.Tensor:
     return (x.to(torch.float32) / 255.0).clamp(0.0, 1.0) * 2.0 - 1.0
 
 
+def sentinel2_reflectance_to_norm(x: torch.Tensor) -> torch.Tensor:
+    """Map Sentinel-2 reflectance-scaled integer values to [-1, 1]."""
+    return (x.to(torch.float32) / 10000.0).clamp(0.0, 1.0) * 2.0 - 1.0
+
+
 # ── Per-image min/max normalization ───────────────────────────────────────────
 
 
@@ -128,9 +134,12 @@ def normalize_image_tensor(
         return raw_to_norm(x)
     if normalization_mode == UINT8_LINEAR:
         return uint8_to_norm(x)
+    if normalization_mode == SENTINEL2_REFLECTANCE:
+        return sentinel2_reflectance_to_norm(x)
     raise ValueError(
         f"Unknown normalization_mode={normalization_mode!r}. "
-        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, {UINT8_LINEAR!r}"
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, "
+        f"{UINT8_LINEAR!r}, {SENTINEL2_REFLECTANCE!r}"
     )
 
 
@@ -239,9 +248,13 @@ def sd_output_to_npy(
     if normalization_mode == UINT8_LINEAR:
         return np.clip(np.rint(raw * 255.0), 0, 255).astype(np.uint8)
 
+    if normalization_mode == SENTINEL2_REFLECTANCE:
+        return np.clip(np.rint(raw * 10000.0), 0, 10000).astype(np.uint16)
+
     raise ValueError(
         f"Unknown normalization_mode={normalization_mode!r}. "
-        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, {UINT8_LINEAR!r}"
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, "
+        f"{UINT8_LINEAR!r}, {SENTINEL2_REFLECTANCE!r}"
     )
 
 
@@ -279,7 +292,12 @@ def raw_array_to_png_uint8(
     if normalization_mode == UINT8_LINEAR:
         return np.clip(arr, 0, 255).astype(np.uint8, copy=False)
 
+    if normalization_mode == SENTINEL2_REFLECTANCE:
+        x01 = np.clip(arr.astype(np.float32, copy=False) / 10000.0, 0.0, 1.0)
+        return np.rint(x01 * 255.0).astype(np.uint8)
+
     raise ValueError(
         f"Unknown normalization_mode={normalization_mode!r}. "
-        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, {UINT8_LINEAR!r}"
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, "
+        f"{UINT8_LINEAR!r}, {SENTINEL2_REFLECTANCE!r}"
     )

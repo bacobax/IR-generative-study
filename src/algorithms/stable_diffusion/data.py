@@ -19,6 +19,7 @@ from torchvision import transforms
 from torchvision.transforms import functional as TF
 
 from src.core.data.dataset_targets import resolve_dataset_target
+from src.core.data.datasets import load_single_channel_array
 from src.core.data.subset_manifest import filter_files_by_subset_manifest
 from src.core.normalization import (
     RAW_UINT16_PERCENTILE,
@@ -30,7 +31,17 @@ from src.core.normalization import (
 DATASET_NAME_MAPPING = {
     "lambdalabs/naruto-blip-captions": ("image", "text"),
 }
-PRIOR_IMAGE_EXTENSIONS = {".npy", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+LOCAL_IMAGE_EXTENSIONS = {".npy", ".tif", ".tiff"}
+PRIOR_IMAGE_EXTENSIONS = {
+    ".npy",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".bmp",
+    ".webp",
+    ".tif",
+    ".tiff",
+}
 
 
 @dataclass(frozen=True)
@@ -41,6 +52,7 @@ class ResolvedTrainingData:
     dataset_name: Optional[str]
     dataset_config_name: Optional[str]
     normalization_mode: str
+    manifest_path: Optional[str] = None
 
 
 def _load_metadata_jsonl(meta_path: str) -> Dict[str, str]:
@@ -58,6 +70,49 @@ def _load_metadata_jsonl(meta_path: str) -> Dict[str, str]:
     return mapping
 
 
+def _load_local_manifest_records(
+    manifest_path: str,
+    *,
+    image_column: str,
+    caption_column: str,
+) -> List[Dict[str, object]]:
+    records: List[Dict[str, object]] = []
+    repo = Path(__file__).resolve().parents[3]
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            raw_path = obj.get("image_path", obj.get("path", obj.get("file_name")))
+            if not isinstance(raw_path, str) or not raw_path:
+                raise ValueError(
+                    f"Manifest {manifest_path} line {line_number} is missing image_path"
+                )
+            image_path = Path(raw_path)
+            if not image_path.is_absolute():
+                image_path = repo / image_path
+            if image_path.suffix.lower() not in LOCAL_IMAGE_EXTENSIONS:
+                raise ValueError(
+                    f"Manifest {manifest_path} line {line_number} uses unsupported "
+                    f"image extension: {image_path.suffix}"
+                )
+            labels = obj.get("labels")
+            caption = obj.get("text", obj.get("caption_text", ""))
+            if not caption and isinstance(labels, list):
+                caption = ", ".join(str(label) for label in labels)
+            records.append(
+                {
+                    image_column: str(image_path),
+                    caption_column: caption,
+                    "metadata": obj,
+                }
+            )
+    if not records:
+        raise ValueError(f"No image records found in manifest {manifest_path}")
+    return records
+
+
 def resolve_training_data_source(
     *,
     dataset_id: Optional[str],
@@ -70,11 +125,13 @@ def resolve_training_data_source(
     if dataset_id is not None:
         target = resolve_dataset_target(dataset_id)
         split_dir = target.split_dir(train_split)
+        manifest_path = target.manifest_path(train_split)
         return ResolvedTrainingData(
             train_data_dir=str(split_dir),
             dataset_name=None,
             dataset_config_name=None,
             normalization_mode=target.normalization_mode,
+            manifest_path=str(manifest_path) if manifest_path is not None else None,
         )
 
     if train_data_dir is not None:
@@ -197,9 +254,9 @@ def ir_npy_to_normalized_rgb(
     *,
     normalization_mode: str,
 ) -> Image.Image:
-    """Load a local `.npy`, normalize if needed, then convert to RGB."""
+    """Load a local one-channel image, normalize if needed, then convert to RGB."""
     if isinstance(npy_or_path, (str, os.PathLike)):
-        arr = np.load(npy_or_path)
+        arr = load_single_channel_array(npy_or_path)
     else:
         arr = np.asarray(npy_or_path)
 
@@ -217,7 +274,7 @@ def ir_npy_to_normalized_rgb(
     elif arr.ndim != 2:
         raise ValueError(f"Expected 2D or 3D 1-channel .npy, got {arr.ndim}D")
 
-    tensor = torch.from_numpy(arr).unsqueeze(0).float()
+    tensor = torch.from_numpy(np.asarray(arr).copy()).unsqueeze(0).float()
     normalized = normalize_image_tensor(tensor, normalization_mode=normalization_mode)
     return _normalized_ir_to_pil_rgb(normalized)
 
@@ -416,7 +473,21 @@ def _build_local_training_dataset(
     image_column: str,
     caption_column: str,
     subset_manifest: Optional[str] = None,
+    manifest_path: Optional[str] = None,
 ) -> Tuple[Dataset, str, str]:
+    if manifest_path is not None:
+        return (
+            RecordDataset(
+                _load_local_manifest_records(
+                    manifest_path,
+                    image_column=image_column,
+                    caption_column=caption_column,
+                )
+            ),
+            image_column,
+            caption_column,
+        )
+
     if os.path.isdir(os.path.join(train_data_dir, "images")):
         images_dir = os.path.join(train_data_dir, "images")
     else:
@@ -425,23 +496,23 @@ def _build_local_training_dataset(
     if not os.path.isdir(images_dir):
         raise ValueError(f"Expected training data directory at: {images_dir}")
 
-    npy_files = sorted(
+    image_files = sorted(
         fn
         for fn in os.listdir(images_dir)
-        if fn.lower().endswith(".npy")
+        if Path(fn).suffix.lower() in LOCAL_IMAGE_EXTENSIONS
     )
-    npy_files = filter_files_by_subset_manifest(
-        npy_files,
+    image_files = filter_files_by_subset_manifest(
+        image_files,
         subset_manifest,
         split_dir=train_data_dir,
         context="Stable Diffusion stage-1 dataset",
     )
-    npy_paths = [
+    image_paths = [
         os.path.join(images_dir, fn)
-        for fn in npy_files
+        for fn in image_files
     ]
-    if len(npy_paths) == 0:
-        raise ValueError(f"No .npy files found in {images_dir}")
+    if len(image_paths) == 0:
+        raise ValueError(f"No local image files found in {images_dir}")
 
     candidate_meta_paths = [
         os.path.join(train_data_dir, "metadata.jsonl"),
@@ -453,7 +524,7 @@ def _build_local_training_dataset(
             captions_map = _load_metadata_jsonl(meta_path)
             break
 
-    captions = [captions_map.get(os.path.basename(path), "") for path in npy_paths]
+    captions = [captions_map.get(os.path.basename(path), "") for path in image_paths]
 
     ds = RecordDataset(
         [
@@ -461,7 +532,7 @@ def _build_local_training_dataset(
                 image_column: path,
                 caption_column: caption,
             }
-            for path, caption in zip(npy_paths, captions)
+            for path, caption in zip(image_paths, captions)
         ]
     )
     return ds, image_column, caption_column
@@ -476,6 +547,7 @@ def load_training_dataset(
     image_column: str = "image",
     caption_column: str = "text",
     subset_manifest: Optional[str] = None,
+    manifest_path: Optional[str] = None,
 ) -> Tuple[Dataset, str, str]:
     if dataset_name is not None:
         if subset_manifest is not None:
@@ -523,6 +595,7 @@ def load_training_dataset(
         image_column,
         caption_column,
         subset_manifest=subset_manifest,
+        manifest_path=manifest_path,
     )
 
 
@@ -566,6 +639,7 @@ def create_dataloader(
         image_column=image_column,
         caption_column=caption_column,
         subset_manifest=subset_manifest,
+        manifest_path=resolved.manifest_path,
     )
 
     if max_train_samples is not None:

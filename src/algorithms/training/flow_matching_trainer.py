@@ -1222,40 +1222,41 @@ class FlowMatchingTrainer:
                     global_step,
                 )
                 writer.add_scalar(
-                    f"{self._metric_prefix()}/attention_kd_loss_step",
-                    _scalar_component("attention_kd_loss", 0.0),
-                    global_step,
-                )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/attention_kd_weighted_step",
-                    _scalar_component("attention_kd_weighted", 0.0),
-                    global_step,
-                )
-                writer.add_scalar(
                     f"{self._metric_prefix()}/total_loss_step",
                     _scalar_component("total_loss", loss.item()),
                     global_step,
                 )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/attention_kd_matched_layers",
-                    float(kd_diag.get("matched_layers", 0)),
-                    global_step,
-                )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/attention_kd_selected_instances",
-                    float(kd_diag.get("selected_instances", 0)),
-                    global_step,
-                )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/attention_kd_skipped_shape",
-                    float(kd_diag.get("skipped_layers_shape", 0)),
-                    global_step,
-                )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/attention_kd_skipped_missing",
-                    float(kd_diag.get("skipped_layers_missing", 0)),
-                    global_step,
-                )
+                if self._uses_attention_distillation():
+                    writer.add_scalar(
+                        f"{self._metric_prefix()}/attention_kd_loss_step",
+                        _scalar_component("attention_kd_loss", 0.0),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        f"{self._metric_prefix()}/attention_kd_weighted_step",
+                        _scalar_component("attention_kd_weighted", 0.0),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        f"{self._metric_prefix()}/attention_kd_matched_layers",
+                        float(kd_diag.get("matched_layers", 0)),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        f"{self._metric_prefix()}/attention_kd_selected_instances",
+                        float(kd_diag.get("selected_instances", 0)),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        f"{self._metric_prefix()}/attention_kd_skipped_shape",
+                        float(kd_diag.get("skipped_layers_shape", 0)),
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        f"{self._metric_prefix()}/attention_kd_skipped_missing",
+                        float(kd_diag.get("skipped_layers_missing", 0)),
+                        global_step,
+                    )
                 writer.add_scalar(
                     f"{self._metric_prefix()}/lr",
                     float(optimizer.param_groups[0]["lr"]),

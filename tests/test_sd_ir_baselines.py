@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import torch
 from diffusers import UNet2DConditionModel
+from PIL import Image
 
 from src.algorithms.stable_diffusion.config import (
     DEFAULT_NUM_TRAIN_EPOCHS,
@@ -20,6 +21,7 @@ from src.algorithms.stable_diffusion.data import (
     TextImageDataset,
     create_dataloader,
     ir_npy_to_normalized_rgb,
+    load_training_dataset,
     resolve_training_data_source,
 )
 from src.algorithms.stable_diffusion.models import (
@@ -30,7 +32,7 @@ from src.algorithms.stable_diffusion.models import (
 import src.algorithms.stable_diffusion.training as sd_training
 from src.algorithms.stable_diffusion.training import Trainer, log_validation
 from src.algorithms.stable_diffusion.utils import setup_logging
-from src.core.normalization import RAW_UINT16_PERCENTILE, UINT8_LINEAR
+from src.core.normalization import RAW_UINT16_PERCENTILE, SENTINEL2_REFLECTANCE, UINT8_LINEAR
 
 
 class _TokenizerOutput:
@@ -291,11 +293,25 @@ def test_dataset_resolution_uses_repo_normalization_modes():
         train_data_dir=None,
         train_split="train",
     )
+    bigearthnet = resolve_training_data_source(
+        dataset_id="bigearthnet_s2_b08_5x5_stride3",
+        dataset_name=None,
+        dataset_config_name=None,
+        train_data_dir=None,
+        train_split="val",
+    )
 
     assert flir.normalization_mode == UINT8_LINEAR
     assert v18.normalization_mode == RAW_UINT16_PERCENTILE
+    assert bigearthnet.normalization_mode == SENTINEL2_REFLECTANCE
     assert flir.train_data_dir.endswith("data/raw/flir_private_proxy_alignment_v18/train")
     assert v18.train_data_dir.endswith("data/raw/v18/train")
+    assert bigearthnet.train_data_dir.endswith(
+        "data/derived/bigearthnet_s2_b08_5x5_stride3/images/validation"
+    )
+    assert bigearthnet.manifest_path.endswith(
+        "data/derived/bigearthnet_s2_b08_5x5_stride3/manifests/validation.jsonl"
+    )
 
 
 def test_ir_preprocessing_respects_v18_and_flir_normalization():
@@ -314,6 +330,19 @@ def test_ir_preprocessing_respects_v18_and_flir_normalization():
     assert int(v18_arr[0, 1, 0]) == 255
     assert int(flir_arr[0, 0, 0]) == 0
     assert int(flir_arr[0, 1, 0]) == 255
+
+
+def test_ir_preprocessing_loads_tiff_with_sentinel2_normalization(tmp_path: Path):
+    path = tmp_path / "sample.tif"
+    Image.fromarray(np.array([[0, 5000, 10000]], dtype=np.uint16)).save(path)
+
+    image = ir_npy_to_normalized_rgb(path, normalization_mode=SENTINEL2_REFLECTANCE)
+    arr = np.asarray(image)
+
+    assert arr.shape == (1, 3, 3)
+    assert int(arr[0, 0, 0]) == 0
+    assert int(arr[0, 1, 0]) == 128
+    assert int(arr[0, 2, 0]) == 255
 
 
 def test_npy_preprocessing_accepts_channel_first_normalized_rgb():
@@ -407,6 +436,40 @@ def test_local_dataloader_does_not_require_huggingface_datasets(tmp_path: Path, 
     assert normalization_mode == RAW_UINT16_PERCENTILE
     assert batch["pixel_values"].shape == (1, 3, 8, 8)
     assert batch["input_ids"].shape == (1, 8)
+
+
+def test_local_training_dataset_accepts_manifest_backed_tiffs(tmp_path: Path):
+    image_dir = tmp_path / "images" / "train"
+    image_dir.mkdir(parents=True)
+    image_path = image_dir / "sample.tif"
+    Image.fromarray(np.full((8, 8), 5000, dtype=np.uint16)).save(image_path)
+    manifest = tmp_path / "manifests" / "train.jsonl"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(
+            {
+                "image_path": str(image_path),
+                "labels": ["Arable land", "Pastures"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset, image_column, caption_column = load_training_dataset(
+        dataset_name=None,
+        dataset_config_name=None,
+        train_data_dir=str(image_dir),
+        image_column="image",
+        caption_column="text",
+        manifest_path=str(manifest),
+    )
+
+    assert image_column == "image"
+    assert caption_column == "text"
+    assert len(dataset) == 1
+    assert dataset[0]["image"] == str(image_path)
+    assert dataset[0]["text"] == "Arable land, Pastures"
 
 
 def test_local_dataloader_uses_subset_manifest_order(tmp_path: Path):

@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, Dataset, Subset
 
 from src.core.data.annotation_dataset import AnnotationFMDataset
 from src.core.data.dataset_targets import resolve_dataset_target
-from src.core.data.datasets import NPYImageDataset
+from src.core.data.datasets import SingleChannelImageDataset
 from src.core.data.transforms import ScheduledAugment256
 from src.core.normalization import RAW_UINT16_PERCENTILE
 
@@ -24,6 +24,8 @@ class ResolvedTrainingData:
     val_annotations_path: Optional[str]
     normalization_mode: str
     train_subset_manifest: Optional[str] = None
+    train_manifest_path: Optional[str] = None
+    val_manifest_path: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,8 @@ def resolve_training_data(data_config: Any) -> ResolvedTrainingData:
     val_annotations_path = getattr(data_config, "annotations_path", None)
     normalization_mode = RAW_UINT16_PERCENTILE
     train_subset_manifest = getattr(data_config, "subset_manifest", None)
+    train_manifest_path = None
+    val_manifest_path = None
 
     dataset_id = getattr(data_config, "dataset_id", None)
     if dataset_id is not None:
@@ -54,8 +58,12 @@ def resolve_training_data(data_config: Any) -> ResolvedTrainingData:
         train_dir = str(target.split_dir("train"))
         val_dir = str(target.split_dir("val"))
         normalization_mode = target.normalization_mode
+        train_manifest = target.manifest_path("train")
+        val_manifest = target.manifest_path("val")
+        train_manifest_path = str(train_manifest) if train_manifest is not None else None
+        val_manifest_path = str(val_manifest) if val_manifest is not None else None
 
-        if train_annotations_path is None:
+        if train_annotations_path is None and target.has_coco_annotations():
             train_annotations_path = str(target.annotations_path("train"))
             val_annotations_path = str(target.annotations_path("val"))
 
@@ -66,6 +74,8 @@ def resolve_training_data(data_config: Any) -> ResolvedTrainingData:
         val_annotations_path=val_annotations_path,
         normalization_mode=normalization_mode,
         train_subset_manifest=train_subset_manifest,
+        train_manifest_path=train_manifest_path,
+        val_manifest_path=val_manifest_path,
     )
 
 
@@ -134,14 +144,16 @@ def build_non_layout_dataloaders(
             normalization_mode=resolved_data.normalization_mode,
         )
     else:
-        train_base_dataset = NPYImageDataset(
+        train_base_dataset = SingleChannelImageDataset(
             root_dir=resolved_data.train_dir,
             transform=train_transform,
             subset_manifest=resolved_data.train_subset_manifest,
+            manifest_path=resolved_data.train_manifest_path,
         )
-        eval_base_dataset = NPYImageDataset(
+        eval_base_dataset = SingleChannelImageDataset(
             root_dir=resolved_data.val_dir,
             transform=eval_transform,
+            manifest_path=resolved_data.val_manifest_path,
         )
 
     train_dataset = apply_dataset_subset(

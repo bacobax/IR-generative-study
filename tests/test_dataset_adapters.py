@@ -3,7 +3,10 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import numpy as np
 import pytest
+import torch
+from PIL import Image
 
 from src.core.data.adapters import DatasetBuildRequest, RepoDatasetAdapter
 from src.core.data.dataset_targets import (
@@ -11,8 +14,14 @@ from src.core.data.dataset_targets import (
     supported_dataset_ids,
     target_to_dataset_build_request,
 )
-from src.core.normalization import RAW_UINT16_PERCENTILE, UINT8_LINEAR
-from src.core.paths import flir_root, v18_root
+from src.core.data.datasets import SingleChannelImageDataset
+from src.core.normalization import (
+    RAW_UINT16_PERCENTILE,
+    SENTINEL2_REFLECTANCE,
+    UINT8_LINEAR,
+    normalize_image_tensor,
+)
+from src.core.paths import bigearthnet_s2_b08_5x5_stride3_root, flir_root, v18_root
 from src.core.registry import REGISTRIES
 
 
@@ -62,6 +71,49 @@ def test_flir_proxy_target_keeps_legacy_paths_and_normalization() -> None:
         flir_root() / "train" / "annotations.json"
     )
     assert target.annotations_path("val") == flir_root() / "val" / "annotations.json"
+
+
+def test_bigearthnet_target_resolves_manifest_backed_splits() -> None:
+    target = resolve_dataset_target("bigearthnet_s2_b08_5x5_stride3")
+    root = bigearthnet_s2_b08_5x5_stride3_root()
+
+    assert target.dataset_id == "bigearthnet_s2_b08_5x5_stride3"
+    assert target.root == root
+    assert target.normalization_mode == SENTINEL2_REFLECTANCE
+    assert target.split_dir("train") == root / "images" / "train"
+    assert target.split_dir("val") == root / "images" / "validation"
+    assert target.split_dir("validation") == root / "images" / "validation"
+    assert target.manifest_path("train") == root / "manifests" / "train.jsonl"
+    assert target.manifest_path("val") == root / "manifests" / "validation.jsonl"
+    assert target.has_coco_annotations() is False
+
+
+def test_single_channel_dataset_loads_tiff_and_applies_sentinel2_normalization(tmp_path: Path) -> None:
+    image_dir = tmp_path / "images" / "train"
+    image_dir.mkdir(parents=True)
+    arr = np.array([[0, 5000], [10000, 12000]], dtype=np.uint16)
+    image_path = image_dir / "sample.tif"
+    Image.fromarray(arr).save(image_path)
+    manifest = tmp_path / "manifests" / "train.jsonl"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps({"image_path": str(image_path), "sample_id": "sample"}) + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = SingleChannelImageDataset(
+        str(image_dir),
+        manifest_path=str(manifest),
+        transform=lambda x: normalize_image_tensor(
+            x,
+            normalization_mode=SENTINEL2_REFLECTANCE,
+        ),
+    )
+
+    sample = dataset[0]
+    expected = torch.tensor([[[-1.0, 0.0], [1.0, 1.0]]])
+    assert sample.shape == (1, 2, 2)
+    assert torch.allclose(sample, expected)
 
 
 def test_adapter_split_and_annotation_resolution_for_arbitrary_split(tmp_path: Path) -> None:
@@ -158,7 +210,11 @@ def test_target_to_dataset_build_request_includes_adapter_resolved_fields() -> N
 
 
 def test_supported_dataset_ids_and_unknown_id_error_are_backward_compatible() -> None:
-    assert set(supported_dataset_ids()) == {"v18", "flir_private_proxy_alignment_v18"}
+    assert set(supported_dataset_ids()) == {
+        "v18",
+        "flir_private_proxy_alignment_v18",
+        "bigearthnet_s2_b08_5x5_stride3",
+    }
 
     with pytest.raises(
         ValueError,

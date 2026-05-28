@@ -16,7 +16,10 @@ from src.core.data.datasets import (
     BBoxConditioningDataset,
     NPYImageDataset,
     NPYStemDataset,
+    SingleChannelImageDataset,
     TextImageDataset,
+    load_single_channel_array,
+    load_single_channel_tensor,
 )
 from src.core.data.foreground_background_dataset import (
     ForegroundBackgroundCropDataset,
@@ -64,6 +67,7 @@ __all__ = [
     "RepoDatasetAdapter",
     "ResolvedTrainingData",
     "SampleKeys",
+    "SingleChannelImageDataset",
     "TextFields",
     "TextImageDataset",
     "TokenizerFields",
@@ -76,6 +80,8 @@ __all__ = [
     "collate_layout_batch",
     "filter_files_by_subset_manifest",
     "load_subset_manifest_file_names",
+    "load_single_channel_array",
+    "load_single_channel_tensor",
     "normalize_batch",
     "normalize_sample",
     "resolve_training_data",

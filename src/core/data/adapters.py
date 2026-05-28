@@ -224,6 +224,11 @@ class RepoDatasetTargetAdapter:
                 "split": request.split,
                 "split_dir": str(target.split_dir(request.split)),
                 "annotations_path": str(target.annotations_path(request.split)),
+                "manifest_path": (
+                    str(target.manifest_path(request.split))
+                    if target.manifest_path(request.split) is not None
+                    else None
+                ),
                 "category_id_to_name": target.category_metadata(request.split),
             }
         )

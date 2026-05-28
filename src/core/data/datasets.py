@@ -1,4 +1,4 @@
-"""Reusable dataset classes for loading .npy thermal images."""
+"""Reusable dataset classes for loading single-channel local images."""
 
 import json
 import os
@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
+from PIL import Image
 from torch.utils.data import Dataset
 
 from src.core.data.annotations import (
@@ -18,7 +19,73 @@ from src.core.data.annotations import (
 )
 from src.core.data.subset_manifest import filter_files_by_subset_manifest
 from src.core.data.transforms import horizontal_flip
+from src.core.paths import repo_root
 from src.core.normalization import RAW_UINT16_PERCENTILE, resize_and_normalize
+
+SINGLE_CHANNEL_IMAGE_EXTENSIONS = {".npy", ".tif", ".tiff"}
+
+
+def load_single_channel_array(path: str | os.PathLike) -> np.ndarray:
+    """Load a local one-channel image array from ``.npy`` or TIFF."""
+    path = Path(path)
+    if path.suffix.lower() == ".npy":
+        return np.load(path)
+    if path.suffix.lower() in {".tif", ".tiff"}:
+        with Image.open(path) as image:
+            return np.asarray(image)
+    raise ValueError(f"Unsupported single-channel image extension: {path.suffix}")
+
+
+def load_single_channel_tensor(path: str | os.PathLike) -> torch.Tensor:
+    """Load a local image as a float tensor with shape ``(1, H, W)``."""
+    arr = load_single_channel_array(path)
+    if arr.ndim == 2:
+        arr = arr[None, ...]
+    elif arr.ndim == 3 and arr.shape[-1] == 1:
+        arr = np.moveaxis(arr, -1, 0)
+    elif arr.ndim != 3:
+        raise ValueError(f"Expected 2D or 1-channel image, got shape {arr.shape}")
+    if arr.ndim == 3 and arr.shape[0] != 1:
+        raise ValueError(f"Expected one channel, got shape {arr.shape}")
+    return torch.from_numpy(np.asarray(arr).copy()).float()
+
+
+def _resolve_manifest_image_path(raw_path: str, *, root_dir: str | os.PathLike) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    candidates = [repo_root() / path, Path(root_dir) / path, Path(root_dir) / path.name]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+def _load_manifest_records(
+    manifest_path: str | os.PathLike,
+    *,
+    root_dir: str | os.PathLike,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    with Path(manifest_path).open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            raw_path = record.get("image_path", record.get("path", record.get("file_name")))
+            if not isinstance(raw_path, str) or not raw_path:
+                raise ValueError(
+                    f"Manifest {manifest_path} line {line_number} is missing image_path"
+                )
+            image_path = _resolve_manifest_image_path(raw_path, root_dir=root_dir)
+            record = dict(record)
+            record["image_path"] = str(image_path)
+            record.setdefault("file_name", image_path.name)
+            records.append(record)
+    if not records:
+        raise RuntimeError(f"No image records found in manifest {manifest_path}")
+    return records
 
 
 class NPYImageDataset(Dataset):
@@ -63,6 +130,67 @@ class NPYImageDataset(Dataset):
         if self.transform:
             x = self.transform(x)
         return x
+
+
+class SingleChannelImageDataset(Dataset):
+    """Load one-channel ``.npy`` or TIFF files and return tensors."""
+
+    def __init__(
+        self,
+        root_dir: str,
+        transform: Optional[Callable] = None,
+        subset_manifest: Optional[str] = None,
+        manifest_path: Optional[str] = None,
+        return_metadata: bool = False,
+    ):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.return_metadata = return_metadata
+        self.records: list[dict[str, Any]]
+
+        if manifest_path is not None:
+            self.records = _load_manifest_records(manifest_path, root_dir=root_dir)
+        else:
+            files = sorted(
+                f
+                for f in os.listdir(root_dir)
+                if Path(f).suffix.lower() in SINGLE_CHANNEL_IMAGE_EXTENSIONS
+            )
+            files = filter_files_by_subset_manifest(
+                files,
+                subset_manifest,
+                split_dir=root_dir,
+                context="SingleChannelImageDataset",
+            )
+            self.records = [
+                {"image_path": os.path.join(root_dir, file_name), "file_name": file_name}
+                for file_name in files
+            ]
+
+        if not self.records:
+            raise RuntimeError(f"No single-channel image files found in {root_dir}")
+
+    @property
+    def files(self) -> list[str]:
+        return [str(record["file_name"]) for record in self.records]
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, idx: int):
+        record = self.records[idx]
+        x = load_single_channel_tensor(record["image_path"])
+        if self.transform is not None:
+            x = self.transform(x)
+        if not self.return_metadata:
+            return x
+        metadata = {
+            key: value
+            for key, value in record.items()
+            if key not in {"image_path"}
+        }
+        metadata["image_path"] = str(record["image_path"])
+        return {"pixel_values": x, "metadata": metadata}
 
 
 class NPYStemDataset(Dataset):

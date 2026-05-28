@@ -104,11 +104,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--method",
-        choices=["bbox_stratified", "random"],
+        choices=["bbox_stratified", "random", "tile_balanced"],
         required=True,
         help=(
             "Sampling method. bbox_stratified preserves image-level bbox strata; "
-            "random performs deterministic uniform sampling without replacement."
+            "random performs deterministic uniform sampling without replacement; "
+            "tile_balanced samples evenly across a tile/scene field."
         ),
     )
 
@@ -153,6 +154,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Filename prefix for multi-output manifests. A prefix of 'train' "
             "with size 5000 writes train_5000.json."
+        ),
+    )
+    multi.add_argument(
+        "--subset-name-suffix",
+        type=str,
+        help=(
+            "Optional filename suffix for multi-output manifests. A prefix of "
+            "'train', size 5000, and suffix 'tile_balanced' writes "
+            "train_5000_tile_balanced.json."
         ),
     )
     multi.add_argument(
@@ -218,6 +228,30 @@ def parse_args() -> argparse.Namespace:
             "preserves every stratum."
         ),
     )
+    parser.add_argument(
+        "--tile-field",
+        type=str,
+        default="scene",
+        help="Sample field used as the tile key for --method tile_balanced. Default: scene.",
+    )
+    parser.add_argument(
+        "--sample-id-field",
+        type=str,
+        default="id",
+        help=(
+            "Field to use as sample ID when normalizing manifests. Use sample_id "
+            "for BigEarthNet JSONL manifests. Default: id."
+        ),
+    )
+    parser.add_argument(
+        "--sample-path-field",
+        type=str,
+        default="path",
+        help=(
+            "Field to use as sample path when normalizing manifests. Use image_path "
+            "for BigEarthNet JSONL manifests. Default: path."
+        ),
+    )
     args = parser.parse_args()
     validate_args(args)
     return args
@@ -262,11 +296,41 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--position-grid must be > 0.")
     if args.min_stratum_size <= 0:
         raise ValueError("--min-stratum-size must be > 0.")
+    if args.method == "tile_balanced":
+        if not args.tile_field:
+            raise ValueError("--tile-field is required for --method tile_balanced.")
+        if not args.sample_id_field:
+            raise ValueError("--sample-id-field is required.")
+        if not args.sample_path_field:
+            raise ValueError("--sample-path-field is required.")
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Manifest does not exist: {path}")
+
+    if path.suffix.lower() == ".jsonl":
+        samples: list[Sample] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    sample = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Manifest JSONL line {line_number} is not valid JSON: {path}"
+                    ) from exc
+                if not isinstance(sample, dict):
+                    raise ValueError(
+                        f"Manifest JSONL line {line_number} must be an object: {path}"
+                    )
+                samples.append(sample)
+        manifest = {"manifest_format": "jsonl", "samples": samples}
+        validate_manifest(manifest, path)
+        return manifest
+
     try:
         with path.open("r", encoding="utf-8") as handle:
             manifest = json.load(handle)
@@ -286,12 +350,23 @@ def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
         raise ValueError(f'Every entry in "samples" must be an object: {path}')
 
 
-def validate_samples_for_method(samples: Sequence[Sample], method: str) -> None:
-    required = ["id", "path"] if method == "random" else ["id", "path", "width", "height", "boxes"]
+def validate_samples_for_method(
+    samples: Sequence[Sample],
+    method: str,
+    args: argparse.Namespace | None = None,
+) -> None:
+    if method in {"random", "tile_balanced"}:
+        required = ["id", "path"]
+    else:
+        required = ["id", "path", "width", "height", "boxes"]
     for index, sample in enumerate(samples):
         for field in required:
             if field not in sample:
                 raise ValueError(f"Sample at index {index} is missing required field {field!r}.")
+        if method == "tile_balanced" and args is not None and args.tile_field not in sample:
+            raise ValueError(
+                f"Sample at index {index} is missing tile field {args.tile_field!r}."
+            )
         if method == "bbox_stratified":
             boxes = sample["boxes"]
             if not isinstance(boxes, list):
@@ -330,6 +405,32 @@ def validate_samples_for_method(samples: Sequence[Sample], method: str) -> None:
                     raise ValueError(
                         f"Sample {sample['id']!r} box {box_index} needs class_id or class_name."
                     )
+
+
+def normalize_sample_aliases(samples: Sequence[Sample], args: argparse.Namespace) -> list[Sample]:
+    """Return copies with canonical id/path aliases while preserving original fields."""
+    normalized: list[Sample] = []
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            raise ValueError(f"Sample at index {index} must be an object.")
+        normalized_sample = dict(sample)
+        if "id" not in normalized_sample:
+            sample_id = normalized_sample.get(args.sample_id_field)
+            if sample_id is None:
+                raise ValueError(
+                    f"Sample at index {index} is missing id and {args.sample_id_field!r}."
+                )
+            normalized_sample["id"] = str(sample_id)
+        if "path" not in normalized_sample:
+            sample_path = normalized_sample.get(args.sample_path_field)
+            if sample_path is None:
+                raise ValueError(
+                    f"Sample {normalized_sample['id']!r} is missing path and "
+                    f"{args.sample_path_field!r}."
+                )
+            normalized_sample["path"] = str(sample_path)
+        normalized.append(normalized_sample)
+    return normalized
 
 
 def validate_unique_sample_ids(samples: Sequence[Sample], context: str) -> None:
@@ -593,6 +694,99 @@ def random_sample(samples: Sequence[Sample], target: int, seed: int) -> list[Sam
     return selected
 
 
+def group_samples_by_tile(
+    samples: Sequence[Sample],
+    tile_field: str,
+) -> dict[str, list[Sample]]:
+    grouped: dict[str, list[Sample]] = defaultdict(list)
+    for index, sample in enumerate(samples):
+        tile = sample.get(tile_field)
+        if tile is None:
+            raise ValueError(
+                f"Sample {sample.get('id', index)!r} is missing tile field {tile_field!r}."
+            )
+        grouped[str(tile)].append(sample)
+    return {
+        tile: sorted(tile_samples, key=lambda sample: str(sample["id"]))
+        for tile, tile_samples in grouped.items()
+    }
+
+
+def tile_balanced_allocation(
+    tile_sizes: dict[str, int],
+    target: int,
+) -> dict[str, int]:
+    """Allocate an exact target as evenly as possible without oversampling."""
+    if target <= 0:
+        raise ValueError("Target sample count must be > 0.")
+    total = sum(tile_sizes.values())
+    if target > total:
+        raise ValueError(f"Requested {target} samples but only {total} candidates are available.")
+    if not tile_sizes:
+        raise ValueError("Cannot allocate a tile-balanced subset from zero tiles.")
+
+    tiles = sorted(tile_sizes)
+    base = target // len(tiles)
+    allocations = {tile: min(size, base) for tile, size in tile_sizes.items()}
+    remaining = target - sum(allocations.values())
+
+    while remaining > 0:
+        eligible = [tile for tile in tiles if allocations[tile] < tile_sizes[tile]]
+        if not eligible:
+            raise RuntimeError("Unable to allocate all requested samples across tiles.")
+        # Water-fill: raise the lowest selected tile counts first. Ties prefer
+        # tiles with more remaining capacity, then tile name for determinism.
+        eligible = sorted(
+            eligible,
+            key=lambda tile: (
+                allocations[tile],
+                -(tile_sizes[tile] - allocations[tile]),
+                tile,
+            ),
+        )
+        made_progress = False
+        for tile in eligible:
+            if remaining == 0:
+                break
+            if allocations[tile] >= tile_sizes[tile]:
+                continue
+            allocations[tile] += 1
+            remaining -= 1
+            made_progress = True
+        if not made_progress:
+            raise RuntimeError("Unable to allocate all requested samples across tiles.")
+
+    return {tile: allocations[tile] for tile in tiles}
+
+
+def tile_balanced_sample(
+    samples: Sequence[Sample],
+    target: int,
+    seed: int,
+    tile_field: str,
+) -> list[Sample]:
+    grouped = group_samples_by_tile(samples, tile_field)
+    allocations = tile_balanced_allocation(
+        {tile: len(tile_samples) for tile, tile_samples in grouped.items()},
+        target,
+    )
+    rng = random.Random(seed)
+    selected: list[Sample] = []
+    for tile in sorted(grouped):
+        candidates = grouped[tile]
+        count = allocations[tile]
+        if count == len(candidates):
+            selected.extend(candidates)
+        else:
+            selected.extend(rng.sample(candidates, count))
+    selected = sorted(
+        selected,
+        key=lambda sample: (str(sample.get(tile_field)), str(sample["id"])),
+    )
+    validate_unique_sample_ids(selected, "selected samples")
+    return selected
+
+
 def histogram_distribution(values: Iterable[str]) -> dict[str, float]:
     counts = Counter(values)
     total = sum(counts.values())
@@ -789,12 +983,83 @@ def compute_bbox_diagnostics(
     return diagnostics
 
 
+def label_distribution(samples: Sequence[Sample]) -> dict[str, float]:
+    labels = [
+        str(label)
+        for sample in samples
+        for label in sample.get("labels", [])
+        if label is not None
+    ]
+    return histogram_distribution(labels)
+
+
+def tile_count_stats(counts: Counter[str]) -> dict[str, Any]:
+    values = sorted(counts.values())
+    if not values:
+        return {
+            "min": 0,
+            "max": 0,
+            "mean": 0.0,
+            "median": None,
+        }
+    return {
+        "min": values[0],
+        "max": values[-1],
+        "mean": sum(values) / len(values),
+        "median": median(values),
+    }
+
+
+def compute_tile_balanced_diagnostics(
+    candidate_samples: Sequence[Sample],
+    selected_samples: Sequence[Sample],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    diagnostics = compute_basic_diagnostics(candidate_samples, selected_samples)
+    candidate_counts = Counter(str(sample[args.tile_field]) for sample in candidate_samples)
+    selected_counts = Counter(str(sample[args.tile_field]) for sample in selected_samples)
+    base_target_per_tile = len(selected_samples) // len(candidate_counts) if candidate_counts else 0
+    allocation = {tile: selected_counts.get(tile, 0) for tile in sorted(candidate_counts)}
+    underfull_tiles = [
+        tile
+        for tile, candidate_count in candidate_counts.items()
+        if candidate_count < base_target_per_tile
+    ]
+
+    diagnostics.update(
+        {
+            "tile_field": args.tile_field,
+            "num_candidate_tiles": len(candidate_counts),
+            "num_selected_tiles": len(selected_counts),
+            "base_target_per_tile": base_target_per_tile,
+            "candidate_samples_per_tile": dict(sorted(candidate_counts.items())),
+            "selected_samples_per_tile": dict(sorted(selected_counts.items())),
+            "selected_samples_per_tile_stats": tile_count_stats(selected_counts),
+            "tile_allocation": allocation,
+            "underfull_tile_count": len(underfull_tiles),
+            "underfull_tiles": sorted(underfull_tiles),
+        }
+    )
+    if any("labels" in sample for sample in candidate_samples):
+        candidate_labels = label_distribution(candidate_samples)
+        selected_labels = label_distribution(selected_samples)
+        diagnostics["label_l1"] = l1_distance(candidate_labels, selected_labels)
+        diagnostics["label_jsd"] = js_divergence(candidate_labels, selected_labels)
+        diagnostics["distributions"] = {
+            "candidate_label_frequency": candidate_labels,
+            "selected_label_frequency": selected_labels,
+        }
+    return diagnostics
+
+
 def compute_diagnostics(
     candidate_samples: Sequence[Sample],
     selected_samples: Sequence[Sample],
     method: str,
     args: argparse.Namespace,
 ) -> dict[str, Any]:
+    if method == "tile_balanced":
+        return compute_tile_balanced_diagnostics(candidate_samples, selected_samples, args)
     if method == "bbox_stratified":
         return compute_bbox_diagnostics(candidate_samples, selected_samples, args)
     diagnostics = compute_basic_diagnostics(candidate_samples, selected_samples)
@@ -814,6 +1079,8 @@ def select_samples(
         )
     if args.method == "random":
         return random_sample(candidate_samples, target, args.seed)
+    if args.method == "tile_balanced":
+        return tile_balanced_sample(candidate_samples, target, args.seed, args.tile_field)
     area_spec = compute_area_bins(candidate_samples, args)
     summaries = compute_detection_image_summaries(candidate_samples, args, area_spec)
     strata = assign_detection_strata(summaries, args.min_stratum_size)
@@ -840,14 +1107,17 @@ def manifest_metadata(
         "num_samples_requested": target,
         "num_samples_selected": len(selected),
         "seed": seed,
-        "sampling_method": (
-            "uniform_random_without_replacement"
-            if method == "random"
-            else "representative_nested_bbox_stratified_image_level"
-        ),
+        "sampling_method": {
+            "random": "uniform_random_without_replacement",
+            "bbox_stratified": "representative_nested_bbox_stratified_image_level",
+            "tile_balanced": "nested_tile_balanced_without_replacement",
+        }[method],
         "diagnostics": diagnostics,
         "samples": list(selected),
     }
+    if method == "tile_balanced":
+        payload["tile_field"] = args.tile_field
+        payload["tile_allocation"] = diagnostics.get("tile_allocation", {})
     if method == "bbox_stratified":
         payload["stratification"] = {
             "fields": STRATIFICATION_FIELDS,
@@ -916,6 +1186,18 @@ def print_summary(
     if "class_l1" not in diagnostics:
         print(f"  num_candidates: {diagnostics['num_candidates']}")
         print(f"  num_selected_samples: {diagnostics['num_selected_samples']}")
+    if method == "tile_balanced":
+        stats = diagnostics["selected_samples_per_tile_stats"]
+        print(f"  num_candidate_tiles: {diagnostics['num_candidate_tiles']}")
+        print(f"  num_selected_tiles: {diagnostics['num_selected_tiles']}")
+        print(
+            "  selected_samples_per_tile: "
+            f"min={stats['min']}, median={stats['median']}, "
+            f"mean={stats['mean']:.3f}, max={stats['max']}"
+        )
+        if "label_l1" in diagnostics:
+            print(f"  label_l1: {diagnostics['label_l1']:.6f}")
+            print(f"  label_jsd: {diagnostics['label_jsd']:.6f}")
 
 
 def build_one_subset(
@@ -966,16 +1248,45 @@ def validate_output_paths(args: argparse.Namespace) -> None:
         args.output_dir.mkdir(parents=True, exist_ok=True)
         for size in args.subset_sizes:
             ensure_output_available(
-                args.output_dir / f"{args.subset_name_prefix}_{size}.json",
+                multi_output_path(args.output_dir, args.subset_name_prefix, size, args.subset_name_suffix),
                 args.overwrite,
             )
     if args.diagnostics_dir is not None:
         args.diagnostics_dir.mkdir(parents=True, exist_ok=True)
         for size in args.subset_sizes:
             ensure_output_available(
-                args.diagnostics_dir / f"{args.subset_name_prefix}_{size}_diagnostics.json",
+                multi_diagnostics_path(
+                    args.diagnostics_dir,
+                    args.subset_name_prefix,
+                    size,
+                    args.subset_name_suffix,
+                ),
                 args.overwrite,
             )
+
+
+def multi_output_path(
+    output_dir: Path,
+    prefix: str,
+    size: int,
+    suffix: str | None,
+) -> Path:
+    stem = f"{prefix}_{size}"
+    if suffix:
+        stem = f"{stem}_{suffix}"
+    return output_dir / f"{stem}.json"
+
+
+def multi_diagnostics_path(
+    diagnostics_dir: Path,
+    prefix: str,
+    size: int,
+    suffix: str | None,
+) -> Path:
+    stem = f"{prefix}_{size}"
+    if suffix:
+        stem = f"{stem}_{suffix}"
+    return diagnostics_dir / f"{stem}_diagnostics.json"
 
 
 def run_single_output(
@@ -1016,11 +1327,21 @@ def run_multi_output(
     current_candidates = list(candidate_samples)
     current_input_manifest = args.input_manifest
     for size in sorted(args.subset_sizes, reverse=True):
-        output = args.output_dir / f"{args.subset_name_prefix}_{size}.json"
+        output = multi_output_path(
+            args.output_dir,
+            args.subset_name_prefix,
+            size,
+            args.subset_name_suffix,
+        )
         diagnostics_output = (
             None
             if args.diagnostics_dir is None
-            else args.diagnostics_dir / f"{args.subset_name_prefix}_{size}_diagnostics.json"
+            else multi_diagnostics_path(
+                args.diagnostics_dir,
+                args.subset_name_prefix,
+                size,
+                args.subset_name_suffix,
+            )
         )
         selected = build_one_subset(
             candidate_samples=current_candidates,
@@ -1047,8 +1368,8 @@ def main() -> None:
     source_manifest = load_manifest(args.source_manifest)
     input_manifest = load_manifest(args.input_manifest) if args.input_manifest is not None else None
     candidate_manifest = input_manifest if input_manifest is not None else source_manifest
-    candidate_samples = candidate_manifest["samples"]
-    validate_samples_for_method(candidate_samples, args.method)
+    candidate_samples = normalize_sample_aliases(candidate_manifest["samples"], args)
+    validate_samples_for_method(candidate_samples, args.method, args)
     validate_unique_sample_ids(candidate_samples, "candidate pool")
     validate_output_paths(args)
 

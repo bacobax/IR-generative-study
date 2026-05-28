@@ -77,6 +77,11 @@ def flir_root() -> Path:
     return raw_data_root() / "flir_private_proxy_alignment_v18"
 
 
+def bigearthnet_s2_b08_5x5_stride3_root() -> Path:
+    """``data/derived/bigearthnet_s2_b08_5x5_stride3/`` — Sentinel-2 B08 mosaics."""
+    return derived_data_root() / "bigearthnet_s2_b08_5x5_stride3"
+
+
 def yolo_test_ds_root() -> Path:
     """``data/derived/yolo-test-ds/`` — exported YOLO experiment datasets."""
     return derived_data_root() / "yolo-test-ds"

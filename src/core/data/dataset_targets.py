@@ -12,8 +12,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping
 
 from src.core.data.adapters import RepoDatasetAdapter
-from src.core.normalization import RAW_UINT16_PERCENTILE, UINT8_LINEAR
-from src.core.paths import flir_root, v18_root
+from src.core.normalization import (
+    RAW_UINT16_PERCENTILE,
+    SENTINEL2_REFLECTANCE,
+    UINT8_LINEAR,
+)
+from src.core.paths import bigearthnet_s2_b08_5x5_stride3_root, flir_root, v18_root
 from src.core.registry import REGISTRIES
 
 
@@ -37,6 +41,18 @@ class DatasetTarget:
         if self.adapter is not None:
             return self.adapter.annotations_path(split)
         return self.split_dir(split) / "annotations.json"
+
+    def manifest_path(self, split: str) -> Path | None:
+        """Return a split manifest path when the target has one."""
+        if self.adapter is not None and hasattr(self.adapter, "manifest_path"):
+            return self.adapter.manifest_path(split)
+        return None
+
+    def has_coco_annotations(self) -> bool:
+        """Return whether this target provides COCO layout annotations."""
+        if self.adapter is not None and hasattr(self.adapter, "has_coco_annotations"):
+            return bool(self.adapter.has_coco_annotations())
+        return True
 
     def category_metadata(self, split: str) -> dict[int, str]:
         """Return split category metadata when annotations are available."""
@@ -79,8 +95,75 @@ def _build_repo_dataset_target(
     )
 
 
+class BigEarthNetS2B08DatasetAdapter:
+    """Adapter for manifest-backed BigEarthNet Sentinel-2 B08 TIFF mosaics."""
+
+    dataset_id = "bigearthnet_s2_b08_5x5_stride3"
+    normalization_mode = SENTINEL2_REFLECTANCE
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    @staticmethod
+    def _canonical_split(split: str) -> str:
+        normalized = str(split or "train")
+        if normalized == "val":
+            return "validation"
+        return normalized
+
+    def split_dir(self, split: str) -> Path:
+        return self.root / "images" / self._canonical_split(split)
+
+    def annotations_path(self, split: str) -> Path:
+        return self.split_dir(split) / "annotations.json"
+
+    def manifest_path(self, split: str) -> Path:
+        return self.root / "manifests" / f"{self._canonical_split(split)}.jsonl"
+
+    def category_metadata(self, split: str) -> dict[int, str]:
+        del split
+        return {}
+
+    def collate_fn_for_task(self, task: str | None) -> Callable[..., Any] | None:
+        del task
+        return None
+
+    def has_coco_annotations(self) -> bool:
+        return False
+
+    def build(self, request):
+        from src.core.data.adapters import DatasetBundle
+
+        split = str(request.split or "train")
+        split_dir = self.split_dir(split)
+        manifest_path = self.manifest_path(split)
+        metadata = dict(request.metadata or {})
+        metadata.update(
+            {
+                "dataset_id": self.dataset_id,
+                "root": str(self.root),
+                "split": split,
+                "resolved_split": self._canonical_split(split),
+                "split_dir": str(split_dir),
+                "annotations_path": str(self.annotations_path(split)),
+                "manifest_path": str(manifest_path),
+                "normalization_mode": self.normalization_mode,
+                "category_id_to_name": {},
+            }
+        )
+        return DatasetBundle(
+            collate_fn=None,
+            normalization_mode=self.normalization_mode,
+            adapter_name=self.dataset_id,
+            metadata=metadata,
+        )
+
+
 def build_default_dataset_targets() -> Dict[str, DatasetTarget]:
     """Return the supported named dataset targets."""
+    bigearthnet_adapter = BigEarthNetS2B08DatasetAdapter(
+        bigearthnet_s2_b08_5x5_stride3_root()
+    )
     return {
         "v18": _build_repo_dataset_target(
             dataset_id="v18",
@@ -91,6 +174,12 @@ def build_default_dataset_targets() -> Dict[str, DatasetTarget]:
             dataset_id="flir_private_proxy_alignment_v18",
             root=flir_root(),
             normalization_mode=UINT8_LINEAR,
+        ),
+        "bigearthnet_s2_b08_5x5_stride3": DatasetTarget(
+            dataset_id="bigearthnet_s2_b08_5x5_stride3",
+            root=bigearthnet_adapter.root,
+            normalization_mode=SENTINEL2_REFLECTANCE,
+            adapter=bigearthnet_adapter,
         ),
     }
 
@@ -154,6 +243,11 @@ def target_to_dataset_build_request(
             "split": split,
             "split_dir": str(target.split_dir(split)),
             "annotations_path": str(target.annotations_path(split)),
+            "manifest_path": (
+                str(target.manifest_path(split))
+                if target.manifest_path(split) is not None
+                else None
+            ),
             "normalization_mode": target.normalization_mode,
             "category_id_to_name": target.category_metadata(split),
         },
