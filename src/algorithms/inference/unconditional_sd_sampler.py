@@ -96,7 +96,8 @@ class UnconditionalStableDiffusionSampler:
             unet,
             pipeline_dir=pipeline_dir,
             backbone_kind="sd_uncond_unet2d",
-        ).to(device)
+        )
+        unet = torch.nn.Module.to(unet, device)
         unet_w = resolve_preferred_or_latest_checkpoint(
             unet_dir,
             "unet_sd_uncond_best.pt",

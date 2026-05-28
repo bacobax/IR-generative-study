@@ -439,7 +439,8 @@ def _build_fm_sampler(
             unet,
             pipeline_dir=str(pipeline_dir),
             backbone_kind="fm_unet2d",
-        ).to(device)
+        )
+        unet = torch.nn.Module.to(unet, device)
 
     unet.load_state_dict(checkpoint_state, strict=True)
     unet.eval()
@@ -474,7 +475,8 @@ def _build_sd_sampler(
         unet,
         pipeline_dir=str(pipeline_dir),
         backbone_kind="sd_uncond_unet2d",
-    ).to(device)
+    )
+    unet = torch.nn.Module.to(unet, device)
     unet.load_state_dict(_state_dict_from_checkpoint(checkpoint_path, map_location=device), strict=True)
     unet.eval()
 

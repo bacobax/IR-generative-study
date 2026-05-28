@@ -134,6 +134,21 @@ def test_non_lightweight_diffusers_imports_remove_local_loader_shims(monkeypatch
     assert "diffusers.loaders.single_file_model" not in sys.modules
 
 
+def test_disable_diffusers_optional_scipy_replaces_loaded_real_scipy(monkeypatch) -> None:
+    from src.core.diffusers_compat import disable_diffusers_optional_scipy
+
+    scipy = types.ModuleType("scipy")
+    optimize = types.ModuleType("scipy.optimize")
+    monkeypatch.setitem(sys.modules, "scipy", scipy)
+    monkeypatch.setitem(sys.modules, "scipy.optimize", optimize)
+
+    disable_diffusers_optional_scipy()
+
+    assert getattr(sys.modules["scipy"], "_flow_matching_stub", False)
+    assert getattr(sys.modules["scipy.optimize"], "_flow_matching_stub", False)
+    assert callable(sys.modules["scipy.optimize"].linear_sum_assignment)
+
+
 @pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers is not installed")
 def test_sd_unet_imports_do_not_require_peft() -> None:
     code = textwrap.dedent(
@@ -162,6 +177,49 @@ def test_sd_unet_imports_do_not_require_peft() -> None:
 
         assert layout_models.STAGE2_UNET_WEIGHTS == "regiondiff_unet.safetensors"
         assert training.CHECKPOINT_METADATA_FILENAME == "training_state.json"
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_native_fm_unet_build_does_not_import_scipy_hooks() -> None:
+    code = textwrap.dedent(
+        """
+        import sys
+        from importlib.abc import MetaPathFinder
+
+        class BlockScipy(MetaPathFinder):
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname.startswith("scipy"):
+                    raise ImportError(f"blocked {fullname}")
+                return None
+
+        sys.meta_path.insert(0, BlockScipy())
+
+        from src.models.fm_unet import build_fm_unet_from_config
+
+        config = {
+            "sample_size": 8,
+            "in_channels": 4,
+            "out_channels": 4,
+            "layers_per_block": 1,
+            "block_out_channels": [8],
+            "down_block_types": ["DownBlock2D"],
+            "up_block_types": ["UpBlock2D"],
+            "norm_num_groups": 4,
+        }
+        unet = build_fm_unet_from_config(config, device="cpu")
+
+        assert type(unet).__name__ == "UNet2DModel"
+        assert next(unet.parameters()).device.type == "cpu"
         """
     )
 

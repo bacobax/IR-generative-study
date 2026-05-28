@@ -201,7 +201,8 @@ class FlowMatchingSampler:
             unet,
             pipeline_dir=pipeline_dir,
             backbone_kind="fm_unet2d",
-        ).to(device)
+        )
+        unet = torch.nn.Module.to(unet, device)
         unet_w = resolve_preferred_or_latest_checkpoint(
             unet_dir,
             "unet_fm_best.pt",

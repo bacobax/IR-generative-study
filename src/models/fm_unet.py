@@ -98,7 +98,11 @@ def build_fm_unet_from_config(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     UNet2DModel = import_diffusers_attr("diffusers", "UNet2DModel")
-    return UNet2DModel(**config).to(device)
+    unet = UNet2DModel(**config)
+    # Diffusers ModelMixin.to imports optional hook stacks (PEFT/Transformers)
+    # which can pull in broken cluster SciPy builds. Native FM/SD samplers only
+    # need the plain PyTorch module move, so bypass the Diffusers override.
+    return torch.nn.Module.to(unet, device)
 
 
 def save_unet_config(config: Dict[str, Any], path: str) -> None:

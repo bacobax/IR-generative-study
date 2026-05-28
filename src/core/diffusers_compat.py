@@ -69,14 +69,15 @@ def _disabled_linear_sum_assignment(*_args, **_kwargs):
 
 def _install_scipy_optimize_stub() -> None:
     """Provide the tiny SciPy surface imported by optional Transformers losses."""
+    for name, module in list(sys.modules.items()):
+        if not (name == "scipy" or name.startswith("scipy.")):
+            continue
+        if getattr(module, "_flow_matching_stub", False):
+            continue
+        sys.modules.pop(name, None)
+
     existing_scipy = sys.modules.get("scipy")
-    if existing_scipy is not None and not getattr(existing_scipy, "_flow_matching_stub", False):
-        return
-
     existing_optimize = sys.modules.get("scipy.optimize")
-    if existing_optimize is not None and not getattr(existing_optimize, "_flow_matching_stub", False):
-        return
-
     scipy_module = existing_scipy or types.ModuleType("scipy")
     scipy_module.__package__ = "scipy"
     scipy_module.__spec__ = ModuleSpec("scipy", loader=None, is_package=True)
