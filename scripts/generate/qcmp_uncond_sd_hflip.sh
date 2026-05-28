@@ -6,7 +6,7 @@ ROOT_DIR="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null || { cd
 cd "${ROOT_DIR}"
 
 WEIGHTS_DIR="${WEIGHTS_DIR:-artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip/UNET}"
-PRESET_PATH="${PRESET_PATH:-configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml}"
+PRESET_PATH="${PRESET_PATH:-configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip.yaml}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts/generated/checkpoint_compare/uncond_sd_latent_flir_sd15_512_hflip}"
 MAX_SAMPLES="${MAX_SAMPLES:-20}"
 STEPS="${STEPS:-50}"

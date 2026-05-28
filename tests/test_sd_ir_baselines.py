@@ -93,7 +93,10 @@ class _FakeCheckpointAccelerator:
         self.saved_paths = []
 
     def save_state(self, path):
-        Path(path).mkdir(parents=True, exist_ok=True)
+        checkpoint_dir = Path(path)
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("optimizer.bin", "scheduler.bin", "random_states_0.pkl", "scaler.pt"):
+            (checkpoint_dir / name).write_bytes(b"state")
         self.saved_paths.append(path)
 
 
@@ -210,7 +213,7 @@ def test_flir_stage1_presets_are_epoch_driven_by_default():
     preset_paths = [
         "configs/sd/train/presets/flir_unet_full_stage1.yaml",
         "configs/sd/train/presets/flir_unet_partial_stage1.yaml",
-        "configs/sd/train/presets/flir_lora_stage1_r8.yaml",
+        "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8.yaml",
         "configs/sd/train/presets/flir_lora_stage1_r16.yaml",
         "configs/sd/train/presets/flir_lora_stage1_r32.yaml",
         "configs/sd/train/presets/flir_lora_stage1_r64.yaml",
@@ -672,6 +675,47 @@ def test_yaml_lora_overrides_reach_target_modules_and_alpha_scale(tmp_path: Path
     assert float(peft_cfg.lora_alpha) == 8.0
     assert sorted(peft_cfg.target_modules) == ["to_q", "to_v"]
     assert cfg.checkpointing_epochs == 3
+
+
+def test_lora_checkpoint_can_skip_optimizer_state(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "sd_lora_no_optimizer.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "dataset_id: v18",
+                f"output_dir: {tmp_path / 'sd_run'}",
+                "checkpointing_epochs: 1",
+                "save_optimizer_state: false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = parse_args(["--config", str(config_path)])
+    assert cfg.save_optimizer_state is False
+
+    models = _build_model_components()
+    configure_trainable_components(models=models, config=cfg)
+
+    monkeypatch.setattr(sd_training, "logger", logging.getLogger("test_sd_checkpointing"))
+    accelerator = _FakeCheckpointAccelerator()
+    trainer = Trainer(
+        config=cfg,
+        models=models,
+        train_dataloader=[],
+        normalization_mode="uint8_linear",
+        adaptation_info={},
+        accelerator=accelerator,
+    )
+    trainer.global_step = 3
+    trainer._maybe_save_checkpoint(epoch=0)
+
+    checkpoint_dir = Path(cfg.output_dir) / "checkpoint-3"
+    assert not (checkpoint_dir / "optimizer.bin").exists()
+    assert (checkpoint_dir / "scheduler.bin").is_file()
+    assert (checkpoint_dir / "random_states_0.pkl").is_file()
+    metadata = json.loads((checkpoint_dir / "training_state.json").read_text(encoding="utf-8"))
+    assert metadata["save_optimizer_state"] is False
 
 
 def test_lora_state_dict_normalization_preserves_checkpoint_loader_keys():

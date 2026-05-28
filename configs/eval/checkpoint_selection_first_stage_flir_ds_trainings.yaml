@@ -5,63 +5,63 @@ runs:
     run_dir: "artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot"
     model_type: "latent_flow_matching"
     sampler_name: null
-    sampling_config_path: "configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
+    sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
     generation_entrypoint: null
 
   - run_identifier: "uncond_latent_flir_sd15_512_hflip_ot_train_5000"
     run_dir: "artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot_train_5000"
     model_type: "latent_flow_matching"
     sampler_name: null
-    sampling_config_path: "configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot_train_5000.yaml"
+    sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot_train_5000.yaml"
     generation_entrypoint: null
 
   - run_identifier: "uncond_latent_flir_sd15_512_hflip_ot_train_2000"
     run_dir: "artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot_train_2000"
     model_type: "latent_flow_matching"
     sampler_name: null
-    sampling_config_path: "configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot_train_2000.yaml"
+    sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot_train_2000.yaml"
     generation_entrypoint: null
 
   - run_identifier: "uncond_latent_flir_sd15_512_hflip"
     run_dir: "artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip"
     model_type: "sd_uncond"
     sampler_name: null
-    sampling_config_path: "configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml"
+    sampling_config_path: "configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip.yaml"
     generation_entrypoint: null
 
   - run_identifier: "uncond_latent_flir_sd15_512_hflip_train_5000"
     run_dir: "artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip_train_5000"
     model_type: "sd_uncond"
     sampler_name: null
-    sampling_config_path: "configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip_train_5000.yaml"
+    sampling_config_path: "configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip_train_5000.yaml"
     generation_entrypoint: null
 
   - run_identifier: "uncond_latent_flir_sd15_512_hflip_train_2000"
     run_dir: "artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip_train_2000"
     model_type: "sd_uncond"
     sampler_name: null
-    sampling_config_path: "configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip_train_2000.yaml"
+    sampling_config_path: "configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip_train_2000.yaml"
     generation_entrypoint: null
 
   - run_identifier: "flir_sd15_lora_stage1_r8"
     run_dir: "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8"
     model_type: "sd_lora"
     sampler_name: null
-    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8.yaml"
+    sampling_config_path: "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8.yaml"
     generation_entrypoint: null
 
   - run_identifier: "flir_sd15_lora_stage1_r8_train_5000"
     run_dir: "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_5000"
     model_type: "sd_lora"
     sampler_name: null
-    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8_train_5000.yaml"
+    sampling_config_path: "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8_train_5000.yaml"
     generation_entrypoint: null
 
   - run_identifier: "flir_sd15_lora_stage1_r8_train_2000"
     run_dir: "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_2000"
     model_type: "sd_lora"
     sampler_name: null
-    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8_train_2000.yaml"
+    sampling_config_path: "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8_train_2000.yaml"
     generation_entrypoint: null
 
 checkpoint_min_epoch: 50

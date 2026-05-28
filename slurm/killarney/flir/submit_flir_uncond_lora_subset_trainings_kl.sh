@@ -17,7 +17,7 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
   if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "${SLURM_SUBMIT_DIR}/configs" ]]; then
     PROJECT_ROOT="$(cd "${SLURM_SUBMIT_DIR}" && pwd -P)"
   else
-    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd -P)"
   fi
 else
   PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd -P)"
@@ -31,19 +31,19 @@ if [[ "${PROJECT_ROOT}" == /home/* ]]; then
 fi
 DRY_RUN="${DRY_RUN:-0}"
 
-FM_WORKER="${PROJECT_ROOT}/slurm/killarney/train_stable_fm_hflip_ot_kl.slurm"
-SD_WORKER="${PROJECT_ROOT}/slurm/killarney/train_stable_sd_hflip_kl.slurm"
-SD_STAGE1_WORKER="${PROJECT_ROOT}/slurm/killarney/train_flir_unet_full_domainstudio_512_kl.slurm"
+FM_WORKER="${PROJECT_ROOT}/slurm/killarney/flir/flow_matching/train_stable_fm_hflip_ot_kl.slurm"
+SD_WORKER="${PROJECT_ROOT}/slurm/killarney/flir/diffusion/train_stable_sd_hflip_kl.slurm"
+SD_STAGE1_WORKER="${PROJECT_ROOT}/slurm/killarney/flir/sd_adaptation/train_flir_unet_full_domainstudio_512_kl.slurm"
 
-FM_FULL_CONFIG="configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
-FM_5K_CONFIG="configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot_train_5000.yaml"
-FM_2K_CONFIG="configs/fm/train/presets/uncond_latent_flir_sd15_512_b64_hflip_ot_train_2000.yaml"
-SD_FULL_CONFIG="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml"
-SD_5K_CONFIG="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip_train_5000.yaml"
-SD_2K_CONFIG="configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip_train_2000.yaml"
-LORA_FULL_CONFIG="configs/sd/train/presets/flir_lora_stage1_r8.yaml"
-LORA_5K_CONFIG="configs/sd/train/presets/flir_lora_stage1_r8_train_5000.yaml"
-LORA_2K_CONFIG="configs/sd/train/presets/flir_lora_stage1_r8_train_2000.yaml"
+FM_FULL_CONFIG="configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
+FM_5K_CONFIG="configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot_train_5000.yaml"
+FM_2K_CONFIG="configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot_train_2000.yaml"
+SD_FULL_CONFIG="configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip.yaml"
+SD_5K_CONFIG="configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip_train_5000.yaml"
+SD_2K_CONFIG="configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip_train_2000.yaml"
+LORA_FULL_CONFIG="configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8.yaml"
+LORA_5K_CONFIG="configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8_train_5000.yaml"
+LORA_2K_CONFIG="configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8_train_2000.yaml"
 
 cd "${PROJECT_ROOT}"
 
@@ -81,14 +81,14 @@ if [[ "${DRY_RUN}" = "1" || "${DRY_RUN}" = "true" ]]; then
 fi
 
 echo "Submitting FM OT jobs"
-# sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_FULL_CONFIG}" "${FM_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_FULL_CONFIG}" "${FM_WORKER}"
 sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-5k --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_5K_CONFIG}" "${FM_WORKER}"
-# sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_2K_CONFIG}" "${FM_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_2K_CONFIG}" "${FM_WORKER}"
 
 echo "Submitting SD uncond jobs"
-# sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_FULL_CONFIG}" "${SD_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_FULL_CONFIG}" "${SD_WORKER}"
 sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-5k --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_5K_CONFIG}" "${SD_WORKER}"
-# sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_2K_CONFIG}" "${SD_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_2K_CONFIG}" "${SD_WORKER}"
 
 echo "Submitting SD LoRA r8 jobs"
 sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_FULL_CONFIG}" "${SD_STAGE1_WORKER}"

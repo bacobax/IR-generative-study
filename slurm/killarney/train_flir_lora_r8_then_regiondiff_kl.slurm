@@ -40,7 +40,7 @@ echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
 echo "DEBUG_SEGFAULT: ${DEBUG_SEGFAULT:-0}"
 slurm_print_python_diagnostics
 slurm_print_gpu_diagnostics
-slurm_require_file "configs/sd/train/presets/flir_lora_stage1_r8.yaml" "stage-1 config"
+slurm_require_file "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8.yaml" "stage-1 config"
 slurm_require_file "configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml" "stage-2 config"
 
-slurm_run_timed "${PROJECT_ROOT}/logs/sd-lora-rdiff-${JOB_ID}" "SD LoRA r8 then RegionDiff" --   python scripts/train/run_sd_stage1_then_regiondiff.py     --project-root "${PROJECT_ROOT}"     --stage1-config configs/sd/train/presets/flir_lora_stage1_r8.yaml     --stage2-config configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml     --mixed-precision "${MIXED_PRECISION}"     --stage1-num-workers "${STAGE1_NUM_WORKERS}"     --stage2-num-workers "${STAGE2_NUM_WORKERS}" || exit $?
+slurm_run_timed "${PROJECT_ROOT}/logs/sd-lora-rdiff-${JOB_ID}" "SD LoRA r8 then RegionDiff" --   python scripts/train/run_sd_stage1_then_regiondiff.py     --project-root "${PROJECT_ROOT}"     --stage1-config configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8.yaml     --stage2-config configs/sd_layout/train/presets/flir_regiondiff_sd15_lora_stage2_r8.yaml     --mixed-precision "${MIXED_PRECISION}"     --stage1-num-workers "${STAGE1_NUM_WORKERS}"     --stage2-num-workers "${STAGE2_NUM_WORKERS}" || exit $?

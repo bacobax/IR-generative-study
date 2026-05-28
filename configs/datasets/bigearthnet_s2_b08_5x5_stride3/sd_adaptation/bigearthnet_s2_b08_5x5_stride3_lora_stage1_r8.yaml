@@ -15,5 +15,6 @@ rank: 8
 lora_alpha_scale: 1.0
 validation_prompt: "satellite image"
 checkpointing_epochs: 10
+save_optimizer_state: false
 output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/bigearthnet_s2_b08_5x5_stride3_sd15_lora_stage1_r8
 seed: 42

@@ -30,6 +30,42 @@ EXPECTED_HEADERS = {'slurm/killarney/generate_qcmp_stay_layout_fm_hflip_kl.slurm
                                                               '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
                                                               '#SBATCH '
                                                               '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+ 'slurm/killarney/bigearthnet_s2_b08_5x5_stride3/flow_matching/train_bigearthnet_s2_b08_5x5_stride3_fm_kl.slurm': '#!/bin/bash\n'
+                                                                     '#SBATCH --job-name=ben-fm-5x5s3\n'
+                                                                     '#SBATCH --account=aip-mpederso\n'
+                                                                     '#SBATCH --time=24:00:00\n'
+                                                                     '#SBATCH --cpus-per-task=10\n'
+                                                                     '#SBATCH --mem=32G\n'
+                                                                     '#SBATCH --gpus-per-node=h100:1\n'
+                                                                     '#SBATCH --array=0-2\n'
+                                                                     '#SBATCH '
+                                                                     '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%A_%a.out\n'
+                                                                     '#SBATCH '
+                                                                     '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%A_%a.err\n',
+ 'slurm/killarney/bigearthnet_s2_b08_5x5_stride3/sd_adaptation/train_bigearthnet_s2_b08_5x5_stride3_lora_kl.slurm': '#!/bin/bash\n'
+                                                                       '#SBATCH --job-name=ben-lora-5x5s3\n'
+                                                                       '#SBATCH --account=aip-mpederso\n'
+                                                                       '#SBATCH --time=24:00:00\n'
+                                                                       '#SBATCH --cpus-per-task=10\n'
+                                                                       '#SBATCH --mem=32G\n'
+                                                                       '#SBATCH --gpus-per-node=h100:1\n'
+                                                                       '#SBATCH --array=0-2\n'
+                                                                       '#SBATCH '
+                                                                       '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%A_%a.out\n'
+                                                                       '#SBATCH '
+                                                                       '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%A_%a.err\n',
+ 'slurm/killarney/bigearthnet_s2_b08_5x5_stride3/diffusion/train_bigearthnet_s2_b08_5x5_stride3_sd_uncond_kl.slurm': '#!/bin/bash\n'
+                                                                            '#SBATCH --job-name=ben-sd-5x5s3\n'
+                                                                            '#SBATCH --account=aip-mpederso\n'
+                                                                            '#SBATCH --time=24:00:00\n'
+                                                                            '#SBATCH --cpus-per-task=10\n'
+                                                                            '#SBATCH --mem=32G\n'
+                                                                            '#SBATCH --gpus-per-node=h100:1\n'
+                                                                            '#SBATCH --array=0-2\n'
+                                                                            '#SBATCH '
+                                                                            '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%A_%a.out\n'
+                                                                            '#SBATCH '
+                                                                            '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%A_%a.err\n',
  'slurm/killarney/generate_qcmp_uncond_sd_hflip_kl.slurm': '#!/bin/bash\n'
                                                            '#SBATCH --job-name=qcmp-sd-hf\n'
                                                            '#SBATCH --account=aip-mpederso\n'
@@ -41,6 +77,17 @@ EXPECTED_HEADERS = {'slurm/killarney/generate_qcmp_stay_layout_fm_hflip_kl.slurm
                                                            '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
                                                            '#SBATCH '
                                                            '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+ 'slurm/killarney/select_first_stage_flir_ds_checkpoints_kl.slurm': '#!/bin/bash\n'
+                                                                    '#SBATCH --job-name=sel-flir-stage1\n'
+                                                                    '#SBATCH --account=aip-mpederso\n'
+                                                                    '#SBATCH --time=00:05:00\n'
+                                                                    '#SBATCH --cpus-per-task=10\n'
+                                                                    '#SBATCH --mem=48G\n'
+                                                                    '#SBATCH --gpus-per-node=h100:1\n'
+                                                                    '#SBATCH '
+                                                                    '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                    '#SBATCH '
+                                                                    '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
  'slurm/killarney/train_flir_lora_r8_then_regiondiff_kl.slurm': '#!/bin/bash\n'
                                                                 '#SBATCH --job-name=sd-lora-rdiff\n'
                                                                 '#SBATCH --account=aip-mpederso\n'
@@ -52,7 +99,7 @@ EXPECTED_HEADERS = {'slurm/killarney/generate_qcmp_stay_layout_fm_hflip_kl.slurm
                                                                 '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
                                                                 '#SBATCH '
                                                                 '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
- 'slurm/killarney/train_flir_unet_full_domainstudio_512_kl.slurm': '#!/bin/bash\n'
+ 'slurm/killarney/flir/sd_adaptation/train_flir_unet_full_domainstudio_512_kl.slurm': '#!/bin/bash\n'
                                                                    '#SBATCH --job-name=sd-dstudio-unet\n'
                                                                    '#SBATCH --account=aip-mpederso\n'
                                                                    '#SBATCH --time=24:00:00\n'
@@ -176,7 +223,7 @@ EXPECTED_HEADERS = {'slurm/killarney/generate_qcmp_stay_layout_fm_hflip_kl.slurm
                                                    '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
                                                    '#SBATCH '
                                                    '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
- 'slurm/killarney/train_stable_fm_hflip_ot_kl.slurm': '#!/bin/bash\n'
+ 'slurm/killarney/flir/flow_matching/train_stable_fm_hflip_ot_kl.slurm': '#!/bin/bash\n'
                                                       '#SBATCH --job-name=stable-fm-ot-hf\n'
                                                       '#SBATCH --account=aip-mpederso\n'
                                                       '#SBATCH --time=24:00:00\n'
@@ -198,7 +245,7 @@ EXPECTED_HEADERS = {'slurm/killarney/generate_qcmp_stay_layout_fm_hflip_kl.slurm
                                              '--output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
                                              '#SBATCH '
                                              '--error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
- 'slurm/killarney/train_stable_sd_hflip_kl.slurm': '#!/bin/bash\n'
+ 'slurm/killarney/flir/diffusion/train_stable_sd_hflip_kl.slurm': '#!/bin/bash\n'
                                                    '#SBATCH --job-name=stable-sd-hf\n'
                                                    '#SBATCH --account=aip-mpederso\n'
                                                    '#SBATCH --time=24:00:00\n'
@@ -280,6 +327,7 @@ def config_refs(text: str) -> set[str]:
         r'PRESET_PATH="\$\{PRESET_PATH:-([^"}]+)',
         r'--stage1-config\s+([^\s\\]+)',
         r'--stage2-config\s+([^\s\\]+)',
+        r'\b(configs/[^\s")}\']+)',
     ]
     for pattern in patterns:
         refs.update(match.group(1) for match in re.finditer(pattern, text))
@@ -306,7 +354,7 @@ for needle in (
     check(needle in helper_text, f"common helper defines {needle}")
 
 print("\n=== Launcher set ===")
-actual = {str(path.relative_to(ROOT)) for path in ROOT.glob("slurm/*/*.slurm")}
+actual = {str(path.relative_to(ROOT)) for path in ROOT.glob("slurm/**/*.slurm")}
 expected = set(EXPECTED_HEADERS)
 check(actual == expected, "Slurm launcher file set is unchanged")
 if actual != expected:
@@ -315,9 +363,10 @@ if actual != expected:
 
 print("\n=== Migrated launchers ===")
 DIRECT_RUNTIME_LAUNCHERS = {
-    "slurm/killarney/train_flir_unet_full_domainstudio_512_kl.slurm",
-    "slurm/killarney/train_stable_fm_hflip_ot_kl.slurm",
-    "slurm/killarney/train_stable_sd_hflip_kl.slurm",
+    "slurm/killarney/select_first_stage_flir_ds_checkpoints_kl.slurm",
+    "slurm/killarney/flir/sd_adaptation/train_flir_unet_full_domainstudio_512_kl.slurm",
+    "slurm/killarney/flir/flow_matching/train_stable_fm_hflip_ot_kl.slurm",
+    "slurm/killarney/flir/diffusion/train_stable_sd_hflip_kl.slurm",
 }
 for rel_path in sorted(expected):
     path = ROOT / rel_path
@@ -331,7 +380,11 @@ for rel_path in sorted(expected):
         check("conda activate" in text, f"{rel_path} activates the Conda environment directly")
         check("/usr/bin/time -v" not in text, f"{rel_path} uses Slurm logs directly")
     else:
-        check('source "${SCRIPT_DIR}/../lib/common.sh"' in text, f"{rel_path} sources Slurm common helper")
+        sources_common = (
+            'source "${SCRIPT_DIR}/../lib/common.sh"' in text
+            or 'source "${SCRIPT_DIR}/../../lib/common.sh"' in text
+        )
+        check(sources_common, f"{rel_path} sources Slurm common helper")
         check("slurm_init_runtime" in text, f"{rel_path} initializes shared runtime")
         check("slurm_run_timed" in text, f"{rel_path} uses timed command helper")
         check("/usr/bin/time -v" not in text, f"{rel_path} does not duplicate raw time invocation")

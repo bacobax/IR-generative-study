@@ -56,5 +56,6 @@ logging_dir: "logs"
 report_to: "tensorboard"
 validation_num_inference_steps: 30
 checkpointing_epochs: 1
+save_optimizer_state: true
 output_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_r8"
 seed: 42

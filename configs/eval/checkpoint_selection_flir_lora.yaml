@@ -4,14 +4,14 @@ runs:
     run_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_2000"
     model_type: null
     sampler_name: null
-    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8_train_2000.yaml"
+    sampling_config_path: "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8_train_2000.yaml"
     generation_entrypoint: null
 
   - run_identifier: "subset_5000_seed_42"
     run_dir: "./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_5000"
     model_type: null
     sampler_name: null
-    sampling_config_path: "configs/sd/train/presets/flir_lora_stage1_r8_train_5000.yaml"
+    sampling_config_path: "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8_train_5000.yaml"
     generation_entrypoint: null
 
 checkpoint_min_epoch: 50

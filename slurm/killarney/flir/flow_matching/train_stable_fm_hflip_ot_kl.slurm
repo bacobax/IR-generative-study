@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=stable-sd-hf
+#SBATCH --job-name=stable-fm-ot-hf
 #SBATCH --account=aip-mpederso
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=10
@@ -12,7 +12,7 @@ set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
-CONFIG_REL="${CONFIG_REL:-configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_b64_hflip.yaml}"
+CONFIG_REL="${CONFIG_REL:-configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml}"
 if [[ "${CONFIG_REL}" = /* ]]; then
   CONFIG="${CONFIG_REL}"
 else
@@ -53,10 +53,12 @@ echo "Configured batch size:"
 grep -n "batch_size:" "${CONFIG}" | head -n 2 || true
 echo "Configured horizontal flip probabilities:"
 grep -n "p_hflip_" "${CONFIG}" || true
+echo "Configured path mode:"
+grep -n -A3 "^path:" "${CONFIG}" || true
 echo "Configured mixed precision:"
 grep -n "mixed_precision:" "${CONFIG}" | head -n 2 || true
 nvidia-smi || true
 
-python -m src.cli.train_latent_diffusion \
+python -m src.cli.train_flow_matching \
   --config "${CONFIG}" \
   --mixed_precision auto

@@ -148,6 +148,7 @@ class TrainingConfig:
     # Checkpointing
     checkpointing_epochs: int = 1
     checkpoints_total_limit: Optional[int] = None
+    save_optimizer_state: bool = True
     resume_from_checkpoint: Optional[str] = None
 
     # Hub configuration
@@ -552,6 +553,16 @@ def build_parser() -> argparse.ArgumentParser:
     ckpt_group = parser.add_argument_group("Checkpointing")
     ckpt_group.add_argument("--checkpointing_epochs", type=int, default=1)
     ckpt_group.add_argument("--checkpoints_total_limit", type=int, default=None)
+    ckpt_group.add_argument(
+        "--save_optimizer_state",
+        type=_str2bool,
+        default=True,
+        help=(
+            "Whether checkpoint-* directories keep Accelerate optimizer state. "
+            "Set false for compact LoRA checkpoints that are useful for weights/export "
+            "but not full optimizer-state resume."
+        ),
+    )
     ckpt_group.add_argument("--resume_from_checkpoint", type=str, default=None)
 
     hub_group = parser.add_argument_group("Hugging Face Hub")

@@ -443,6 +443,7 @@ class Trainer:
             "lr_warmup_steps": self.config.lr_warmup_steps,
             "max_train_steps": self.config.max_train_steps,
             "checkpointing_epochs": self.config.checkpointing_epochs,
+            "save_optimizer_state": self.config.save_optimizer_state,
         }
 
     def _write_checkpoint_metadata(self, checkpoint_dir: Path) -> None:
@@ -459,6 +460,16 @@ class Trainer:
         with open(metadata_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
         return data if isinstance(data, dict) else None
+
+    def _prune_optimizer_state(self, checkpoint_dir: Path) -> None:
+        removed = []
+        for pattern in ("optimizer*.bin", "optimizer*.pt", "optimizer*.safetensors"):
+            for path in checkpoint_dir.glob(pattern):
+                if path.is_file():
+                    path.unlink()
+                    removed.append(path.name)
+        if removed:
+            logger.info("Removed optimizer state from %s: %s", checkpoint_dir, ", ".join(sorted(removed)))
 
     def _validate_resume_constraints(self, checkpoint_dir: Path, *, step: int) -> None:
         if self.config.max_train_steps is not None and self.config.max_train_steps < step:
@@ -873,6 +884,9 @@ class Trainer:
 
         save_path = os.path.join(self.config.output_dir, f"checkpoint-{self.global_step}")
         self.accelerator.save_state(save_path)
+        checkpoint_dir = Path(save_path)
+        if not self.config.save_optimizer_state:
+            self._prune_optimizer_state(checkpoint_dir)
         self._write_checkpoint_metadata(Path(save_path))
         logger.info("Saved checkpoint to %s", save_path)
 
