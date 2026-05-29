@@ -36,6 +36,8 @@ cd frontend/flir-subgroup-analysis && npm install && npm run dev
 
 Cluster jobs use Slurm wrappers such as `slurm/killarney/*.slurm` and usually activate the `diffusers-dev` Conda environment. Keep cluster-specific paths, accounts, GPU requests, and log locations in Slurm files; keep experiment behavior in YAML configs.
 
+Slurm launchers must use plain Bash/Slurm syntax directly. Do not add macro, wrapper, helper, or function calls for runtime setup, diagnostics, config inspection, path checks, GPU checks, or timed execution. In particular, do not use `slurm_*` helpers such as `slurm_grep_config_keys`, `slurm_print_gpu_diagnostics`, or `slurm_run_timed`; write the `echo`, `grep`, conditionals, `nvidia-smi`, `/usr/bin/time`, and command lines inline in the `.slurm` file.
+
 ## Config & Launcher Conventions
 Prefer adding YAML presets under the matching `configs/<area>/<action>/presets/` directory rather than hard-coding behavior. Keep names descriptive and stable, for example `flir_unet_full_domainstudio_512.yaml` or `regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml`.
 

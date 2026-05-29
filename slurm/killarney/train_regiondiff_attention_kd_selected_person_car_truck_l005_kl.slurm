@@ -8,12 +8,15 @@
 #SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out
 #SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh"
+set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
 CONFIG_REL="${CONFIG_REL:-configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml}"
-CONFIG="$(slurm_config_path "${CONFIG_REL}")"
+if [[ "${CONFIG_REL}" = /* ]]; then
+  CONFIG="${CONFIG_REL}"
+else
+  CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
+fi
 PRETRAINED_UNET="${PROJECT_ROOT}/artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot/UNET/unet_fm_epoch_300.pt"
 DEFAULT_TEACHER_CHECKPOINT="${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/layout_runs/flir_sd15_regiondiff_stage2_from_lora_r8_fm_comparable"
 MIXED_PRECISION="${MIXED_PRECISION:-auto}"
@@ -29,7 +32,34 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-1}}"
 
-slurm_init_runtime
+JOB_ID="${SLURM_JOB_ID:-manual}"
+export PROJECT_ROOT ENV_NAME JOB_ID
+
+cd "${PROJECT_ROOT}"
+mkdir -p "${PROJECT_ROOT}/logs"
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+if [[ -n "${CONDA_ACTIVATE_PATH:-}" ]]; then
+  source "${CONDA_ACTIVATE_PATH}"
+elif command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)"
+  conda activate "${ENV_NAME}"
+else
+  echo "ERROR: conda not found in PATH" >&2
+  exit 1
+fi
+
+echo "Host: $(hostname)"
+echo "Start time: $(date)"
+echo "Project root: ${PROJECT_ROOT}"
+echo "Conda env: ${ENV_NAME}"
+echo "CUDA_VISIBLE_DEVICES from Slurm: ${CUDA_VISIBLE_DEVICES:-<unset>}"
+echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
+echo "SLURM_SUBMIT_DIR: ${SLURM_SUBMIT_DIR:-<unset>}"
+echo "SLURM_CPUS_PER_TASK: ${SLURM_CPUS_PER_TASK:-<unset>}"
+echo "SLURM_MEM_PER_NODE: ${SLURM_MEM_PER_NODE:-<unset>}"
+echo "SLURM_MEM_PER_CPU: ${SLURM_MEM_PER_CPU:-<unset>}"
+echo "CPU count: $(nproc 2>/dev/null || echo '<unknown>')"
 
 echo "Config: ${CONFIG}"
 echo "Pretrained UNet: ${PRETRAINED_UNET}"
@@ -39,24 +69,52 @@ echo "Resume checkpoint: ${RESUME:-<disabled>}"
 echo "MIXED_PRECISION: ${MIXED_PRECISION}"
 echo "NUM_WORKERS: ${NUM_WORKERS}"
 echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
-slurm_print_python_diagnostics
-slurm_require_file "${CONFIG}" "config"
-slurm_require_file "${PRETRAINED_UNET}" "pretrained UNet checkpoint"
+which python
+python --version
+if [[ ! -f "${CONFIG}" ]]; then
+  if [[ "${CONFIG}" != /* && -f "${PROJECT_ROOT}/${CONFIG}" ]]; then
+    :
+  else
+    echo "ERROR: config not found: ${CONFIG}" >&2
+    exit 1
+  fi
+fi
+if [[ ! -f "${PRETRAINED_UNET}" ]]; then
+  if [[ "${PRETRAINED_UNET}" != /* && -f "${PROJECT_ROOT}/${PRETRAINED_UNET}" ]]; then
+    :
+  else
+    echo "ERROR: pretrained UNet checkpoint not found: ${PRETRAINED_UNET}" >&2
+    exit 1
+  fi
+fi
 
 if [ -n "${TEACHER_CHECKPOINT}" ]; then
-    slurm_require_path "${TEACHER_CHECKPOINT}" "TEACHER_CHECKPOINT"
+if [[ ! -e "${TEACHER_CHECKPOINT}" ]]; then
+  if [[ "${TEACHER_CHECKPOINT}" != /* && -e "${PROJECT_ROOT}/${TEACHER_CHECKPOINT}" ]]; then
+    :
+  else
+    echo "ERROR: TEACHER_CHECKPOINT not found: ${TEACHER_CHECKPOINT}" >&2
+    exit 1
+  fi
+fi
 elif [ ! -e "${DEFAULT_TEACHER_CHECKPOINT}" ]; then
     echo "WARNING: default teacher checkpoint not found: ${DEFAULT_TEACHER_CHECKPOINT}"
     echo "         If the YAML path differs on this cluster, submit with:"
     echo "         sbatch --export=ALL,TEACHER_CHECKPOINT=/path/to/teacher ${BASH_SOURCE[0]}"
 fi
 
-slurm_grep_config_keys "Configured batch size:" "batch_size:" "${CONFIG}" -n | head -n 2 || true
-slurm_grep_config_keys "Configured num workers:" "num_workers:" "${CONFIG}" -n | head -n 2 || true
-slurm_grep_config_keys "Configured distillation block:" "^distillation:" "${CONFIG}" -n -A14
-slurm_grep_config_keys "Configured selected categories:" "selected_categories:" "${CONFIG}" -n
-slurm_grep_config_keys "Configured output:" "^output:" "${CONFIG}" -n -A4
-slurm_print_gpu_diagnostics
+echo "Configured batch size:"
+
+grep -n "batch_size:" "${CONFIG}" | head -n 2 || true
+echo "Configured num workers:"
+grep -n "num_workers:" "${CONFIG}" | head -n 2 || true
+echo "Configured distillation block:"
+grep -n -A14 "^distillation:" "${CONFIG}" || true
+echo "Configured selected categories:"
+grep -n "selected_categories:" "${CONFIG}" || true
+echo "Configured output:"
+grep -n -A4 "^output:" "${CONFIG}" || true
+nvidia-smi || true
 
 TRAIN_ARGS=(
   --config "${CONFIG}"
@@ -72,4 +130,21 @@ if [ -n "${RESUME}" ]; then
   TRAIN_ARGS+=(--resume "${RESUME}")
 fi
 
-slurm_run_timed "${PROJECT_ROOT}/logs/regiondiff-attn-kd-selected-l005-${JOB_ID}" "RegionDiff attention KD selected-category FM" --   python -m src.cli.train_flow_matching "${TRAIN_ARGS[@]}" || exit $?
+LOG_PREFIX="${PROJECT_ROOT}/logs/regiondiff-attn-kd-selected-l005-${JOB_ID}"
+LOG_OUT="${LOG_PREFIX}.out"
+LOG_ERR="${LOG_PREFIX}.err"
+echo "RegionDiff attention KD selected-category FM stdout log: ${LOG_OUT}"
+echo "RegionDiff attention KD selected-category FM stderr log: ${LOG_ERR}"
+
+set +e
+/usr/bin/time -v python -m src.cli.train_flow_matching "${TRAIN_ARGS[@]}" > "${LOG_OUT}" 2> "${LOG_ERR}"
+STATUS=$?
+set -e
+
+echo "RegionDiff attention KD selected-category FM exit code: ${STATUS}"
+echo "Stdout log: ${LOG_OUT}"
+echo "Stderr log: ${LOG_ERR}"
+echo "End time: $(date)"
+if [[ "${STATUS}" -ne 0 ]]; then
+  exit "${STATUS}"
+fi

@@ -334,24 +334,9 @@ def config_refs(text: str) -> set[str]:
     return {ref for ref in refs if ref.startswith("configs/")}
 
 
-print("\n=== Helper ===")
+print("\n=== Helper policy ===")
 helper = ROOT / "slurm/lib/common.sh"
-helper_text = helper.read_text(encoding="utf-8") if helper.is_file() else ""
-check(helper.is_file(), "slurm/lib/common.sh exists")
-for needle in (
-    "set -euo pipefail",
-    "slurm_init_runtime()",
-    "slurm_activate_conda()",
-    "slurm_require_file()",
-    "slurm_require_path()",
-    "slurm_config_path()",
-    "slurm_print_python_diagnostics()",
-    "slurm_print_gpu_diagnostics()",
-    "slurm_grep_config_keys()",
-    "slurm_run_timed()",
-    "/usr/bin/time -v",
-):
-    check(needle in helper_text, f"common helper defines {needle}")
+check(not helper.exists(), "Slurm launchers do not rely on slurm/lib/common.sh")
 
 print("\n=== Launcher set ===")
 actual = {str(path.relative_to(ROOT)) for path in ROOT.glob("slurm/**/*.slurm")}
@@ -362,35 +347,20 @@ if actual != expected:
     print(f"    missing={sorted(expected - actual)}")
 
 print("\n=== Migrated launchers ===")
-DIRECT_RUNTIME_LAUNCHERS = {
-    "slurm/killarney/select_first_stage_flir_ds_checkpoints_kl.slurm",
-    "slurm/killarney/flir/sd_adaptation/train_flir_unet_full_domainstudio_512_kl.slurm",
-    "slurm/killarney/flir/flow_matching/train_stable_fm_hflip_ot_kl.slurm",
-    "slurm/killarney/flir/diffusion/train_stable_sd_hflip_kl.slurm",
-}
 for rel_path in sorted(expected):
     path = ROOT / rel_path
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     check(path.is_file(), f"{rel_path} exists")
     check(slurm_header(text) == EXPECTED_HEADERS[rel_path], f"{rel_path} preserves #SBATCH header")
-    if rel_path in DIRECT_RUNTIME_LAUNCHERS:
-        check('source "${SCRIPT_DIR}/../lib/common.sh"' not in text, f"{rel_path} is self-contained")
-        check("slurm_" not in text, f"{rel_path} avoids custom Slurm helper calls")
-        check("set -euo pipefail" in text, f"{rel_path} enables strict shell mode")
-        check("conda activate" in text, f"{rel_path} activates the Conda environment directly")
-        check("/usr/bin/time -v" not in text, f"{rel_path} uses Slurm logs directly")
-    else:
-        sources_common = (
-            'source "${SCRIPT_DIR}/../lib/common.sh"' in text
-            or 'source "${SCRIPT_DIR}/../../lib/common.sh"' in text
-        )
-        check(sources_common, f"{rel_path} sources Slurm common helper")
-        check("slurm_init_runtime" in text, f"{rel_path} initializes shared runtime")
-        check("slurm_run_timed" in text, f"{rel_path} uses timed command helper")
-        check("/usr/bin/time -v" not in text, f"{rel_path} does not duplicate raw time invocation")
+    check("common.sh" not in text, f"{rel_path} is self-contained")
+    check("slurm_" not in text, f"{rel_path} avoids custom Slurm helper calls")
+    check("set -euo pipefail" in text, f"{rel_path} enables strict shell mode")
+    check("conda activate" in text, f"{rel_path} activates the Conda environment directly")
     if "CONFIG_REL" in text or "PRESET_PATH" in text:
         check(
-            "slurm_config_path" in text or "slurm_require_file" in text or '[[ ! -f "${CONFIG}" ]]' in text,
+            '[[ ! -f "${CONFIG}" ]]' in text
+            or '[[ ! -f "${PRESET_PATH}" ]]' in text
+            or '[[ ! -f "${PROJECT_ROOT}/${CONFIG}" ]]' in text,
             f"{rel_path} resolves/checks config-like paths",
         )
     for ref in sorted(config_refs(text)):
