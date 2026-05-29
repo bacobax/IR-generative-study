@@ -627,7 +627,9 @@ def _save_preview(path: Path, arr: np.ndarray, *, normalization_mode: str) -> No
 def _analysis_preview_root(config: Mapping[str, Any], run_identifier: str) -> Path:
     root = resolve_path(config.get("analysis_output_root"))
     if root is None:
-        root = REPO_ROOT / "artifacts" / "analysis" / "checkpoint_selection"
+        root = resolve_path(config.get("output_root"))
+    if root is None:
+        root = REPO_ROOT / "artifacts" / "generated" / "checkpoint_selection"
     return root / sanitize_identifier(run_identifier, field_name="run_identifier")
 
 
@@ -1536,6 +1538,48 @@ def cleanup_training_checkpoints(
     return result
 
 
+def _cached_candidate_from_row(
+    row: Mapping[str, Any] | None,
+    *,
+    fallback_identifier: str,
+) -> CheckpointCandidate:
+    row = row or {}
+    identifier = str(row.get("checkpoint_identifier") or fallback_identifier)
+    checkpoint_path = str(row.get("checkpoint_path") or "")
+    epoch_value = row.get("epoch")
+    step_value = row.get("step")
+    try:
+        epoch = int(epoch_value) if epoch_value is not None else None
+    except (TypeError, ValueError):
+        epoch = None
+    try:
+        step = int(step_value) if step_value is not None else None
+    except (TypeError, ValueError):
+        step = None
+    return CheckpointCandidate(
+        checkpoint_identifier=identifier,
+        checkpoint_path=checkpoint_path,
+        checkpoint_kind=str(row.get("checkpoint_kind") or "cached"),
+        epoch=epoch,
+        step=step,
+        source=str(row.get("source") or "cached_metrics"),
+    )
+
+
+def _cached_candidate_by_id(
+    checkpoint_id: str,
+    *,
+    by_id: Mapping[str, CheckpointCandidate],
+    cached_rows_by_id: Mapping[str, Mapping[str, Any]],
+) -> CheckpointCandidate:
+    if checkpoint_id in by_id:
+        return by_id[checkpoint_id]
+    return _cached_candidate_from_row(
+        cached_rows_by_id.get(checkpoint_id),
+        fallback_identifier=checkpoint_id,
+    )
+
+
 def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any], *, cleanup_checkpoints: bool = False) -> dict[str, Any]:
     run = resolve_run(run_entry, config)
     run_output_dir = resolve_path(config.get("output_root") or "/scratch/bacobax02")
@@ -1572,21 +1616,37 @@ def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any], *, cleanup_
     if stage1_payload is not None and stage2_payload is not None and final_metrics is not None:
         stage1_ranking = list(stage1_payload.get("ranking", stage1_payload.get("metrics", [])))
         stage2_ranking = list(stage2_payload.get("ranking", stage2_payload.get("metrics", [])))
+        cached_rows_by_id = {
+            str(row.get("checkpoint_identifier")): row
+            for row in [*stage1_ranking, *stage2_ranking]
+            if row.get("checkpoint_identifier") is not None
+        }
         top_ids = list(
             stage1_payload.get(
                 "selected_top_k_checkpoints",
                 [row["checkpoint_identifier"] for row in stage1_ranking[: int(config.get("top_k_checkpoints", 3))]],
             )
         )
-        top_candidates = [by_id[checkpoint_id] for checkpoint_id in top_ids if checkpoint_id in by_id]
+        top_candidates = [
+            _cached_candidate_by_id(
+                str(checkpoint_id),
+                by_id=by_id,
+                cached_rows_by_id=cached_rows_by_id,
+            )
+            for checkpoint_id in top_ids
+        ]
         selected_id = final_metrics.get("selected_checkpoint_identifier")
-        if selected_id not in by_id and stage2_ranking:
+        if not selected_id and stage2_ranking:
             selected_id = stage2_ranking[0].get("checkpoint_identifier")
-        if selected_id not in by_id:
+        if not selected_id:
             raise RuntimeError(
                 f"Cached final metrics for {run.run_identifier} do not identify a discovered checkpoint: {selected_id!r}"
             )
-        selected = by_id[str(selected_id)]
+        selected = _cached_candidate_by_id(
+            str(selected_id),
+            by_id=by_id,
+            cached_rows_by_id=cached_rows_by_id,
+        )
         preview_summary = save_run_analysis_previews(
             run=run,
             run_output_dir=run_output_dir,

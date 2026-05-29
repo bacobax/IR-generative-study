@@ -115,7 +115,7 @@ mixed_precision: "auto"
 device: null
 
 output_root: "/scratch/bacobax2/flir_stage1_checkpoint_selection"
-analysis_output_root: "/scratch/bacobax2/flir_stage1_checkpoint_selection_analysis"
+analysis_output_root: null
 save_analysis_previews: true
 analysis_preview_num_images: 16
 analysis_preview_columns: 4

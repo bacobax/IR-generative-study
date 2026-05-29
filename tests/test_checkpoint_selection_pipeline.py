@@ -312,3 +312,146 @@ def test_cleanup_is_idempotent(tmp_path: Path) -> None:
     assert any(row["path"].endswith("checkpoint-10") for row in first["deleted"])
     assert second["deleted"] == []
     assert (tmp_path / "selection_output" / "checkpoint_cleanup_result.json").is_file()
+
+
+def test_analysis_preview_root_falls_back_to_output_root(tmp_path: Path) -> None:
+    root = pipeline._analysis_preview_root(
+        {"output_root": str(tmp_path / "selection"), "analysis_output_root": None},
+        "run a",
+    )
+
+    assert root == tmp_path / "selection" / "run_a"
+
+
+def test_cached_resume_survives_manually_deleted_selected_checkpoint(tmp_path: Path) -> None:
+    run_dir = tmp_path / "fm_run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    (run_dir / "artifact_manifest.json").write_text(
+        json.dumps({"model_family": "flow_matching", "task": {"t_scale": 1000.0, "train_target": "v"}}),
+        encoding="utf-8",
+    )
+    (unet_dir / "unet_fm_epoch_300.pt").write_bytes(b"latest")
+    deleted_selected_path = unet_dir / "unet_fm_epoch_240.pt"
+
+    output_root = tmp_path / "selection"
+    run_output = output_root / "manual_cleanup_run"
+    run_output.mkdir(parents=True)
+    pipeline.save_json(
+        run_output / "stage1_metrics.json",
+        {
+            "selected_top_k_checkpoints": ["epoch_240"],
+            "ranking": [
+                {
+                    "checkpoint_identifier": "epoch_240",
+                    "checkpoint_path": str(deleted_selected_path),
+                    "KID": 0.1,
+                    "FID": 1.0,
+                    "selection_score": 0.0,
+                    "rank": 1,
+                }
+            ],
+        },
+    )
+    pipeline.save_json(
+        run_output / "stage2_metrics.json",
+        {
+            "ranking": [
+                {
+                    "checkpoint_identifier": "epoch_240",
+                    "checkpoint_path": str(deleted_selected_path),
+                    "KID": 0.1,
+                    "rank": 1,
+                }
+            ]
+        },
+    )
+    pipeline.save_json(
+        run_output / "final_metrics.json",
+        {
+            "selected_checkpoint_identifier": "epoch_240",
+            "selected_checkpoint_path": str(deleted_selected_path),
+            "total_generated_images": 3,
+            "KID": 0.1,
+            "FID": 1.0,
+        },
+    )
+    images_dir = run_output / "epoch_240" / "stage3" / "generated_npy_images"
+    images_dir.mkdir(parents=True)
+    pipeline.np.save(images_dir / "sample_000000.npy", pipeline.np.zeros((1, 4, 4), dtype=pipeline.np.uint8))
+
+    result = pipeline.run_one(
+        {
+            "run_identifier": "manual_cleanup_run",
+            "run_dir": str(run_dir),
+            "model_type": "latent_flow_matching",
+            "sampling_config_path": None,
+        },
+        {
+            "output_root": str(output_root),
+            "analysis_output_root": None,
+            "overwrite_existing_metrics": False,
+            "save_analysis_previews": True,
+            "analysis_preview_num_images": 1,
+        },
+    )
+
+    assert result["final_selected_checkpoint"] == "epoch_240"
+    assert result["selected_top_3_checkpoints"] == ["epoch_240"]
+    assert (run_output / "checkpoint_selection_summary.json").is_file()
+    assert (output_root / "manual_cleanup_run" / "epoch_240" / "stage3" / "preview_grid.png").is_file()
+
+
+def test_cached_resume_cleanup_ignores_missing_cached_checkpoint(tmp_path: Path) -> None:
+    run_dir = tmp_path / "fm_run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    (run_dir / "artifact_manifest.json").write_text(
+        json.dumps({"model_family": "flow_matching", "task": {"t_scale": 1000.0, "train_target": "v"}}),
+        encoding="utf-8",
+    )
+    (unet_dir / "unet_fm_epoch_300.pt").write_bytes(b"latest")
+    deleted_selected_path = unet_dir / "unet_fm_epoch_240.pt"
+
+    output_root = tmp_path / "selection"
+    run_output = output_root / "manual_cleanup_run"
+    run_output.mkdir(parents=True)
+    payload_row = {
+        "checkpoint_identifier": "epoch_240",
+        "checkpoint_path": str(deleted_selected_path),
+        "KID": 0.1,
+        "FID": 1.0,
+        "rank": 1,
+    }
+    pipeline.save_json(run_output / "stage1_metrics.json", {"selected_top_k_checkpoints": ["epoch_240"], "ranking": [payload_row]})
+    pipeline.save_json(run_output / "stage2_metrics.json", {"ranking": [payload_row]})
+    pipeline.save_json(
+        run_output / "final_metrics.json",
+        {
+            "selected_checkpoint_identifier": "epoch_240",
+            "selected_checkpoint_path": str(deleted_selected_path),
+            "total_generated_images": 3,
+            "KID": 0.1,
+            "FID": 1.0,
+        },
+    )
+
+    result = pipeline.run_one(
+        {
+            "run_identifier": "manual_cleanup_run",
+            "run_dir": str(run_dir),
+            "model_type": "latent_flow_matching",
+            "sampling_config_path": None,
+        },
+        {
+            "output_root": str(output_root),
+            "analysis_output_root": None,
+            "overwrite_existing_metrics": False,
+            "save_analysis_previews": False,
+        },
+        cleanup_checkpoints=True,
+    )
+
+    assert result["final_selected_checkpoint"] == "epoch_240"
+    assert (unet_dir / "unet_fm_epoch_300.pt").is_file()
+    assert result["checkpoint_cleanup"]["deleted"] == []
