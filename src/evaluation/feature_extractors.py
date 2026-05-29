@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Mapping, Sequence
@@ -141,8 +142,15 @@ def extract_features(
 ) -> np.ndarray:
     """Extract or load cached features for image paths."""
     cache = Path(cache_path)
+    path_strings = [str(Path(path)) for path in paths]
     if cache.is_file() and not force:
-        return _load_cached_features(cache)
+        try:
+            cached = _load_cached_features(cache)
+            if cached.shape[0] == len(path_strings):
+                return cached
+        except (OSError, ValueError, EOFError):
+            pass
+        cache.unlink(missing_ok=True)
 
     if not paths:
         raise ValueError("No image paths were provided for feature extraction.")
@@ -151,7 +159,6 @@ def extract_features(
         raise ValueError(f"batch_size must be positive, got {batch_size}.")
 
     features: List[torch.Tensor] = []
-    path_strings = [str(Path(path)) for path in paths]
     for start in tqdm(range(0, len(path_strings), batch_size), desc=f"Extracting {extractor.name} features"):
         batch_paths = path_strings[start : start + batch_size]
         images = [
@@ -169,11 +176,14 @@ def extract_features(
     }
     if metadata:
         payload.update(dict(metadata))
-    np.savez_compressed(
-        cache,
-        features=feature_array,
-        paths=np.asarray(path_strings),
-        metadata=json.dumps(payload, sort_keys=True),
-        feature_shape=np.asarray(feature_array.shape, dtype=np.int64),
-    )
+    tmp_path = cache.with_name(f".{cache.name}.{os.getpid()}.tmp")
+    with tmp_path.open("wb") as handle:
+        np.savez_compressed(
+            handle,
+            features=feature_array,
+            paths=np.asarray(path_strings),
+            metadata=json.dumps(payload, sort_keys=True),
+            feature_shape=np.asarray(feature_array.shape, dtype=np.int64),
+        )
+    os.replace(tmp_path, cache)
     return feature_array

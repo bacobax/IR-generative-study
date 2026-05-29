@@ -19,6 +19,7 @@ else
   CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 fi
 PREFLIGHT="${PREFLIGHT:-0}"
+CLEANUP_CHECKPOINTS="${CLEANUP_CHECKPOINTS:-1}"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256}"
@@ -48,6 +49,7 @@ echo "Project root: ${PROJECT_ROOT}"
 echo "Conda env: ${ENV_NAME}"
 echo "Checkpoint-selection config: ${CONFIG}"
 echo "PREFLIGHT: ${PREFLIGHT}"
+echo "CLEANUP_CHECKPOINTS: ${CLEANUP_CHECKPOINTS}"
 echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
@@ -70,6 +72,9 @@ grep -nE "^(stage1_num_images|stage2_extra_images|stage3_extra_images|generation
 EXTRA_ARGS=()
 if [ "${PREFLIGHT}" = "1" ] || [ "${PREFLIGHT}" = "true" ]; then
   EXTRA_ARGS+=(--preflight)
+fi
+if [ "${CLEANUP_CHECKPOINTS}" = "1" ] || [ "${CLEANUP_CHECKPOINTS}" = "true" ]; then
+  EXTRA_ARGS+=(--cleanup-checkpoints)
 fi
 
 python scripts/select_best_checkpoint_and_compute_metrics.py \

@@ -143,3 +143,172 @@ def test_preview_writer_accepts_channel_first_arrays(tmp_path: Path) -> None:
     )
 
     assert (tmp_path / "preview_grid.png").is_file()
+
+
+def _run_resolution(run_dir: Path, *, model_type: str) -> pipeline.RunResolution:
+    return pipeline.RunResolution(
+        run_identifier="run",
+        run_dir=run_dir,
+        model_type=model_type,
+        sampler_name=None,
+        sampling_config_path=None,
+        preset={},
+        generation_backend_used="test",
+    )
+
+
+def _cleanup(
+    tmp_path: Path,
+    run_dir: Path,
+    *,
+    model_type: str,
+    stage2_ids: list[str],
+) -> dict:
+    discovery = pipeline.discover_candidate_checkpoints(
+        run_dir,
+        model_type=model_type,
+        checkpoint_min_epoch=0,
+        checkpoint_min_step=0,
+    )
+    return pipeline.cleanup_training_checkpoints(
+        run=_run_resolution(run_dir, model_type=model_type),
+        discovery=discovery,
+        stage2_ranking=[{"checkpoint_identifier": checkpoint_id, "KID": idx} for idx, checkpoint_id in enumerate(stage2_ids)],
+        run_output_dir=tmp_path / "selection_output",
+    )
+
+
+def test_cleanup_native_fm_preserves_stage2_top3_and_latest_epoch(tmp_path: Path) -> None:
+    run_dir = tmp_path / "fm_run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    (run_dir / "VAE").mkdir()
+    for name in [
+        "unet_fm_best.pt",
+        "unet_fm_epoch_025.pt",
+        "unet_fm_epoch_050.pt",
+        "unet_fm_epoch_075.pt",
+        "unet_fm_epoch_100.pt",
+    ]:
+        (unet_dir / name).write_bytes(name.encode())
+    (run_dir / "VAE" / "config.json").write_text("{}", encoding="utf-8")
+
+    result = _cleanup(
+        tmp_path,
+        run_dir,
+        model_type="latent_flow_matching",
+        stage2_ids=["best", "epoch_050", "epoch_075"],
+    )
+
+    assert (unet_dir / "unet_fm_best.pt").is_file()
+    assert (unet_dir / "unet_fm_epoch_050.pt").is_file()
+    assert (unet_dir / "unet_fm_epoch_075.pt").is_file()
+    assert (unet_dir / "unet_fm_epoch_100.pt").is_file()
+    assert not (unet_dir / "unet_fm_epoch_025.pt").exists()
+    assert (run_dir / "VAE" / "config.json").is_file()
+    assert (tmp_path / "selection_output" / "checkpoint_cleanup_plan.json").is_file()
+    assert any(row["path"].endswith("unet_fm_epoch_025.pt") for row in result["deleted"])
+
+
+def test_cleanup_native_sd_preserves_stage2_top3_and_latest_epoch(tmp_path: Path) -> None:
+    run_dir = tmp_path / "sd_run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    (run_dir / "SCHEDULER").mkdir()
+    for name in [
+        "unet_sd_uncond_best.pt",
+        "unet_sd_uncond_epoch_010.pt",
+        "unet_sd_uncond_epoch_030.pt",
+        "unet_sd_uncond_epoch_050.pt",
+        "unet_sd_uncond_epoch_090.pt",
+    ]:
+        (unet_dir / name).write_bytes(name.encode())
+
+    _cleanup(
+        tmp_path,
+        run_dir,
+        model_type="sd_uncond",
+        stage2_ids=["epoch_030", "epoch_050", "best"],
+    )
+
+    assert (unet_dir / "unet_sd_uncond_best.pt").is_file()
+    assert (unet_dir / "unet_sd_uncond_epoch_030.pt").is_file()
+    assert (unet_dir / "unet_sd_uncond_epoch_050.pt").is_file()
+    assert (unet_dir / "unet_sd_uncond_epoch_090.pt").is_file()
+    assert not (unet_dir / "unet_sd_uncond_epoch_010.pt").exists()
+    assert (run_dir / "SCHEDULER").is_dir()
+
+
+def test_cleanup_native_preserves_sidecar_for_preserved_epoch(tmp_path: Path) -> None:
+    run_dir = tmp_path / "fm_run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    for name in [
+        "unet_fm_epoch_025.pt",
+        "unet_fm_epoch_025_ckpt.pt",
+        "unet_fm_epoch_050.pt",
+        "unet_fm_epoch_050_ckpt.pt",
+        "unet_fm_epoch_100.pt",
+    ]:
+        (unet_dir / name).write_bytes(name.encode())
+
+    _cleanup(
+        tmp_path,
+        run_dir,
+        model_type="latent_flow_matching",
+        stage2_ids=["epoch_050"],
+    )
+
+    assert (unet_dir / "unet_fm_epoch_050.pt").is_file()
+    assert (unet_dir / "unet_fm_epoch_050_ckpt.pt").is_file()
+    assert (unet_dir / "unet_fm_epoch_100.pt").is_file()
+    assert not (unet_dir / "unet_fm_epoch_025.pt").exists()
+    assert not (unet_dir / "unet_fm_epoch_025_ckpt.pt").exists()
+
+
+def test_cleanup_lora_preserves_top3_latest_and_final_export(tmp_path: Path) -> None:
+    run_dir = tmp_path / "lora_run"
+    run_dir.mkdir()
+    _write_stage1_manifest(run_dir / "stage1_manifest.json")
+    (run_dir / "pytorch_lora_weights.safetensors").write_bytes(b"final")
+    (run_dir / "logs").mkdir()
+    for step in [10, 20, 30, 40, 50]:
+        checkpoint_dir = run_dir / f"checkpoint-{step}"
+        checkpoint_dir.mkdir()
+        (checkpoint_dir / "pytorch_lora_weights.safetensors").write_bytes(str(step).encode())
+
+    _cleanup(
+        tmp_path,
+        run_dir,
+        model_type="sd_lora",
+        stage2_ids=["step_000020", "step_000030", "step_000040"],
+    )
+
+    assert not (run_dir / "checkpoint-10").exists()
+    for step in [20, 30, 40, 50]:
+        assert (run_dir / f"checkpoint-{step}").is_dir()
+    assert (run_dir / "pytorch_lora_weights.safetensors").is_file()
+    assert (run_dir / "stage1_manifest.json").is_file()
+    assert (run_dir / "logs").is_dir()
+
+
+def test_cleanup_is_idempotent(tmp_path: Path) -> None:
+    run_dir = tmp_path / "lora_run"
+    run_dir.mkdir()
+    _write_stage1_manifest(run_dir / "stage1_manifest.json")
+    (run_dir / "pytorch_lora_weights.safetensors").write_bytes(b"final")
+    for step in [10, 20, 30]:
+        checkpoint_dir = run_dir / f"checkpoint-{step}"
+        checkpoint_dir.mkdir()
+        (checkpoint_dir / "pytorch_lora_weights.safetensors").write_bytes(str(step).encode())
+
+    kwargs = {
+        "model_type": "sd_lora",
+        "stage2_ids": ["step_000020"],
+    }
+    first = _cleanup(tmp_path, run_dir, **kwargs)
+    second = _cleanup(tmp_path, run_dir, **kwargs)
+
+    assert any(row["path"].endswith("checkpoint-10") for row in first["deleted"])
+    assert second["deleted"] == []
+    assert (tmp_path / "selection_output" / "checkpoint_cleanup_result.json").is_file()

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import shutil
 import sys
@@ -96,6 +97,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Resolve runs/checkpoints/sampling shape and exit before generation or metrics.",
     )
+    parser.add_argument(
+        "--cleanup-checkpoints",
+        action="store_true",
+        help="After each completed run, delete non-selected training checkpoints and write cleanup manifests.",
+    )
     return parser.parse_args(argv)
 
 
@@ -106,7 +112,19 @@ def utc_timestamp() -> str:
 def save_json(path: str | Path, payload: Any) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_jsonable(payload), indent=2, sort_keys=True), encoding="utf-8")
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(json.dumps(_jsonable(payload), indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
+def load_json_if_valid(path: str | Path) -> Any | None:
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _jsonable(value: Any) -> Any:
@@ -145,6 +163,29 @@ def expected_generated_paths(images_dir: Path, n_images: int) -> list[Path]:
     return [images_dir / f"sample_{idx:06d}.npy" for idx in range(int(n_images))]
 
 
+def _generated_npy_is_valid(path: Path) -> bool:
+    arr = None
+    try:
+        arr = np.load(path, mmap_mode="r", allow_pickle=False)
+        _ = arr.shape
+        return True
+    except (OSError, ValueError, EOFError):
+        return False
+    finally:
+        mmap_obj = getattr(arr, "_mmap", None)
+        if mmap_obj is not None:
+            mmap_obj.close()
+
+
+def save_npy_atomic(path: str | Path, array: np.ndarray) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with tmp_path.open("wb") as handle:
+        np.save(handle, array)
+    os.replace(tmp_path, path)
+
+
 def validate_or_prepare_generation_dir(
     images_dir: Path,
     *,
@@ -161,7 +202,14 @@ def validate_or_prepare_generation_dir(
     extra = sorted(actual_names - expected_names)
     if extra:
         raise RuntimeError(f"Unexpected generated files in {images_dir}: {extra[:5]}")
-    missing = [idx for idx, path in enumerate(expected) if not path.is_file()]
+    missing = []
+    for idx, path in enumerate(expected):
+        if not path.is_file():
+            missing.append(idx)
+            continue
+        if not _generated_npy_is_valid(path):
+            path.unlink(missing_ok=True)
+            missing.append(idx)
     return missing, not missing
 
 
@@ -211,6 +259,24 @@ def _latest_native_epoch(unet_dir: Path) -> tuple[Path, str, int] | None:
         return None
     epoch, identifier, path = max(rows, key=lambda item: item[0])
     return path, identifier, epoch
+
+
+def _native_epoch_for_checkpoint_path(path: Path) -> int | None:
+    match = NATIVE_EPOCH_RE.match(path.name)
+    if match is None:
+        return None
+    return int(match.group("epoch"))
+
+
+def _latest_lora_step_dir(run_dir: Path) -> Path | None:
+    rows: list[tuple[int, Path]] = []
+    for path in run_dir.iterdir() if run_dir.is_dir() else []:
+        match = DIFFUSERS_STEP_RE.match(path.name)
+        if match is not None and path.is_dir():
+            rows.append((int(match.group("step")), path))
+    if not rows:
+        return None
+    return max(rows, key=lambda item: item[0])[1]
 
 
 def discover_candidate_checkpoints(
@@ -755,7 +821,7 @@ def generate_sd_stage1_samples(
             generator=generator,
         )
         arr = sd_output_to_npy(result.images[0], normalization_mode=normalization_mode)
-        np.save(output_path, arr)
+        save_npy_atomic(output_path, arr)
         _save_preview(output_path, arr, normalization_mode=normalization_mode)
 
     del pipe
@@ -858,7 +924,7 @@ def generate_native_samples(
             sample=sample,
         )
         arr = helpers.tensor_to_output_array(image, normalization_mode=normalization_mode)
-        np.save(output_path, arr)
+        save_npy_atomic(output_path, arr)
 
     del sampler
     if torch.cuda.is_available() and str(device).startswith("cuda"):
@@ -1047,9 +1113,10 @@ def run_stage1(
     device: str,
 ) -> list[dict[str, Any]]:
     metrics_path = run_output_dir / "stage1_metrics.json"
-    if metrics_path.is_file() and not bool(config.get("overwrite_existing_metrics", False)):
-        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
-        return list(payload.get("ranking", payload.get("metrics", [])))
+    if not bool(config.get("overwrite_existing_metrics", False)):
+        payload = load_json_if_valid(metrics_path)
+        if payload is not None:
+            return list(payload.get("ranking", payload.get("metrics", [])))
 
     rows = []
     for checkpoint in discovery.candidates:
@@ -1125,9 +1192,10 @@ def run_stage2(
     device: str,
 ) -> list[dict[str, Any]]:
     metrics_path = run_output_dir / "stage2_metrics.json"
-    if metrics_path.is_file() and not bool(config.get("overwrite_existing_metrics", False)):
-        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
-        return list(payload.get("ranking", payload.get("metrics", [])))
+    if not bool(config.get("overwrite_existing_metrics", False)):
+        payload = load_json_if_valid(metrics_path)
+        if payload is not None:
+            return list(payload.get("ranking", payload.get("metrics", [])))
 
     rows = []
     for checkpoint in top_candidates:
@@ -1210,8 +1278,10 @@ def run_final_metrics(
     device: str,
 ) -> dict[str, Any]:
     metrics_path = run_output_dir / "final_metrics.json"
-    if metrics_path.is_file() and not bool(config.get("overwrite_existing_metrics", False)):
-        return json.loads(metrics_path.read_text(encoding="utf-8"))
+    if not bool(config.get("overwrite_existing_metrics", False)):
+        payload = load_json_if_valid(metrics_path)
+        if payload is not None:
+            return payload
 
     stage3_images_dir, _cached = ensure_generated_stage(
         run=run,
@@ -1354,7 +1424,119 @@ def write_text_summary(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
+def _is_lora_model_type(model_type: str) -> bool:
+    return str(model_type).lower() in {"sd_lora", "sd_stage1", "stable_diffusion_lora"}
+
+
+def _cleanup_delete_path(path: Path) -> str:
+    if path.is_dir():
+        shutil.rmtree(path)
+        return "directory"
+    path.unlink()
+    return "file"
+
+
+def cleanup_training_checkpoints(
+    *,
+    run: RunResolution,
+    discovery: DiscoveryResult,
+    stage2_ranking: Sequence[Mapping[str, Any]],
+    run_output_dir: Path,
+) -> dict[str, Any]:
+    by_id = {candidate.checkpoint_identifier: candidate for candidate in discovery.candidates}
+    stage2_top_ids = [
+        str(row["checkpoint_identifier"])
+        for row in list(stage2_ranking)[:3]
+        if row.get("checkpoint_identifier") in by_id
+    ]
+    keep_paths: set[Path] = set()
+    keep_reasons: dict[str, list[str]] = {}
+
+    def keep(path: Path | None, reason: str) -> None:
+        if path is None:
+            return
+        resolved = path.resolve()
+        keep_paths.add(resolved)
+        keep_reasons.setdefault(str(path), []).append(reason)
+
+    for checkpoint_id in stage2_top_ids:
+        keep(Path(by_id[checkpoint_id].checkpoint_path), "stage2_top3")
+
+    eligible_paths: list[Path] = []
+    run_dir = run.run_dir
+    if _is_lora_model_type(run.model_type):
+        latest_step_dir = _latest_lora_step_dir(run_dir)
+        keep(latest_step_dir, "latest_step")
+        for path in sorted(run_dir.iterdir() if run_dir.is_dir() else []):
+            if path.is_dir() and DIFFUSERS_STEP_RE.match(path.name):
+                eligible_paths.append(path)
+    else:
+        unet_dir = run_dir / "UNET" if run_dir.name != "UNET" else run_dir
+        latest = _latest_native_epoch(unet_dir)
+        latest_path = latest[0] if latest is not None else None
+        keep(latest_path, "latest_epoch")
+
+        preserved_epochs = {
+            epoch
+            for epoch in (_native_epoch_for_checkpoint_path(path) for path in keep_paths)
+            if epoch is not None
+        }
+        for path in sorted(unet_dir.iterdir() if unet_dir.is_dir() else []):
+            if path.name in {"unet_fm_best.pt", "unet_sd_uncond_best.pt", "best.pt"}:
+                eligible_paths.append(path)
+                continue
+            epoch = _native_epoch_for_checkpoint_path(path)
+            if epoch is None:
+                continue
+            eligible_paths.append(path)
+            if path.name.endswith("_ckpt.pt") and epoch in preserved_epochs:
+                keep(path, "preserved_epoch_sidecar")
+
+    kept = []
+    deleted_plan = []
+    for path in eligible_paths:
+        resolved = path.resolve()
+        row = {"path": str(path), "kind": "directory" if path.is_dir() else "file"}
+        if resolved in keep_paths:
+            row["reasons"] = keep_reasons.get(str(path), ["preserved"])
+            kept.append(row)
+        else:
+            deleted_plan.append(row)
+
+    plan = {
+        "run_identifier": run.run_identifier,
+        "run_dir": str(run.run_dir),
+        "model_type": run.model_type,
+        "stage2_top3_checkpoint_identifiers": stage2_top_ids,
+        "eligible_checkpoint_paths": [str(path) for path in eligible_paths],
+        "kept": kept,
+        "to_delete": deleted_plan,
+        "timestamp": utc_timestamp(),
+    }
+    plan_path = run_output_dir / "checkpoint_cleanup_plan.json"
+    save_json(plan_path, plan)
+
+    deleted = []
+    missing = []
+    for row in deleted_plan:
+        path = Path(row["path"])
+        if not path.exists():
+            missing.append(row)
+            continue
+        deleted.append({**row, "deleted_kind": _cleanup_delete_path(path)})
+
+    result = {
+        **plan,
+        "deleted": deleted,
+        "missing_at_delete_time": missing,
+        "cleanup_plan_path": str(plan_path),
+        "timestamp": utc_timestamp(),
+    }
+    save_json(run_output_dir / "checkpoint_cleanup_result.json", result)
+    return result
+
+
+def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any], *, cleanup_checkpoints: bool = False) -> dict[str, Any]:
     run = resolve_run(run_entry, config)
     run_output_dir = resolve_path(config.get("output_root") or "/scratch/bacobax02")
     if run_output_dir is None:
@@ -1379,9 +1561,15 @@ def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str
         and stage2_metrics_path.is_file()
         and final_metrics_path.is_file()
     ):
-        stage1_payload = json.loads(stage1_metrics_path.read_text(encoding="utf-8"))
-        stage2_payload = json.loads(stage2_metrics_path.read_text(encoding="utf-8"))
-        final_metrics = json.loads(final_metrics_path.read_text(encoding="utf-8"))
+        stage1_payload = load_json_if_valid(stage1_metrics_path)
+        stage2_payload = load_json_if_valid(stage2_metrics_path)
+        final_metrics = load_json_if_valid(final_metrics_path)
+        if stage1_payload is None or stage2_payload is None or final_metrics is None:
+            stage1_payload = stage2_payload = final_metrics = None
+    else:
+        stage1_payload = stage2_payload = final_metrics = None
+
+    if stage1_payload is not None and stage2_payload is not None and final_metrics is not None:
         stage1_ranking = list(stage1_payload.get("ranking", stage1_payload.get("metrics", [])))
         stage2_ranking = list(stage2_payload.get("ranking", stage2_payload.get("metrics", [])))
         top_ids = list(
@@ -1427,6 +1615,16 @@ def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str
             stage2_ranking=stage2_ranking,
             final_metrics=final_metrics,
         )
+        cleanup_result = None
+        if cleanup_checkpoints:
+            cleanup_result = cleanup_training_checkpoints(
+                run=run,
+                discovery=discovery,
+                stage2_ranking=stage2_ranking,
+                run_output_dir=run_output_dir,
+            )
+            summary["checkpoint_cleanup"] = cleanup_result
+            save_json(run_output_dir / "checkpoint_selection_summary.json", summary)
         return {"run_identifier": run.run_identifier, "output_dir": str(run_output_dir), **summary}
 
     seeds_by_stage = make_stage_seeds(config)
@@ -1521,6 +1719,15 @@ def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str
         stage2_ranking=stage2_ranking,
         final_metrics=final_metrics,
     )
+    if cleanup_checkpoints:
+        cleanup_result = cleanup_training_checkpoints(
+            run=run,
+            discovery=discovery,
+            stage2_ranking=stage2_ranking,
+            run_output_dir=run_output_dir,
+        )
+        summary["checkpoint_cleanup"] = cleanup_result
+        save_json(run_output_dir / "checkpoint_selection_summary.json", summary)
     return {"run_identifier": run.run_identifier, "output_dir": str(run_output_dir), **summary}
 
 
@@ -1652,7 +1859,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     summaries = []
     for run_entry in runs:
-        summaries.append(run_one(run_entry, config))
+        summaries.append(run_one(run_entry, config, cleanup_checkpoints=bool(args.cleanup_checkpoints)))
     print(json.dumps(_jsonable({"runs": summaries}), indent=2, sort_keys=True))
 
 
