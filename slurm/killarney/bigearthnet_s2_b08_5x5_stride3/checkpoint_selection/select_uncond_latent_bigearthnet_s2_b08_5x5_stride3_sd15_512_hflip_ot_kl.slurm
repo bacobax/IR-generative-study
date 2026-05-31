@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=sel-flir-stage1
+#SBATCH --job-name=sel-ben-fm-full
 #SBATCH --account=aip-mpederso
-#SBATCH --time=24:00:00
+#SBATCH --time=05:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=48G
 #SBATCH --gpus-per-node=h100:1
@@ -12,12 +12,8 @@ set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
-CONFIG_REL="${CONFIG_REL:-configs/eval/checkpoint_selection_first_stage_flir_ds_trainings.yaml}"
-if [[ "${CONFIG_REL}" = /* ]]; then
-  CONFIG="${CONFIG_REL}"
-else
-  CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
-fi
+CONFIG_REL="configs/eval/bigearthnet_s2_b08_5x5_stride3_stage1_single_runs/checkpoint_selection_uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_ot.yaml"
+CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 PREFLIGHT="${PREFLIGHT:-0}"
 GENERATION_SMOKE_TEST="${GENERATION_SMOKE_TEST:-0}"
 CLEANUP_CHECKPOINTS="${CLEANUP_CHECKPOINTS:-0}"
@@ -52,11 +48,6 @@ echo "Checkpoint-selection config: ${CONFIG}"
 echo "PREFLIGHT: ${PREFLIGHT}"
 echo "GENERATION_SMOKE_TEST: ${GENERATION_SMOKE_TEST}"
 echo "CLEANUP_CHECKPOINTS: ${CLEANUP_CHECKPOINTS}"
-echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
-echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
-echo "SLURM_JOB_ID: ${SLURM_JOB_ID:-<unset>}"
-echo "SLURM_SUBMIT_DIR: ${SLURM_SUBMIT_DIR:-<unset>}"
-echo "SLURM_CPUS_PER_TASK: ${SLURM_CPUS_PER_TASK:-<unset>}"
 which python
 python --version
 nvidia-smi || true
@@ -66,9 +57,7 @@ if [[ ! -f "${CONFIG}" ]]; then
   exit 1
 fi
 
-echo "Configured runs:"
 grep -n "run_identifier:" "${CONFIG}" || true
-echo "Configured generation sizes:"
 grep -nE "^(stage1_num_images|stage2_extra_images|stage3_extra_images|generation_batch_size|num_inference_steps|output_root|analysis_output_root):" "${CONFIG}" || true
 
 EXTRA_ARGS=()
@@ -82,8 +71,5 @@ if [ "${CLEANUP_CHECKPOINTS}" = "1" ] || [ "${CLEANUP_CHECKPOINTS}" = "true" ]; 
   EXTRA_ARGS+=(--cleanup-checkpoints)
 fi
 
-python scripts/select_best_checkpoint_and_compute_metrics.py \
-  --config "${CONFIG}" \
-  "${EXTRA_ARGS[@]}"
-
+python scripts/select_best_checkpoint_and_compute_metrics.py --config "${CONFIG}" "${EXTRA_ARGS[@]}"
 echo "End time: $(date)"

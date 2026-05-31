@@ -1,0 +1,69 @@
+# Single-run checkpoint selection for FLIR first-stage training.
+runs:
+  - run_identifier: "uncond_latent_flir_sd15_512_hflip"
+    run_dir: "artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip"
+    model_type: "sd_uncond"
+    sampler_name: null
+    sampling_config_path: "configs/datasets/flir/diffusion/uncond_latent_flir_sd15_512_b64_hflip.yaml"
+    generation_entrypoint: null
+
+checkpoint_min_epoch: 50
+checkpoint_min_step: null
+
+stage1_num_images: 200
+stage2_extra_images: 800
+stage3_extra_images: 1000
+top_k_checkpoints: 3
+
+kid_weight: 0.8
+fid_weight: 0.2
+selection_primary_metric: "KID"
+selection_score_mode: "weighted_normalized_kid_fid"
+
+dataset_id: "flir_private_proxy_alignment_v18"
+real_reference_split: "val"
+real_reference_num_samples: null
+real_reference_path: null
+
+metric_feature_extractor: "inception"
+metric_batch_size: 8
+compute_kid: true
+compute_fid: true
+compute_mmd: true
+compute_intra_lpips: false
+
+kid:
+  subsets: 100
+  subset_size: 1000
+
+mmd:
+  kernel: "rbf"
+  bandwidths: [0.1, 1.0, 10.0]
+
+lpips_metric_type: "intra_lpips"
+lpips_backbone: "alex"
+lpips_batch_size: 8
+lpips_reference_split: "train"
+lpips_reference_num_samples: 1000
+lpips_resize_to: 256
+
+generation_batch_size: 8
+generation_seed: 1234
+stage1_seed_offset: 0
+stage2_seed_offset: 100000
+stage3_seed_offset: 200000
+
+num_inference_steps: 40
+mixed_precision: "auto"
+device: null
+
+output_root: "/scratch/bacobax2/flir_stage1_checkpoint_selection_single_runs"
+analysis_output_root: null
+save_analysis_previews: true
+analysis_preview_num_images: 16
+analysis_preview_columns: 4
+analysis_preview_tile_size: 512
+save_generated_format: "npy"
+overwrite_existing_generations: false
+overwrite_existing_metrics: false
+generated_min_std: 1.0

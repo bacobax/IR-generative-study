@@ -899,6 +899,26 @@ def save_run_analysis_previews(
     return summary
 
 
+def save_stage_analysis_preview_if_enabled(
+    *,
+    run: RunResolution,
+    checkpoint: CheckpointCandidate,
+    stage: str,
+    images_dir: Path,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not bool(config.get("save_analysis_previews", True)):
+        return {}
+    return save_analysis_previews_for_stage(
+        run=run,
+        checkpoint=checkpoint,
+        stage=stage,
+        images_dir=images_dir,
+        config=config,
+        normalization_mode=generated_normalization_mode(config, run),
+    )
+
+
 def generate_sd_stage1_samples(
     *,
     run: RunResolution,
@@ -1063,6 +1083,13 @@ def ensure_generated_stage(
         normalization_mode=gen_normalization,
     )
     if complete:
+        save_stage_analysis_preview_if_enabled(
+            run=run,
+            checkpoint=checkpoint,
+            stage=stage_dir.name,
+            images_dir=images_dir,
+            config=config,
+        )
         metadata = {
             "cached": True,
             "num_generated_images": len(seeds),
@@ -1101,6 +1128,13 @@ def ensure_generated_stage(
     )
     if missing_after:
         raise RuntimeError(f"Generation incomplete in {images_dir}: missing {len(missing_after)} files")
+    save_stage_analysis_preview_if_enabled(
+        run=run,
+        checkpoint=checkpoint,
+        stage=stage_dir.name,
+        images_dir=images_dir,
+        config=config,
+    )
     save_json(
         stage_dir / "generation_metadata.json",
         {

@@ -1,19 +1,5 @@
-# Standalone post-training checkpoint selection for the FLIR unconditional FM OT run.
-#
-# Important for this sparse artifact:
-# - The run folder has no local VAE/config.json.
-# - The sampling_config_path below is required so the evaluator resolves the
-#   SD1.5 VAE from the training preset instead of inventing a local VAE config.
-# - With image_size=512 and the SD1.5 VAE downsample factor 8, the latent
-#   sample shape resolves to 4x64x64 even though the JSON UNet template says 128.
+# Single-run checkpoint selection for FLIR first-stage training.
 runs:
-  - run_identifier: "uncond_fm_hflip_ot_full"
-    run_dir: "./artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot"
-    model_type: "latent_flow_matching"
-    sampler_name: null
-    sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
-    generation_entrypoint: null
-
   - run_identifier: "flir_sd15_lora_stage1_r8"
     run_dir: "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8"
     model_type: "sd_lora"
@@ -24,9 +10,9 @@ runs:
 checkpoint_min_epoch: 50
 checkpoint_min_step: null
 
-stage1_num_images: 20
-stage2_extra_images: 50
-stage3_extra_images: 50
+stage1_num_images: 200
+stage2_extra_images: 800
+stage3_extra_images: 1000
 top_k_checkpoints: 3
 
 kid_weight: 0.8
@@ -47,8 +33,8 @@ compute_mmd: true
 compute_intra_lpips: false
 
 kid:
-  subsets: 10
-  subset_size: 60
+  subsets: 100
+  subset_size: 1000
 
 mmd:
   kernel: "rbf"
@@ -61,7 +47,7 @@ lpips_reference_split: "train"
 lpips_reference_num_samples: 1000
 lpips_resize_to: 256
 
-generation_batch_size: 1
+generation_batch_size: 8
 generation_seed: 1234
 stage1_seed_offset: 0
 stage2_seed_offset: 100000
@@ -71,7 +57,7 @@ num_inference_steps: 40
 mixed_precision: "auto"
 device: null
 
-output_root: "/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/generated/checkpoint_selection"
+output_root: "/scratch/bacobax2/flir_stage1_checkpoint_selection_single_runs"
 analysis_output_root: null
 save_analysis_previews: true
 analysis_preview_num_images: 16

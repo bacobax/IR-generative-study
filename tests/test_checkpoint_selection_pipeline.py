@@ -146,6 +146,105 @@ def test_preview_writer_accepts_channel_first_arrays(tmp_path: Path) -> None:
     assert (tmp_path / "preview_grid.png").is_file()
 
 
+def test_ensure_generated_stage_writes_analysis_preview_for_cached_stage(tmp_path: Path) -> None:
+    run = pipeline.RunResolution(
+        run_identifier="preview_run",
+        run_dir=tmp_path / "run",
+        model_type="latent_flow_matching",
+        sampler_name=None,
+        sampling_config_path=None,
+        preset={"data": {"image_size": 512, "dataset_id": "flir_private_proxy_alignment_v18"}},
+        generation_backend_used="native_flow_matching_sampler",
+    )
+    checkpoint = pipeline.CheckpointCandidate("best", str(tmp_path / "dummy.pt"), "best")
+    stage_dir = tmp_path / "selection" / "preview_run" / "best" / "stage1"
+    images_dir = stage_dir / "generated_npy_images"
+    images_dir.mkdir(parents=True)
+    arr = pipeline.np.arange(512 * 512, dtype=pipeline.np.uint8).reshape(512, 512)
+    pipeline.np.save(images_dir / "sample_000000.npy", arr)
+
+    pipeline.ensure_generated_stage(
+        run=run,
+        checkpoint=checkpoint,
+        stage_dir=stage_dir,
+        seeds=[123],
+        config={
+            "output_root": str(tmp_path / "selection"),
+            "analysis_output_root": None,
+            "save_analysis_previews": True,
+            "analysis_preview_num_images": 1,
+            "analysis_preview_tile_size": 512,
+            "analysis_preview_columns": 1,
+            "generated_min_std": 1.0,
+        },
+        device="cpu",
+    )
+
+    assert (
+        tmp_path
+        / "selection"
+        / "preview_run"
+        / "best"
+        / "stage1"
+        / "previews"
+        / "sample_000000.png"
+    ).is_file()
+    assert (tmp_path / "selection" / "preview_run" / "best" / "stage1" / "preview_grid.png").is_file()
+
+
+def test_ensure_generated_stage_writes_analysis_preview_after_generation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run = pipeline.RunResolution(
+        run_identifier="preview_run",
+        run_dir=tmp_path / "run",
+        model_type="latent_flow_matching",
+        sampler_name=None,
+        sampling_config_path=None,
+        preset={"data": {"image_size": 512, "dataset_id": "flir_private_proxy_alignment_v18"}},
+        generation_backend_used="native_flow_matching_sampler",
+    )
+    checkpoint = pipeline.CheckpointCandidate("best", str(tmp_path / "dummy.pt"), "best")
+    stage_dir = tmp_path / "selection" / "preview_run" / "best" / "stage2"
+
+    def fake_generate_native_samples(**kwargs):
+        images_dir = kwargs["images_dir"]
+        images_dir.mkdir(parents=True, exist_ok=True)
+        arr = pipeline.np.arange(512 * 512, dtype=pipeline.np.uint8).reshape(512, 512)
+        pipeline.save_npy_atomic(images_dir / "sample_000000.npy", arr)
+
+    monkeypatch.setattr(pipeline, "generate_native_samples", fake_generate_native_samples)
+
+    pipeline.ensure_generated_stage(
+        run=run,
+        checkpoint=checkpoint,
+        stage_dir=stage_dir,
+        seeds=[123],
+        config={
+            "output_root": str(tmp_path / "selection"),
+            "analysis_output_root": None,
+            "save_analysis_previews": True,
+            "analysis_preview_num_images": 1,
+            "analysis_preview_tile_size": 512,
+            "analysis_preview_columns": 1,
+            "generated_min_std": 1.0,
+        },
+        device="cpu",
+    )
+
+    assert (
+        tmp_path
+        / "selection"
+        / "preview_run"
+        / "best"
+        / "stage2"
+        / "previews"
+        / "sample_000000.png"
+    ).is_file()
+    assert (tmp_path / "selection" / "preview_run" / "best" / "stage2" / "preview_grid.png").is_file()
+
+
 def _run_resolution(run_dir: Path, *, model_type: str) -> pipeline.RunResolution:
     return pipeline.RunResolution(
         run_identifier="run",
