@@ -119,7 +119,7 @@ analysis_output_root: null
 save_analysis_previews: true
 analysis_preview_num_images: 16
 analysis_preview_columns: 4
-analysis_preview_tile_size: 128
+analysis_preview_tile_size: 512
 save_generated_format: "npy"
 overwrite_existing_generations: false
 overwrite_existing_metrics: false

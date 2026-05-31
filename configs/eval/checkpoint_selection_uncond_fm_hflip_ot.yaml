@@ -7,12 +7,12 @@
 # - With image_size=512 and the SD1.5 VAE downsample factor 8, the latent
 #   sample shape resolves to 4x64x64 even though the JSON UNet template says 128.
 runs:
-  # - run_identifier: "uncond_fm_hflip_ot_full"
-  #   run_dir: "./artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot"
-  #   model_type: "latent_flow_matching"
-  #   sampler_name: null
-  #   sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
-  #   generation_entrypoint: null
+  - run_identifier: "uncond_fm_hflip_ot_full"
+    run_dir: "./artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot"
+    model_type: "latent_flow_matching"
+    sampler_name: null
+    sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
+    generation_entrypoint: null
 
   - run_identifier: "flir_sd15_lora_stage1_r8"
     run_dir: "artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8"
@@ -72,11 +72,12 @@ mixed_precision: "auto"
 device: null
 
 output_root: "/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/generated/checkpoint_selection"
-analysis_output_root: "/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/analysis/checkpoint_selection"
+analysis_output_root: null
 save_analysis_previews: true
 analysis_preview_num_images: 16
 analysis_preview_columns: 4
-analysis_preview_tile_size: 128
+analysis_preview_tile_size: 512
 save_generated_format: "npy"
 overwrite_existing_generations: false
 overwrite_existing_metrics: false
+generated_min_std: 1.0
