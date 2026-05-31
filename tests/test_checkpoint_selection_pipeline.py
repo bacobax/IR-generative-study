@@ -455,3 +455,59 @@ def test_cached_resume_cleanup_ignores_missing_cached_checkpoint(tmp_path: Path)
     assert result["final_selected_checkpoint"] == "epoch_240"
     assert (unet_dir / "unet_fm_epoch_300.pt").is_file()
     assert result["checkpoint_cleanup"]["deleted"] == []
+
+
+def test_discover_reference_images_accepts_bigearthnet_validation_tiffs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from src.core.data.dataset_targets import (
+        BigEarthNetS2B08DatasetAdapter,
+        DEFAULT_DATASET_TARGETS,
+        DatasetTarget,
+    )
+    from src.core.normalization import SENTINEL2_REFLECTANCE
+
+    dataset_root = tmp_path / "bigearthnet"
+    validation_dir = dataset_root / "images" / "validation"
+    validation_dir.mkdir(parents=True)
+    (validation_dir / "sample_b.tif").write_bytes(b"tif")
+    (validation_dir / "sample_a.tiff").write_bytes(b"tiff")
+    (validation_dir / "ignore.txt").write_text("ignore", encoding="utf-8")
+    adapter = BigEarthNetS2B08DatasetAdapter(dataset_root)
+    monkeypatch.setitem(
+        DEFAULT_DATASET_TARGETS,
+        "unit_bigearthnet",
+        DatasetTarget(
+            dataset_id="unit_bigearthnet",
+            root=dataset_root,
+            normalization_mode=SENTINEL2_REFLECTANCE,
+            adapter=adapter,
+        ),
+    )
+
+    paths, normalization_mode, reference_root = pipeline.discover_reference_images(
+        {"dataset_id": "unit_bigearthnet", "real_reference_split": "val"},
+        _run_resolution(tmp_path / "run", model_type="latent_flow_matching"),
+    )
+
+    assert [path.name for path in paths] == ["sample_a.tiff", "sample_b.tif"]
+    assert normalization_mode == SENTINEL2_REFLECTANCE
+    assert reference_root == validation_dir
+
+
+def test_discover_reference_images_accepts_explicit_tiff_reference_path(tmp_path: Path) -> None:
+    reference_dir = tmp_path / "references"
+    reference_dir.mkdir()
+    (reference_dir / "sample_b.tif").write_bytes(b"tif")
+    (reference_dir / "sample_a.tiff").write_bytes(b"tiff")
+    (reference_dir / "sample.npy").write_bytes(b"npy")
+
+    paths, normalization_mode, reference_root = pipeline.discover_reference_images(
+        {"real_reference_path": str(reference_dir), "real_reference_num_samples": 2},
+        _run_resolution(tmp_path / "run", model_type="sd_uncond"),
+    )
+
+    assert [path.name for path in paths] == ["sample.npy", "sample_a.tiff"]
+    assert normalization_mode == pipeline.UINT8_LINEAR
+    assert reference_root == reference_dir

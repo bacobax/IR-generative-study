@@ -14,7 +14,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from src.algorithms.stable_diffusion.data import ir_npy_to_normalized_rgb
-from src.core.normalization import UINT8_LINEAR
+from src.core.normalization import UINT8_LINEAR, raw_array_to_png_uint8
 
 
 def load_image_rgb(
@@ -22,11 +22,16 @@ def load_image_rgb(
     *,
     normalization_mode: str = UINT8_LINEAR,
 ) -> Image.Image:
-    """Load an image path as RGB, converting single-channel FLIR arrays when needed."""
+    """Load an image path as RGB, converting single-channel arrays when needed."""
     image_path = Path(path)
     suffix = image_path.suffix.lower()
     if suffix == ".npy":
         return ir_npy_to_normalized_rgb(image_path, normalization_mode=normalization_mode)
+    if suffix in {".tif", ".tiff"}:
+        with Image.open(image_path) as image:
+            arr = np.asarray(image)
+        preview = raw_array_to_png_uint8(arr, normalization_mode=normalization_mode)
+        return Image.fromarray(preview).convert("RGB")
     if suffix in {".png", ".jpg", ".jpeg"}:
         with Image.open(image_path) as image:
             return image.convert("RGB")

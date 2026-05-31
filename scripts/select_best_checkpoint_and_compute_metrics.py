@@ -523,21 +523,32 @@ def discover_reference_images(
     split_override: str | None = None,
     limit_override: int | None = None,
 ) -> tuple[list[Path], str, Path]:
+    reference_suffixes = {".npy", ".tif", ".tiff", ".png", ".jpg", ".jpeg"}
+
+    def collect_reference_paths(root: Path) -> list[Path]:
+        if not root.is_dir():
+            return []
+        return sorted(
+            path
+            for path in root.iterdir()
+            if path.is_file() and path.suffix.lower() in reference_suffixes
+        )
+
     real_reference_path = resolve_path(config.get("real_reference_path"))
     limit = limit_override if limit_override is not None else config.get("real_reference_num_samples")
     if real_reference_path is not None:
         if not real_reference_path.exists():
             raise FileNotFoundError(f"real_reference_path not found: {real_reference_path}")
         if real_reference_path.is_dir():
-            paths = sorted(real_reference_path.glob("*.npy"))
+            paths = collect_reference_paths(real_reference_path)
             if not paths and (real_reference_path / "images").is_dir():
-                paths = sorted((real_reference_path / "images").glob("*.npy"))
+                paths = collect_reference_paths(real_reference_path / "images")
         else:
             paths = [real_reference_path]
         if limit is not None:
             paths = paths[: int(limit)]
         if not paths:
-            raise ValueError(f"No real reference .npy images found in {real_reference_path}")
+            raise ValueError(f"No supported real reference images found in {real_reference_path}")
         return paths, UINT8_LINEAR, real_reference_path
 
     dataset_id = config.get("dataset_id")
@@ -556,13 +567,13 @@ def discover_reference_images(
 
     target = resolve_dataset_target(str(dataset_id))
     split_dir = target.split_dir(split)
-    paths = sorted(split_dir.glob("*.npy"))
+    paths = collect_reference_paths(split_dir)
     if not paths and (split_dir / "images").is_dir():
-        paths = sorted((split_dir / "images").glob("*.npy"))
+        paths = collect_reference_paths(split_dir / "images")
     if limit is not None:
         paths = paths[: int(limit)]
     if not paths:
-        raise ValueError(f"No real reference .npy images found in {split_dir}")
+        raise ValueError(f"No supported real reference images found in {split_dir}")
     return paths, target.normalization_mode, split_dir
 
 
