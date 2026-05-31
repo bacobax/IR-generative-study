@@ -128,10 +128,18 @@ def build_feature_extractor(
     raise ValueError("Unsupported feature_extractor={!r}. Expected 'dinov2' or 'inception'.".format(name))
 
 
-def _load_cached_features(cache_path: Path) -> np.ndarray:
+def _load_cached_features(cache_path: Path, *, expected_metadata: Mapping[str, object] | None = None) -> np.ndarray:
     with np.load(cache_path, allow_pickle=False) as data:
         if "features" not in data:
             raise ValueError(f"Feature cache {cache_path} does not contain a 'features' array.")
+        if expected_metadata:
+            cached_metadata = json.loads(str(data["metadata"].item())) if "metadata" in data else {}
+            for key, value in expected_metadata.items():
+                if cached_metadata.get(key) != value:
+                    raise ValueError(
+                        f"Feature cache {cache_path} metadata mismatch for {key!r}: "
+                        f"{cached_metadata.get(key)!r} != {value!r}"
+                    )
         return np.asarray(data["features"], dtype=np.float32)
 
 
@@ -150,7 +158,12 @@ def extract_features(
     path_strings = [str(Path(path)) for path in paths]
     if cache.is_file() and not force:
         try:
-            cached = _load_cached_features(cache)
+            expected_metadata = {
+                "feature_extractor": extractor.name,
+                "normalization_mode": normalization_mode,
+                "num_images": len(path_strings),
+            }
+            cached = _load_cached_features(cache, expected_metadata=expected_metadata)
             if cached.shape[0] == len(path_strings):
                 return cached
         except (OSError, ValueError, EOFError):
@@ -178,6 +191,7 @@ def extract_features(
         "feature_extractor": extractor.name,
         "feature_config": dict(extractor.config),
         "normalization_mode": normalization_mode,
+        "num_images": len(path_strings),
     }
     if metadata:
         payload.update(dict(metadata))

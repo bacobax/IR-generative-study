@@ -69,14 +69,14 @@ done
 if [[ "${DRY_RUN}" = "1" || "${DRY_RUN}" = "true" ]]; then
   echo "DRY RUN: commands that would be submitted"
   echo sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_FULL_CONFIG}" "${FM_WORKER}"
-  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-5k --time=12:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_5K_CONFIG}" "${FM_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-5k --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_5K_CONFIG}" "${FM_WORKER}"
   echo sbatch --chdir="${PROJECT_ROOT}" --job-name=fm-ot-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_2K_CONFIG}" "${FM_WORKER}"
   echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_FULL_CONFIG}" "${SD_WORKER}"
-  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-5k --time=12:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_5K_CONFIG}" "${SD_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-5k --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_5K_CONFIG}" "${SD_WORKER}"
   echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_2K_CONFIG}" "${SD_WORKER}"
-  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-full --time=12:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_FULL_CONFIG}" "${SD_STAGE1_WORKER}"
-  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-5k --time=06:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_5K_CONFIG}" "${SD_STAGE1_WORKER}"
-  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-2k --time=03:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_2K_CONFIG}" "${SD_STAGE1_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-full --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_FULL_CONFIG}" "${SD_STAGE1_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-5k --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_5K_CONFIG}" "${SD_STAGE1_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_2K_CONFIG}" "${SD_STAGE1_WORKER}"
   exit 0
 fi
 
@@ -92,5 +92,5 @@ sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-uncond-2k --time=05:00:00 --expor
 
 echo "Submitting SD LoRA r8 jobs"
 sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_FULL_CONFIG}" "${SD_STAGE1_WORKER}"
-sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-5k --time=12:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_5K_CONFIG}" "${SD_STAGE1_WORKER}"
-sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-2k --time=06:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_2K_CONFIG}" "${SD_STAGE1_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-5k --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_5K_CONFIG}" "${SD_STAGE1_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --job-name=sd-lora-r8-2k --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_2K_CONFIG}" "${SD_STAGE1_WORKER}"

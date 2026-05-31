@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sel-flir-stage1
 #SBATCH --account=aip-mpederso
-#SBATCH --time=00:05:00
+#SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=48G
 #SBATCH --gpus-per-node=h100:1
@@ -19,6 +19,7 @@ else
   CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 fi
 PREFLIGHT="${PREFLIGHT:-0}"
+GENERATION_SMOKE_TEST="${GENERATION_SMOKE_TEST:-0}"
 CLEANUP_CHECKPOINTS="${CLEANUP_CHECKPOINTS:-1}"
 
 export FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY="${FLOW_MATCHING_DISABLE_DIFFUSERS_SCIPY:-1}"
@@ -49,6 +50,7 @@ echo "Project root: ${PROJECT_ROOT}"
 echo "Conda env: ${ENV_NAME}"
 echo "Checkpoint-selection config: ${CONFIG}"
 echo "PREFLIGHT: ${PREFLIGHT}"
+echo "GENERATION_SMOKE_TEST: ${GENERATION_SMOKE_TEST}"
 echo "CLEANUP_CHECKPOINTS: ${CLEANUP_CHECKPOINTS}"
 echo "PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
@@ -72,6 +74,9 @@ grep -nE "^(stage1_num_images|stage2_extra_images|stage3_extra_images|generation
 EXTRA_ARGS=()
 if [ "${PREFLIGHT}" = "1" ] || [ "${PREFLIGHT}" = "true" ]; then
   EXTRA_ARGS+=(--preflight)
+fi
+if [ "${GENERATION_SMOKE_TEST}" = "1" ] || [ "${GENERATION_SMOKE_TEST}" = "true" ]; then
+  EXTRA_ARGS+=(--generation-smoke-test)
 fi
 if [ "${CLEANUP_CHECKPOINTS}" = "1" ] || [ "${CLEANUP_CHECKPOINTS}" = "true" ]; then
   EXTRA_ARGS+=(--cleanup-checkpoints)

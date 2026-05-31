@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT_PATH = Path("scripts/select_best_checkpoint_and_compute_metrics.py").resolve()
@@ -511,3 +512,152 @@ def test_discover_reference_images_accepts_explicit_tiff_reference_path(tmp_path
     assert [path.name for path in paths] == ["sample.npy", "sample_a.tiff"]
     assert normalization_mode == pipeline.UINT8_LINEAR
     assert reference_root == reference_dir
+
+
+def test_validate_generation_dir_rejects_wrong_resolution_and_black_cache(tmp_path: Path) -> None:
+    images_dir = tmp_path / "generated"
+    images_dir.mkdir()
+    pipeline.np.save(images_dir / "sample_000000.npy", pipeline.np.zeros((128, 128), dtype=pipeline.np.uint8))
+
+    missing, complete = pipeline.validate_or_prepare_generation_dir(
+        images_dir,
+        n_images=1,
+        overwrite=False,
+        expected_hw=(512, 512),
+        min_std=1e-6,
+        normalization_mode=pipeline.UINT8_LINEAR,
+    )
+
+    assert missing == [0]
+    assert complete is False
+    assert not (images_dir / "sample_000000.npy").exists()
+
+    pipeline.np.save(images_dir / "sample_000000.npy", pipeline.np.zeros((512, 512), dtype=pipeline.np.uint8))
+    missing, complete = pipeline.validate_or_prepare_generation_dir(
+        images_dir,
+        n_images=1,
+        overwrite=False,
+        expected_hw=(512, 512),
+        min_std=1e-6,
+        normalization_mode=pipeline.UINT8_LINEAR,
+    )
+
+    assert missing == [0]
+    assert complete is False
+    assert not (images_dir / "sample_000000.npy").exists()
+
+    pipeline.np.save(
+        images_dir / "sample_000000.npy",
+        pipeline.np.linspace(-1.0, 1.0, 512 * 512, dtype=pipeline.np.float32).reshape(512, 512),
+    )
+    missing, complete = pipeline.validate_or_prepare_generation_dir(
+        images_dir,
+        n_images=1,
+        overwrite=False,
+        expected_hw=(512, 512),
+        min_std=1e-6,
+        normalization_mode=pipeline.UINT8_LINEAR,
+    )
+
+    assert missing == [0]
+    assert complete is False
+    assert not (images_dir / "sample_000000.npy").exists()
+
+
+def test_native_generation_saves_raw_domain_512_nonblack_arrays(tmp_path: Path, monkeypatch) -> None:
+    from scripts.standalone import generate_checkpoint_quality_comparison as helpers
+
+    class FakeSampler:
+        device = "cpu"
+
+        def sample(self, *, steps: int, batch_size: int):
+            del steps, batch_size
+            return pipeline.torch.zeros((1, 1, 64, 64))
+
+        def sample_euler(self, *, steps: int, batch_size: int):
+            del steps, batch_size
+            return pipeline.torch.zeros((1, 1, 64, 64))
+
+        def decode(self, latents):
+            del latents
+            return pipeline.torch.linspace(-1.0, 1.0, 512 * 512).reshape(1, 1, 512, 512)
+
+    for model_family, model_type in [
+        ("fm", "latent_flow_matching"),
+        ("sd", "sd_uncond"),
+    ]:
+        fake_helpers = SimpleNamespace(
+            resolve_run_dirs=lambda run_dir: SimpleNamespace(pipeline_dir=Path(run_dir)),
+            detect_run_kind=lambda pipeline_dir, preset, model_family, active_family=model_family: SimpleNamespace(
+                model_family=active_family,
+                layout_conditioned=False,
+                layout_variant="none",
+            ),
+            _build_fm_sampler=lambda **kwargs: FakeSampler(),
+            _build_sd_sampler=lambda **kwargs: FakeSampler(),
+            _normalization_mode_from_preset=lambda preset: pipeline.UINT8_LINEAR,
+            tensor_to_output_array=helpers.tensor_to_output_array,
+        )
+        monkeypatch.setattr(pipeline, "_qcmp_helpers", lambda active_helpers=fake_helpers: active_helpers)
+        images_dir = tmp_path / model_family / "generated"
+
+        pipeline.generate_native_samples(
+            run=_run_resolution(tmp_path / model_family / "run", model_type=model_type),
+            checkpoint=pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "dummy.pt"), "epoch", epoch=1),
+            images_dir=images_dir,
+            seeds=[123],
+            config={"num_inference_steps": 1},
+            device="cpu",
+        )
+
+        arr = pipeline.np.load(images_dir / "sample_000000.npy")
+        assert arr.shape == (512, 512)
+        assert arr.dtype == pipeline.np.uint8
+        assert float(arr.std()) > 1.0
+
+
+def test_sd_lora_generation_uses_preset_resolution(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+
+    class FakePipe:
+        def __call__(self, prompt, **kwargs):
+            del prompt
+            height = int(kwargs["height"])
+            width = int(kwargs["width"])
+            calls.append((height, width))
+            image = pipeline.Image.fromarray(
+                pipeline.np.full((height, width, 3), 128, dtype=pipeline.np.uint8)
+            )
+            return SimpleNamespace(images=[image])
+
+    monkeypatch.setattr(
+        pipeline,
+        "build_sd_stage1_pipeline",
+        lambda run, checkpoint, *, config, device: (
+            FakePipe(),
+            {"normalization_mode": pipeline.UINT8_LINEAR, "prompt_text": "thermal image"},
+        ),
+    )
+    run = pipeline.RunResolution(
+        run_identifier="lora",
+        run_dir=tmp_path / "run",
+        model_type="sd_lora",
+        sampler_name=None,
+        sampling_config_path=None,
+        preset={"resolution": 512},
+        generation_backend_used="diffusers_stable_diffusion_lora",
+    )
+    images_dir = tmp_path / "generated"
+
+    pipeline.generate_sd_stage1_samples(
+        run=run,
+        checkpoint=pipeline.CheckpointCandidate("step_1", str(tmp_path / "checkpoint-1"), "step", step=1),
+        images_dir=images_dir,
+        seeds=[123],
+        config={"num_inference_steps": 1},
+        device="cpu",
+    )
+
+    arr = pipeline.np.load(images_dir / "sample_000000.npy")
+    assert calls == [(512, 512)]
+    assert arr.shape == (512, 512)

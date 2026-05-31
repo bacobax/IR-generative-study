@@ -32,6 +32,8 @@ from src.core.data.layout_batching import collate_layout_batch
 from src.core.data.dataset_targets import resolve_dataset_target
 from src.core.diffusers_compat import import_diffusers_attr
 from src.core.normalization import (
+    RAW_UINT16_PERCENTILE,
+    SENTINEL2_REFLECTANCE,
     UINT8_LINEAR,
 )
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
@@ -506,8 +508,27 @@ def _build_sd_sampler(
 
 
 def tensor_to_output_array(image: torch.Tensor, *, normalization_mode: str) -> np.ndarray:
-    del normalization_mode
-    return image.detach().cpu().to(torch.float32).numpy().astype(np.float32, copy=False)
+    arr = image.detach().cpu().to(torch.float32).numpy()
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    if arr.ndim == 3 and arr.shape[-1] == 1:
+        arr = arr[..., 0]
+
+    scaled = (np.clip(arr, -1.0, 1.0) + 1.0) / 2.0
+    if normalization_mode == RAW_UINT16_PERCENTILE:
+        from src.core.constants import P0001_PERCENTILE_RAW_IMAGES, RAW_RANGE
+
+        raw = scaled * RAW_RANGE + P0001_PERCENTILE_RAW_IMAGES
+        return np.clip(np.rint(raw), 0, 65535).astype(np.uint16)
+    if normalization_mode == UINT8_LINEAR:
+        return np.clip(np.rint(scaled * 255.0), 0, 255).astype(np.uint8)
+    if normalization_mode == SENTINEL2_REFLECTANCE:
+        return np.clip(np.rint(scaled * 10000.0), 0, 10000).astype(np.uint16)
+    raise ValueError(
+        f"Unknown normalization_mode={normalization_mode!r}. "
+        f"Expected one of: {RAW_UINT16_PERCENTILE!r}, "
+        f"{UINT8_LINEAR!r}, {SENTINEL2_REFLECTANCE!r}"
+    )
 
 
 def tensor_array_to_preview_uint8(arr: np.ndarray) -> np.ndarray:

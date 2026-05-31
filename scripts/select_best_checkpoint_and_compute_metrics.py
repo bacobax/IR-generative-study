@@ -102,6 +102,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="After each completed run, delete non-selected training checkpoints and write cleanup manifests.",
     )
+    parser.add_argument(
+        "--generation-smoke-test",
+        action="store_true",
+        help="Generate and validate one sample for one checkpoint per run, then exit before metrics.",
+    )
     return parser.parse_args(argv)
 
 
@@ -163,11 +168,46 @@ def expected_generated_paths(images_dir: Path, n_images: int) -> list[Path]:
     return [images_dir / f"sample_{idx:06d}.npy" for idx in range(int(n_images))]
 
 
-def _generated_npy_is_valid(path: Path) -> bool:
+def _generated_npy_is_valid(
+    path: Path,
+    *,
+    expected_hw: tuple[int, int] | None = None,
+    min_std: float | None = None,
+    normalization_mode: str | None = None,
+) -> bool:
     arr = None
     try:
         arr = np.load(path, mmap_mode="r", allow_pickle=False)
-        _ = arr.shape
+        shape = tuple(int(dim) for dim in arr.shape)
+        if expected_hw is not None:
+            expected_h, expected_w = expected_hw
+            valid_shapes = {
+                (expected_h, expected_w),
+                (1, expected_h, expected_w),
+                (3, expected_h, expected_w),
+                (expected_h, expected_w, 1),
+                (expected_h, expected_w, 3),
+            }
+            if shape not in valid_shapes:
+                return False
+        arr_view = np.asarray(arr)
+        if normalization_mode == UINT8_LINEAR:
+            if float(arr_view.min()) < 0.0 or float(arr_view.max()) > 255.0:
+                return False
+            if float(arr_view.max()) <= 1.5:
+                return False
+        elif normalization_mode == "sentinel2_reflectance":
+            if float(arr_view.min()) < 0.0 or float(arr_view.max()) > 10000.0:
+                return False
+            if float(arr_view.max()) <= 1.5:
+                return False
+        elif normalization_mode == "raw_uint16_percentile":
+            if float(arr_view.min()) < 0.0 or float(arr_view.max()) > 65535.0:
+                return False
+            if float(arr_view.max()) <= 1.5:
+                return False
+        if min_std is not None and float(arr_view.std()) <= float(min_std):
+            return False
         return True
     except (OSError, ValueError, EOFError):
         return False
@@ -191,6 +231,9 @@ def validate_or_prepare_generation_dir(
     *,
     n_images: int,
     overwrite: bool,
+    expected_hw: tuple[int, int] | None = None,
+    min_std: float | None = None,
+    normalization_mode: str | None = None,
 ) -> tuple[list[int], bool]:
     if overwrite and images_dir.exists():
         shutil.rmtree(images_dir)
@@ -207,7 +250,12 @@ def validate_or_prepare_generation_dir(
         if not path.is_file():
             missing.append(idx)
             continue
-        if not _generated_npy_is_valid(path):
+        if not _generated_npy_is_valid(
+            path,
+            expected_hw=expected_hw,
+            min_std=min_std,
+            normalization_mode=normalization_mode,
+        ):
             path.unlink(missing_ok=True)
             missing.append(idx)
     return missing, not missing
@@ -577,6 +625,28 @@ def discover_reference_images(
     return paths, target.normalization_mode, split_dir
 
 
+def generated_normalization_mode(config: Mapping[str, Any], run: RunResolution) -> str:
+    explicit = config.get("generated_normalization_mode")
+    if explicit not in (None, ""):
+        return str(explicit)
+    if (run.run_dir / "stage1_manifest.json").is_file():
+        manifest_mode = _load_stage1_manifest(run.run_dir).get("normalization_mode")
+        if manifest_mode not in (None, ""):
+            return str(manifest_mode)
+    dataset_id = config.get("dataset_id")
+    if not dataset_id and run.preset:
+        data_cfg = run.preset.get("data", {}) if isinstance(run.preset.get("data"), Mapping) else {}
+        dataset_id = data_cfg.get("dataset_id") or run.preset.get("dataset_id")
+    if dataset_id:
+        try:
+            from src.core.data.dataset_targets import resolve_dataset_target
+
+            return str(resolve_dataset_target(str(dataset_id)).normalization_mode)
+        except Exception:
+            pass
+    return UINT8_LINEAR
+
+
 def get_device(config: Mapping[str, Any]) -> str:
     requested = config.get("device")
     if requested:
@@ -595,6 +665,32 @@ def get_weight_dtype(config: Mapping[str, Any], device: str) -> torch.dtype:
     if precision in {"fp32", "no", "none"}:
         return torch.float32
     raise ValueError(f"Unsupported mixed_precision={precision!r}")
+
+
+def _config_int(config: Mapping[str, Any], key: str) -> int | None:
+    value = config.get(key)
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def resolve_generation_hw(config: Mapping[str, Any], run: RunResolution) -> tuple[int, int]:
+    height = _config_int(config, "height")
+    width = _config_int(config, "width")
+    if height is not None and width is not None:
+        return height, width
+
+    image_size = _config_int(config, "image_size")
+    if image_size is None:
+        preset_data = run.preset.get("data", {}) if isinstance(run.preset.get("data"), Mapping) else {}
+        preset_image_size = preset_data.get("image_size")
+        if preset_image_size not in (None, ""):
+            image_size = int(preset_image_size)
+    if image_size is None and run.preset.get("resolution") not in (None, ""):
+        image_size = int(run.preset["resolution"])
+    if image_size is None:
+        image_size = 512
+    return height or image_size, width or image_size
 
 
 def build_sd_stage1_pipeline(run: RunResolution, checkpoint: CheckpointCandidate, *, config: Mapping[str, Any], device: str):
@@ -713,7 +809,7 @@ def save_analysis_previews_for_stage(
     if not image_paths:
         return {}
 
-    tile_size = int(config.get("analysis_preview_tile_size", 128))
+    tile_size = int(config.get("analysis_preview_tile_size") or resolve_generation_hw(config, run)[0])
     columns = int(config.get("analysis_preview_columns", 4))
     preview_dir = _analysis_preview_root(config, run.run_identifier) / checkpoint.checkpoint_identifier / stage
     preview_dir.mkdir(parents=True, exist_ok=True)
@@ -764,6 +860,7 @@ def save_run_analysis_previews(
 ) -> dict[str, Any]:
     if not bool(config.get("save_analysis_previews", True)):
         return {}
+    normalization_mode = generated_normalization_mode(config, run)
 
     checkpoints_by_stage: list[tuple[CheckpointCandidate, str]] = []
     checkpoints_by_stage.extend((candidate, "stage1") for candidate in discovery.candidates)
@@ -786,6 +883,7 @@ def save_run_analysis_previews(
             stage=stage,
             images_dir=images_dir,
             config=config,
+            normalization_mode=normalization_mode,
         )
         if metadata:
             stages.append(metadata)
@@ -815,8 +913,7 @@ def generate_sd_stage1_samples(
     negative_prompt = str(config.get("negative_prompt", ""))
     steps = int(config.get("num_inference_steps", config.get("sd_steps", 40)))
     guidance_scale = float(config.get("guidance_scale", 1.0))
-    height = int(config.get("height", config.get("image_size", 512)))
-    width = int(config.get("width", config.get("image_size", 512)))
+    height, width = resolve_generation_hw(config, run)
     normalization_mode = str(manifest.get("normalization_mode", UINT8_LINEAR))
 
     for idx, seed in tqdm(list(enumerate(seeds)), desc=f"Generating {checkpoint.checkpoint_identifier}", unit="img"):
@@ -954,10 +1051,16 @@ def ensure_generated_stage(
     device: str,
 ) -> tuple[Path, bool]:
     images_dir = stage_dir / "generated_npy_images"
+    expected_hw = resolve_generation_hw(config, run)
+    min_std = float(config.get("generated_min_std", 1e-6))
+    gen_normalization = generated_normalization_mode(config, run)
     missing, complete = validate_or_prepare_generation_dir(
         images_dir,
         n_images=len(seeds),
         overwrite=bool(config.get("overwrite_existing_generations", False)),
+        expected_hw=expected_hw,
+        min_std=min_std,
+        normalization_mode=gen_normalization,
     )
     if complete:
         metadata = {
@@ -992,6 +1095,9 @@ def ensure_generated_stage(
         images_dir,
         n_images=len(seeds),
         overwrite=False,
+        expected_hw=expected_hw,
+        min_std=min_std,
+        normalization_mode=gen_normalization,
     )
     if missing_after:
         raise RuntimeError(f"Generation incomplete in {images_dir}: missing {len(missing_after)} files")
@@ -1132,6 +1238,7 @@ def run_stage1(
             return list(payload.get("ranking", payload.get("metrics", [])))
 
     rows = []
+    gen_normalization = generated_normalization_mode(config, run)
     for checkpoint in discovery.candidates:
         images_dir, _cached = ensure_generated_stage(
             run=run,
@@ -1147,7 +1254,7 @@ def run_stage1(
             extractor=extractor,
             cache_path=run_output_dir / "features" / f"{checkpoint.checkpoint_identifier}_stage1.npz",
             config=config,
-            normalization_mode=UINT8_LINEAR,
+            normalization_mode=gen_normalization,
         )
         metrics = compute_metrics_from_paths(
             real_features=real_features,
@@ -1211,6 +1318,7 @@ def run_stage2(
             return list(payload.get("ranking", payload.get("metrics", [])))
 
     rows = []
+    gen_normalization = generated_normalization_mode(config, run)
     for checkpoint in top_candidates:
         stage2_images_dir, _cached = ensure_generated_stage(
             run=run,
@@ -1230,7 +1338,7 @@ def run_stage2(
             extractor=extractor,
             cache_path=run_output_dir / "features" / f"{checkpoint.checkpoint_identifier}_stage1_stage2.npz",
             config=config,
-            normalization_mode=UINT8_LINEAR,
+            normalization_mode=gen_normalization,
         )
         metrics = compute_metrics_from_paths(
             real_features=real_features,
@@ -1316,7 +1424,7 @@ def run_final_metrics(
         extractor=extractor,
         cache_path=run_output_dir / "features" / f"{selected.checkpoint_identifier}_final_2000.npz",
         config=config,
-        normalization_mode=UINT8_LINEAR,
+        normalization_mode=generated_normalization_mode(config, run),
     )
     metrics = compute_metrics_from_paths(
         real_features=real_features,
@@ -1338,7 +1446,7 @@ def run_final_metrics(
             device=device,
             batch_size=max(1, int(config.get("lpips_batch_size") or config.get("metric_batch_size") or 8)),
             real_normalization_mode=lpips_real_normalization,
-            generated_normalization_mode=UINT8_LINEAR,
+            generated_normalization_mode=generated_normalization_mode(config, run),
             resize_to=(
                 None
                 if config.get("lpips_resize_to") in (None, "none", "null", 0)
@@ -1591,6 +1699,61 @@ def _cached_candidate_by_id(
     )
 
 
+def _cached_generation_outputs_valid(
+    *,
+    run: RunResolution,
+    config: Mapping[str, Any],
+    stage1_ranking: Sequence[Mapping[str, Any]],
+    stage2_ranking: Sequence[Mapping[str, Any]],
+    final_metrics: Mapping[str, Any],
+) -> bool:
+    expected_hw = resolve_generation_hw(config, run)
+    min_std = float(config.get("generated_min_std", 1e-6))
+    gen_normalization = generated_normalization_mode(config, run)
+    seeds_by_stage = make_stage_seeds(config)
+
+    checks: list[tuple[Path, int]] = []
+    for row in stage1_ranking:
+        folder = row.get("generated_image_folder")
+        if folder:
+            checks.append((Path(str(folder)), len(seeds_by_stage["stage1"])))
+    for row in stage2_ranking:
+        stage1_folder = row.get("stage1_generated_image_folder")
+        stage2_folder = row.get("stage2_generated_image_folder")
+        if stage1_folder:
+            checks.append((Path(str(stage1_folder)), len(seeds_by_stage["stage1"])))
+        if stage2_folder:
+            checks.append((Path(str(stage2_folder)), len(seeds_by_stage["stage2"])))
+    for key, stage_name in (
+        ("stage1_generated_image_folder", "stage1"),
+        ("stage2_generated_image_folder", "stage2"),
+        ("stage3_generated_image_folder", "stage3"),
+    ):
+        folder = final_metrics.get(key)
+        if folder:
+            checks.append((Path(str(folder)), len(seeds_by_stage[stage_name])))
+
+    seen: set[Path] = set()
+    for folder, count in checks:
+        if folder in seen:
+            continue
+        seen.add(folder)
+        try:
+            missing, complete = validate_or_prepare_generation_dir(
+                folder,
+                n_images=count,
+                overwrite=False,
+                expected_hw=expected_hw,
+                min_std=min_std,
+                normalization_mode=gen_normalization,
+            )
+        except RuntimeError:
+            return False
+        if missing or not complete:
+            return False
+    return True
+
+
 def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any], *, cleanup_checkpoints: bool = False) -> dict[str, Any]:
     run = resolve_run(run_entry, config)
     run_output_dir = resolve_path(config.get("output_root") or "/scratch/bacobax02")
@@ -1621,6 +1784,17 @@ def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any], *, cleanup_
         final_metrics = load_json_if_valid(final_metrics_path)
         if stage1_payload is None or stage2_payload is None or final_metrics is None:
             stage1_payload = stage2_payload = final_metrics = None
+        else:
+            stage1_ranking_for_cache = list(stage1_payload.get("ranking", stage1_payload.get("metrics", [])))
+            stage2_ranking_for_cache = list(stage2_payload.get("ranking", stage2_payload.get("metrics", [])))
+            if not _cached_generation_outputs_valid(
+                run=run,
+                config=config,
+                stage1_ranking=stage1_ranking_for_cache,
+                stage2_ranking=stage2_ranking_for_cache,
+                final_metrics=final_metrics,
+            ):
+                stage1_payload = stage2_payload = final_metrics = None
     else:
         stage1_payload = stage2_payload = final_metrics = None
 
@@ -1802,7 +1976,8 @@ def run_one(run_entry: Mapping[str, Any], config: Mapping[str, Any], *, cleanup_
     return {"run_identifier": run.run_identifier, "output_dir": str(run_output_dir), **summary}
 
 
-def _preflight_sampling_resolution(run: RunResolution) -> dict[str, Any]:
+def _preflight_sampling_resolution(run: RunResolution, config: Mapping[str, Any]) -> dict[str, Any]:
+    output_h, output_w = resolve_generation_hw(config, run)
     if run.generation_backend_used.startswith("diffusers_stable_diffusion"):
         manifest_path = run.run_dir / "stage1_manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1810,6 +1985,7 @@ def _preflight_sampling_resolution(run: RunResolution) -> dict[str, Any]:
             "backend": run.generation_backend_used,
             "stage1_manifest": str(run.run_dir / "stage1_manifest.json"),
             "base_model": manifest.get("pretrained_model_name_or_path"),
+            "output_image_shape": [output_h, output_w],
             "note": "SD stage-1 generation uses the Diffusers pipeline/artifact loader.",
         }
 
@@ -1871,6 +2047,7 @@ def _preflight_sampling_resolution(run: RunResolution) -> dict[str, Any]:
         ]
         if resolved_unet_cfg.get("sample_size") is not None
         else None,
+        "output_image_shape": [output_h, output_w],
     }
 
 
@@ -1899,7 +2076,8 @@ def preflight_config(config: Mapping[str, Any]) -> dict[str, Any]:
                 "run_dir": str(run.run_dir),
                 "model_type": run.model_type,
                 "generation_backend_used": run.generation_backend_used,
-                "sampling_resolution": _preflight_sampling_resolution(run),
+                "sampling_resolution": _preflight_sampling_resolution(run, config),
+                "generated_normalization_mode": generated_normalization_mode(config, run),
                 "candidate_checkpoints": discovery.candidates,
                 "excluded_checkpoints": discovery.excluded,
                 "real_reference_path": str(real_reference_path),
@@ -1907,6 +2085,55 @@ def preflight_config(config: Mapping[str, Any]) -> dict[str, Any]:
             }
         )
     return {"preflight": True, "runs": runs_payload}
+
+
+def run_generation_smoke_test(config: Mapping[str, Any]) -> dict[str, Any]:
+    device = get_device(config)
+    smoke_config = dict(config)
+    smoke_config["overwrite_existing_generations"] = True
+    output_root = resolve_path(config.get("output_root") or "/scratch/bacobax02")
+    if output_root is None:
+        raise ValueError("output_root cannot be empty.")
+    rows = []
+    for run_entry in config.get("runs") or []:
+        run = resolve_run(run_entry, config)
+        discovery = discover_candidate_checkpoints(
+            run.run_dir,
+            model_type=run.model_type,
+            checkpoint_min_epoch=int(config.get("checkpoint_min_epoch", 50)),
+            checkpoint_min_step=config.get("checkpoint_min_step"),
+        )
+        if not discovery.candidates:
+            raise RuntimeError(f"No candidate checkpoints discovered for smoke test: {run.run_identifier}")
+        checkpoint = discovery.candidates[0]
+        stage_dir = output_root / run.run_identifier / "_generation_smoke" / checkpoint.checkpoint_identifier
+        images_dir, _cached = ensure_generated_stage(
+            run=run,
+            checkpoint=checkpoint,
+            stage_dir=stage_dir,
+            seeds=[int(config.get("generation_seed", 1234))],
+            config=smoke_config,
+            device=device,
+        )
+        sample_path = images_dir / "sample_000000.npy"
+        arr = np.load(sample_path, allow_pickle=False)
+        rows.append(
+            {
+                "run_identifier": run.run_identifier,
+                "checkpoint_identifier": checkpoint.checkpoint_identifier,
+                "generated_sample": str(sample_path),
+                "shape": list(arr.shape),
+                "dtype": str(arr.dtype),
+                "min": float(arr.min()),
+                "max": float(arr.max()),
+                "std": float(arr.std()),
+                "expected_hw": list(resolve_generation_hw(config, run)),
+                "generated_normalization_mode": generated_normalization_mode(config, run),
+            }
+        )
+    payload = {"generation_smoke_test": True, "device": device, "runs": rows, "timestamp": utc_timestamp()}
+    save_json(output_root / "generation_smoke_summary.json", payload)
+    return payload
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -1926,6 +2153,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.preflight:
         print(json.dumps(_jsonable(preflight_config(config)), indent=2, sort_keys=True))
+        return
+    if args.generation_smoke_test:
+        print(json.dumps(_jsonable(run_generation_smoke_test(config)), indent=2, sort_keys=True))
         return
 
     summaries = []
