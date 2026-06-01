@@ -61,10 +61,6 @@ function compactLabel(value: unknown): string {
   return String(value);
 }
 
-function chartLabel(row: CheckpointSelectionRunRow): string {
-  return row.run.length > 28 ? `${row.run.slice(0, 25)}...` : row.run;
-}
-
 function stageRows(rows: CheckpointSelectionRunDetail["stage1_ranking"]): Array<Record<string, number | string>> {
   return rows.map((row) => ({
     checkpoint: compactLabel(row.checkpoint_identifier),
@@ -96,7 +92,7 @@ function MetricCharts({ runs }: { runs: CheckpointSelectionRunRow[] }) {
       {METRIC_KEYS.map((metric) => {
         const data = runs
           .map((run) => ({
-            run: chartLabel(run),
+            run: run.run,
             value: metricValue(run.metrics, metric),
           }))
           .filter((row) => row.value !== null);
@@ -110,10 +106,17 @@ function MetricCharts({ runs }: { runs: CheckpointSelectionRunRow[] }) {
               <p className="supporting-copy">{metric === "Intra-LPIPS" ? "higher is better" : "lower is better"}</p>
             </div>
             {data.length > 0 ? (
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={data} margin={{ left: 4, right: 12, bottom: 52 }}>
+              <ResponsiveContainer width="100%" height={310}>
+                <BarChart data={data} margin={{ left: 4, right: 18, bottom: 128 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="run" angle={-30} textAnchor="end" interval={0} height={72} />
+                  <XAxis
+                    dataKey="run"
+                    angle={-38}
+                    textAnchor="end"
+                    interval={0}
+                    height={150}
+                    tickMargin={12}
+                  />
                   <YAxis tickFormatter={(value) => formatMetric(Number(value))} />
                   <Tooltip formatter={(value: number) => formatMetric(value)} />
                   <Bar dataKey="value" fill="#3d6cc8" radius={[6, 6, 0, 0]} />
