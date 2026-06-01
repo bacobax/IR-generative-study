@@ -132,6 +132,9 @@ Main routes:
 - `POST /api/flir-analysis/partition-comparisons`
 - `POST /api/flir-analysis/examples`
 - `GET /api/flir-analysis/images/{dataset_id}/{image_key}`
+- `POST /api/checkpoint-selection/catalog`
+- `POST /api/checkpoint-selection/run`
+- `GET /api/checkpoint-selection/preview?root=<root>&relative_path=<path>`
 
 The web app now supports both discovered dataset roots:
 
@@ -162,6 +165,11 @@ Build the production bundle with:
 ```bash
 npm run build
 ```
+
+The same frontend includes a **Checkpoint Selection** view. Point it at a ROOT
+such as `artifacts/generated/checkpoint_selection` or a scratch folder like
+`/scratch/bacobax2/killarney_scratch` to compare detected run summaries,
+rankings, final metrics, and generated preview grids.
 
 ## Shell scripts
 

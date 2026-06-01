@@ -1,5 +1,9 @@
 import type {
   CollateralResponse,
+  CheckpointSelectionCatalogRequest,
+  CheckpointSelectionCatalogResponse,
+  CheckpointSelectionRunDetail,
+  CheckpointSelectionRunRequest,
   DatasetId,
   DatasetsResponse,
   ExamplesResponse,
@@ -37,6 +41,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
+}
+
+export function getCheckpointSelectionPreviewUrl(root: string, relativePath: string): string {
+  const params = new URLSearchParams({ root, relative_path: relativePath });
+  return `${API_BASE_URL}/api/checkpoint-selection/preview?${params.toString()}`;
 }
 
 export function getDatasets(): Promise<DatasetsResponse> {
@@ -92,6 +101,24 @@ export function getExamples(payload: {
   example_count?: number;
 }): Promise<ExamplesResponse> {
   return request<ExamplesResponse>("/api/flir-analysis/examples", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getCheckpointSelectionCatalog(
+  payload: CheckpointSelectionCatalogRequest,
+): Promise<CheckpointSelectionCatalogResponse> {
+  return request<CheckpointSelectionCatalogResponse>("/api/checkpoint-selection/catalog", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getCheckpointSelectionRun(
+  payload: CheckpointSelectionRunRequest,
+): Promise<CheckpointSelectionRunDetail> {
+  return request<CheckpointSelectionRunDetail>("/api/checkpoint-selection/run", {
     method: "POST",
     body: JSON.stringify(payload),
   });

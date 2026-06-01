@@ -27,6 +27,7 @@ import {
   getOptions,
   getPartitionComparisons,
 } from "./api";
+import { CheckpointSelectionView } from "./CheckpointSelectionView";
 import { InfoHelp } from "./InfoHelp";
 import {
   helpTextForAnnotationClassDistribution,
@@ -522,6 +523,7 @@ function GroupDetailCard({
 }
 
 export default function App() {
+  const [appMode, setAppMode] = useState<"subgroup" | "checkpoint">("subgroup");
   const [datasetCatalog, setDatasetCatalog] = useState<DatasetOption[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<DatasetId | null>(null);
   const [datasetsLoading, setDatasetsLoading] = useState(true);
@@ -841,6 +843,27 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <nav className="app-mode-toggle" aria-label="Analysis view">
+        <button
+          type="button"
+          className={appMode === "subgroup" ? "active" : ""}
+          onClick={() => setAppMode("subgroup")}
+        >
+          Subgroup Analysis
+        </button>
+        <button
+          type="button"
+          className={appMode === "checkpoint" ? "active" : ""}
+          onClick={() => setAppMode("checkpoint")}
+        >
+          Checkpoint Selection
+        </button>
+      </nav>
+
+      {appMode === "checkpoint" ? (
+        <CheckpointSelectionView />
+      ) : (
+        <>
       <header className="hero">
         <div className="hero__copy">
           <p className="eyebrow">Subgroup Analysis Workspace</p>
@@ -1232,6 +1255,8 @@ export default function App() {
           </section>
         </>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

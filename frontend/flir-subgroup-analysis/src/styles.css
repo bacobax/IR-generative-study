@@ -158,8 +158,21 @@ code {
   background: rgba(61, 108, 200, 0.08);
 }
 
+.app-mode-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 251, 244, 0.86);
+  box-shadow: 0 10px 28px rgba(80, 46, 26, 0.08);
+}
+
 .phase-toggle button,
-.selection-toolbar__actions button {
+.selection-toolbar__actions button,
+.app-mode-toggle button,
+.primary-action {
   border: none;
   cursor: pointer;
   border-radius: 999px;
@@ -169,9 +182,16 @@ code {
 }
 
 .phase-toggle button.active,
-.selection-toolbar__actions button:not(.secondary) {
+.selection-toolbar__actions button:not(.secondary),
+.app-mode-toggle button.active,
+.primary-action {
   background: var(--accent);
   color: #fff7f4;
+}
+
+.primary-action:disabled {
+  cursor: wait;
+  opacity: 0.75;
 }
 
 .selection-toolbar__actions button.secondary {
@@ -614,10 +634,116 @@ tbody tr:hover {
   color: #b91c1c;
 }
 
+.status-panel.warning {
+  background: rgba(202, 138, 4, 0.14);
+  color: #7a5200;
+}
+
 .details-stack {
   margin-top: 1.25rem;
   display: grid;
   gap: 1rem;
+}
+
+.checkpoint-hero {
+  margin-top: 0;
+}
+
+.checkpoint-root-grid {
+  align-items: end;
+}
+
+.checkpoint-chart-grid,
+.checkpoint-preview-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.checkpoint-chart-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checkpoint-summary-grid {
+  margin-top: 1rem;
+}
+
+.checkpoint-table table button {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.checkpoint-table tbody tr {
+  cursor: pointer;
+}
+
+.checkpoint-table tbody tr.selected-row {
+  background: rgba(200, 85, 61, 0.1);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  background: rgba(61, 108, 200, 0.1);
+  color: var(--blue);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-badge--complete {
+  background: rgba(47, 143, 104, 0.12);
+  color: var(--green);
+}
+
+.status-badge--partial {
+  background: rgba(202, 138, 4, 0.16);
+  color: #8a6200;
+}
+
+.status-badge--invalid {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.checkpoint-detail {
+  overflow: hidden;
+}
+
+.checkpoint-preview-header {
+  margin-top: 1.25rem;
+}
+
+.checkpoint-preview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checkpoint-preview {
+  border: 1px solid rgba(91, 58, 41, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 251, 245, 0.9);
+  padding: 1rem;
+}
+
+.checkpoint-preview img {
+  display: block;
+  width: 100%;
+  margin-top: 0.85rem;
+  border-radius: 14px;
+  background: rgba(46, 33, 24, 0.08);
+}
+
+.checkpoint-ranking-table {
+  max-height: 420px;
+  overflow: auto;
 }
 
 @media (max-width: 1180px) {
@@ -627,7 +753,9 @@ tbody tr:hover {
   .detail-chart-grid,
   .examples-grid,
   .count-grid,
-  .bin-spec-grid {
+  .bin-spec-grid,
+  .checkpoint-chart-grid,
+  .checkpoint-preview-grid {
     grid-template-columns: 1fr;
   }
 
@@ -659,6 +787,7 @@ tbody tr:hover {
   .examples-column__header,
   .example-card__meta,
   .selection-toolbar,
+  .app-mode-toggle,
   .panel-header__meta,
   .examples-column__title {
     flex-direction: column;

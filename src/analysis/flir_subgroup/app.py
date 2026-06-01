@@ -8,6 +8,7 @@ from typing import Mapping
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.analysis.checkpoint_selection_viewer import create_router as create_checkpoint_selection_router
 from src.analysis.flir_subgroup.api import create_router
 from src.analysis.flir_subgroup.constants import DEFAULT_FRONTEND_ORIGINS
 from src.analysis.flir_subgroup.datasets import DatasetConfig
@@ -33,6 +34,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(create_router(data_root=data_root, dataset_registry=dataset_registry))
+    app.include_router(create_checkpoint_selection_router())
 
     @app.get("/health")
     def healthcheck() -> dict:

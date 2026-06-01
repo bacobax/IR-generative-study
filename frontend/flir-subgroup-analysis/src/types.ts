@@ -240,3 +240,66 @@ export interface ExamplesResponse {
     }
   >;
 }
+
+export interface CheckpointSelectionCatalogRequest {
+  root: string;
+}
+
+export interface CheckpointSelectionRunRequest {
+  root: string;
+  run: string;
+  subroot?: string | null;
+}
+
+export interface CheckpointSelectionMetricMap {
+  KID?: number | null;
+  FID?: number | null;
+  MMD?: number | null;
+  "Intra-LPIPS"?: number | null;
+  [key: string]: number | null | undefined;
+}
+
+export interface CheckpointSelectionRunRow {
+  subroot: string | null;
+  run: string;
+  relative_path: string;
+  status: string;
+  selected_checkpoint: string | null;
+  model_type: string | null;
+  sampler_name: string | null;
+  timestamp: string | null;
+  metrics: CheckpointSelectionMetricMap;
+  available_preview_stages: string[];
+}
+
+export interface CheckpointSelectionCatalogResponse {
+  root: string;
+  subroots: Array<string | null>;
+  runs: CheckpointSelectionRunRow[];
+  warnings: string[];
+}
+
+export interface CheckpointSelectionPreview {
+  checkpoint_identifier: string | null;
+  stage: string | null;
+  num_preview_images: number | null;
+  preview_grid: string | null;
+  preview_images: string[];
+  tile_size?: number | null;
+  columns?: number | null;
+  timestamp?: string | null;
+}
+
+export interface CheckpointSelectionRunDetail extends CheckpointSelectionRunRow {
+  root: string;
+  selected_top_checkpoints: string[];
+  generation_backend_used: string | null;
+  metric_directions: Record<string, string>;
+  stage1_ranking: Array<Record<string, number | string | null>>;
+  stage2_ranking: Array<Record<string, number | string | null>>;
+  final_metrics: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  cleanup: Record<string, unknown> | null;
+  previews: CheckpointSelectionPreview[];
+  warnings: string[];
+}
