@@ -106,19 +106,21 @@ function MetricCharts({ runs }: { runs: CheckpointSelectionRunRow[] }) {
               <p className="supporting-copy">{metric === "Intra-LPIPS" ? "higher is better" : "lower is better"}</p>
             </div>
             {data.length > 0 ? (
-              <ResponsiveContainer width="100%" height={310}>
-                <BarChart data={data} margin={{ left: 4, right: 18, bottom: 128 }}>
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={data} margin={{ left: 4, right: 18, bottom: 12 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis
                     dataKey="run"
-                    angle={-38}
-                    textAnchor="end"
                     interval={0}
-                    height={150}
-                    tickMargin={12}
+                    height={12}
+                    tick={false}
+                    axisLine
                   />
                   <YAxis tickFormatter={(value) => formatMetric(Number(value))} />
-                  <Tooltip formatter={(value: number) => formatMetric(value)} />
+                  <Tooltip
+                    formatter={(value: number) => [formatMetric(value), metric]}
+                    labelFormatter={(label) => String(label)}
+                  />
                   <Bar dataKey="value" fill="#3d6cc8" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
