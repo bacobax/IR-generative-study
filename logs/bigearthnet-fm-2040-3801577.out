@@ -1,0 +1,299 @@
+[AugmentSchedule] start: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] start: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] warmup: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[AugmentSchedule] warmup: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[FM Epoch 1] loss: 1.471978
+[FM Epoch 2] loss: 1.013422
+[FM Epoch 3] loss: 0.865705
+  [Eval loss: 0.839527]
+  ✅ New best eval_loss=0.839527 at epoch 3 -> saved UNET/unet_fm_best.pt
+[FM Epoch 4] loss: 0.806639
+[FM Epoch 5] loss: 0.785991
+[FM Epoch 6] loss: 0.776885
+  [Eval loss: 1.536062]
+[FM Epoch 7] loss: 0.744214
+[FM Epoch 8] loss: 0.737131
+[FM Epoch 9] loss: 0.736885
+  [Eval loss: 1.328295]
+[FM Epoch 10] loss: 0.729141
+[FM Epoch 11] loss: 0.724600
+[FM Epoch 12] loss: 0.728942
+  [Eval loss: 1.163797]
+[FM Epoch 13] loss: 0.698894
+[FM Epoch 14] loss: 0.714309
+[FM Epoch 15] loss: 0.704663
+  [Eval loss: 1.029781]
+[FM Epoch 16] loss: 0.698817
+[FM Epoch 17] loss: 0.686049
+[FM Epoch 18] loss: 0.700374
+  [Eval loss: 0.942195]
+[FM Epoch 19] loss: 0.690724
+[FM Epoch 20] loss: 0.680029
+[FM Epoch 21] loss: 0.668230
+  [Eval loss: 0.882396]
+[FM Epoch 22] loss: 0.688095
+[FM Epoch 23] loss: 0.683591
+[FM Epoch 24] loss: 0.680508
+  [Eval loss: 0.841571]
+[FM Epoch 25] loss: 0.691961
+[FM Epoch 26] loss: 0.690775
+[FM Epoch 27] loss: 0.673419
+  [Eval loss: 0.820063]
+  ✅ New best eval_loss=0.820063 at epoch 27 -> saved UNET/unet_fm_best.pt
+[FM Epoch 28] loss: 0.672210
+[FM Epoch 29] loss: 0.680280
+[FM Epoch 30] loss: 0.678506
+  [Eval loss: 0.794983]
+  ✅ New best eval_loss=0.794983 at epoch 30 -> saved UNET/unet_fm_best.pt
+[AugmentSchedule] ramp: epoch=30 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] ramp: epoch=30 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[FM Epoch 31] loss: 0.669967
+[FM Epoch 32] loss: 0.661890
+[FM Epoch 33] loss: 0.664391
+  [Eval loss: 0.775210]
+  ✅ New best eval_loss=0.775210 at epoch 33 -> saved UNET/unet_fm_best.pt
+[FM Epoch 34] loss: 0.664964
+[FM Epoch 35] loss: 0.669741
+[FM Epoch 36] loss: 0.671420
+  [Eval loss: 0.777552]
+[FM Epoch 37] loss: 0.659205
+[FM Epoch 38] loss: 0.666892
+[FM Epoch 39] loss: 0.674997
+  [Eval loss: 0.753661]
+  ✅ New best eval_loss=0.753661 at epoch 39 -> saved UNET/unet_fm_best.pt
+[FM Epoch 40] loss: 0.668304
+[FM Epoch 41] loss: 0.654911
+[FM Epoch 42] loss: 0.666320
+  [Eval loss: 0.738137]
+  ✅ New best eval_loss=0.738137 at epoch 42 -> saved UNET/unet_fm_best.pt
+[FM Epoch 43] loss: 0.659535
+[FM Epoch 44] loss: 0.663159
+[FM Epoch 45] loss: 0.660141
+  [Eval loss: 0.734432]
+  ✅ New best eval_loss=0.734432 at epoch 45 -> saved UNET/unet_fm_best.pt
+[FM Epoch 46] loss: 0.647243
+[FM Epoch 47] loss: 0.658993
+[FM Epoch 48] loss: 0.672037
+  [Eval loss: 0.729235]
+  ✅ New best eval_loss=0.729235 at epoch 48 -> saved UNET/unet_fm_best.pt
+[FM Epoch 49] loss: 0.661388
+[FM Epoch 50] loss: 0.657820
+[FM Epoch 51] loss: 0.648877
+  [Eval loss: 0.718058]
+  ✅ New best eval_loss=0.718058 at epoch 51 -> saved UNET/unet_fm_best.pt
+[FM Epoch 52] loss: 0.658597
+[FM Epoch 53] loss: 0.661533
+[FM Epoch 54] loss: 0.659433
+  [Eval loss: 0.720490]
+[FM Epoch 55] loss: 0.664528
+[FM Epoch 56] loss: 0.655192
+[FM Epoch 57] loss: 0.656610
+  [Eval loss: 0.715101]
+  ✅ New best eval_loss=0.715101 at epoch 57 -> saved UNET/unet_fm_best.pt
+[FM Epoch 58] loss: 0.657914
+[FM Epoch 59] loss: 0.653647
+[FM Epoch 60] loss: 0.653194
+  [Eval loss: 0.709522]
+  ✅ New best eval_loss=0.709522 at epoch 60 -> saved UNET/unet_fm_best.pt
+[FM Epoch 61] loss: 0.651049
+[FM Epoch 62] loss: 0.651906
+[FM Epoch 63] loss: 0.664086
+  [Eval loss: 0.703183]
+  ✅ New best eval_loss=0.703183 at epoch 63 -> saved UNET/unet_fm_best.pt
+[FM Epoch 64] loss: 0.649270
+[FM Epoch 65] loss: 0.651854
+[FM Epoch 66] loss: 0.648112
+  [Eval loss: 0.704972]
+[FM Epoch 67] loss: 0.652931
+[FM Epoch 68] loss: 0.659142
+[FM Epoch 69] loss: 0.651979
+  [Eval loss: 0.690422]
+  ✅ New best eval_loss=0.690422 at epoch 69 -> saved UNET/unet_fm_best.pt
+[FM Epoch 70] loss: 0.651982
+[FM Epoch 71] loss: 0.654494
+[FM Epoch 72] loss: 0.655630
+  [Eval loss: 0.687235]
+  ✅ New best eval_loss=0.687235 at epoch 72 -> saved UNET/unet_fm_best.pt
+[FM Epoch 73] loss: 0.650124
+[FM Epoch 74] loss: 0.640988
+[FM Epoch 75] loss: 0.651502
+  [Eval loss: 0.686722]
+  ✅ New best eval_loss=0.686722 at epoch 75 -> saved UNET/unet_fm_best.pt
+[FM Epoch 76] loss: 0.648360
+[FM Epoch 77] loss: 0.656095
+[FM Epoch 78] loss: 0.655615
+  [Eval loss: 0.684430]
+  ✅ New best eval_loss=0.684430 at epoch 78 -> saved UNET/unet_fm_best.pt
+[FM Epoch 79] loss: 0.648182
+[FM Epoch 80] loss: 0.645652
+[FM Epoch 81] loss: 0.646926
+  [Eval loss: 0.685297]
+[FM Epoch 82] loss: 0.647405
+[FM Epoch 83] loss: 0.644546
+[FM Epoch 84] loss: 0.641899
+  [Eval loss: 0.677738]
+  ✅ New best eval_loss=0.677738 at epoch 84 -> saved UNET/unet_fm_best.pt
+[FM Epoch 85] loss: 0.651121
+[FM Epoch 86] loss: 0.639224
+[FM Epoch 87] loss: 0.643631
+  [Eval loss: 0.679798]
+[FM Epoch 88] loss: 0.639522
+[FM Epoch 89] loss: 0.637567
+[FM Epoch 90] loss: 0.640322
+  [Eval loss: 0.678741]
+[FM Epoch 91] loss: 0.640458
+[FM Epoch 92] loss: 0.649603
+[FM Epoch 93] loss: 0.646871
+  [Eval loss: 0.672135]
+  ✅ New best eval_loss=0.672135 at epoch 93 -> saved UNET/unet_fm_best.pt
+[FM Epoch 94] loss: 0.634845
+[FM Epoch 95] loss: 0.647303
+[FM Epoch 96] loss: 0.652329
+  [Eval loss: 0.677118]
+[FM Epoch 97] loss: 0.644786
+[FM Epoch 98] loss: 0.643703
+[FM Epoch 99] loss: 0.644324
+  [Eval loss: 0.671143]
+  ✅ New best eval_loss=0.671143 at epoch 99 -> saved UNET/unet_fm_best.pt
+[FM Epoch 100] loss: 0.646988
+[FM Epoch 101] loss: 0.643434
+[FM Epoch 102] loss: 0.639481
+  [Eval loss: 0.673396]
+[FM Epoch 103] loss: 0.637810
+[FM Epoch 104] loss: 0.637532
+[FM Epoch 105] loss: 0.646269
+  [Eval loss: 0.676277]
+[FM Epoch 106] loss: 0.642876
+[FM Epoch 107] loss: 0.648053
+[FM Epoch 108] loss: 0.646294
+  [Eval loss: 0.671119]
+  ✅ New best eval_loss=0.671119 at epoch 108 -> saved UNET/unet_fm_best.pt
+[FM Epoch 109] loss: 0.641611
+[FM Epoch 110] loss: 0.636950
+[FM Epoch 111] loss: 0.642559
+  [Eval loss: 0.671408]
+[FM Epoch 112] loss: 0.636521
+[FM Epoch 113] loss: 0.639785
+[FM Epoch 114] loss: 0.644532
+  [Eval loss: 0.665622]
+  ✅ New best eval_loss=0.665622 at epoch 114 -> saved UNET/unet_fm_best.pt
+[FM Epoch 115] loss: 0.637286
+[FM Epoch 116] loss: 0.644548
+[FM Epoch 117] loss: 0.650394
+  [Eval loss: 0.662700]
+  ✅ New best eval_loss=0.662700 at epoch 117 -> saved UNET/unet_fm_best.pt
+[FM Epoch 118] loss: 0.655298
+[FM Epoch 119] loss: 0.638786
+[FM Epoch 120] loss: 0.645784
+  [Eval loss: 0.670424]
+[AugmentSchedule] decay: epoch=120 p_crop=0.000 p_rot=0.000 p_hflip=0.600
+[AugmentSchedule] decay: epoch=120 p_crop=0.000 p_rot=0.000 p_hflip=0.600
+[FM Epoch 121] loss: 0.647194
+[FM Epoch 122] loss: 0.637882
+[FM Epoch 123] loss: 0.641774
+  [Eval loss: 0.662096]
+  ✅ New best eval_loss=0.662096 at epoch 123 -> saved UNET/unet_fm_best.pt
+[FM Epoch 124] loss: 0.636278
+[FM Epoch 125] loss: 0.637627
+[FM Epoch 126] loss: 0.636960
+  [Eval loss: 0.668140]
+[FM Epoch 127] loss: 0.641603
+[FM Epoch 128] loss: 0.628076
+[FM Epoch 129] loss: 0.634418
+  [Eval loss: 0.666853]
+[FM Epoch 130] loss: 0.644914
+[FM Epoch 131] loss: 0.639959
+[FM Epoch 132] loss: 0.637105
+  [Eval loss: 0.657957]
+  ✅ New best eval_loss=0.657957 at epoch 132 -> saved UNET/unet_fm_best.pt
+[FM Epoch 133] loss: 0.636183
+[FM Epoch 134] loss: 0.638760
+[FM Epoch 135] loss: 0.636581
+  [Eval loss: 0.663902]
+[FM Epoch 136] loss: 0.626677
+[FM Epoch 137] loss: 0.635691
+[FM Epoch 138] loss: 0.629939
+  [Eval loss: 0.660287]
+[FM Epoch 139] loss: 0.629184
+[FM Epoch 140] loss: 0.639446
+[FM Epoch 141] loss: 0.638260
+  [Eval loss: 0.661057]
+[FM Epoch 142] loss: 0.630770
+[FM Epoch 143] loss: 0.632035
+[FM Epoch 144] loss: 0.631747
+  [Eval loss: 0.657850]
+  ✅ New best eval_loss=0.657850 at epoch 144 -> saved UNET/unet_fm_best.pt
+[FM Epoch 145] loss: 0.634883
+[FM Epoch 146] loss: 0.639784
+[FM Epoch 147] loss: 0.635824
+  [Eval loss: 0.662306]
+[FM Epoch 148] loss: 0.647178
+[FM Epoch 149] loss: 0.625067
+[FM Epoch 150] loss: 0.636764
+  [Eval loss: 0.663278]
+[FM Epoch 151] loss: 0.637451
+[FM Epoch 152] loss: 0.638573
+[FM Epoch 153] loss: 0.637037
+  [Eval loss: 0.662917]
+[FM Epoch 154] loss: 0.631586
+[FM Epoch 155] loss: 0.624680
+[FM Epoch 156] loss: 0.637684
+  [Eval loss: 0.661213]
+[FM Epoch 157] loss: 0.631336
+[FM Epoch 158] loss: 0.626304
+[FM Epoch 159] loss: 0.642079
+  [Eval loss: 0.656429]
+  ✅ New best eval_loss=0.656429 at epoch 159 -> saved UNET/unet_fm_best.pt
+[FM Epoch 160] loss: 0.630769
+[FM Epoch 161] loss: 0.635137
+[FM Epoch 162] loss: 0.641222
+  [Eval loss: 0.661126]
+[FM Epoch 163] loss: 0.626980
+[FM Epoch 164] loss: 0.637059
+[FM Epoch 165] loss: 0.638866
+  [Eval loss: 0.655181]
+  ✅ New best eval_loss=0.655181 at epoch 165 -> saved UNET/unet_fm_best.pt
+[FM Epoch 166] loss: 0.634204
+[FM Epoch 167] loss: 0.633846
+[FM Epoch 168] loss: 0.636821
+  [Eval loss: 0.667365]
+[FM Epoch 169] loss: 0.636267
+[FM Epoch 170] loss: 0.632879
+[FM Epoch 171] loss: 0.633084
+  [Eval loss: 0.661799]
+[FM Epoch 172] loss: 0.623976
+[FM Epoch 173] loss: 0.630661
+[FM Epoch 174] loss: 0.627176
+  [Eval loss: 0.654640]
+  ✅ New best eval_loss=0.654640 at epoch 174 -> saved UNET/unet_fm_best.pt
+[FM Epoch 175] loss: 0.631848
+[FM Epoch 176] loss: 0.635000
+[FM Epoch 177] loss: 0.633118
+  [Eval loss: 0.656680]
+[FM Epoch 178] loss: 0.628558
+[FM Epoch 179] loss: 0.633304
+[FM Epoch 180] loss: 0.640631
+  [Eval loss: 0.658256]
+[FM Epoch 181] loss: 0.630159
+[FM Epoch 182] loss: 0.628640
+[FM Epoch 183] loss: 0.627701
+  [Eval loss: 0.659366]
+[FM Epoch 184] loss: 0.628738
+[FM Epoch 185] loss: 0.631080
+[FM Epoch 186] loss: 0.633900
+  [Eval loss: 0.659784]
+[FM Epoch 187] loss: 0.624952
+[FM Epoch 188] loss: 0.630401
+[FM Epoch 189] loss: 0.618337
+  [Eval loss: 0.652815]
+  ✅ New best eval_loss=0.652815 at epoch 189 -> saved UNET/unet_fm_best.pt
+[FM Epoch 190] loss: 0.631760
+[FM Epoch 191] loss: 0.624975
+[FM Epoch 192] loss: 0.634968
+  [Eval loss: 0.656570]
+[FM Epoch 193] loss: 0.634435
+[FM Epoch 194] loss: 0.631369
+[FM Epoch 195] loss: 0.628592
+  [Eval loss: 0.654678]
+[FM Epoch 196] loss: 0.636492

@@ -1,0 +1,47 @@
+Host: kn170
+Start time: Fri May 29 09:31:27 EDT 2026
+Project root: /project/6109890/bacobax2/ir-generative-study
+Conda env: diffusers-dev
+CUDA_VISIBLE_DEVICES from Slurm: 0
+SLURM_JOB_ID: 3800412
+SLURM_SUBMIT_DIR: /project/6109890/bacobax2/ir-generative-study
+SLURM_CPUS_PER_TASK: 10
+SLURM_MEM_PER_NODE: 32768
+SLURM_MEM_PER_CPU: <unset>
+CPU count: 10
+BigEarthNet subset size: 5100
+Config: /project/6109890/bacobax2/ir-generative-study/configs/datasets/bigearthnet_s2_b08_5x5_stride3/sd_adaptation/bigearthnet_s2_b08_5x5_stride3_lora_stage1_r8_train_5100.yaml
+MIXED_PRECISION: bf16
+/home/bacobax2/miniforge3/envs/diffusers-dev/bin/python
+Python 3.10.20
+Configured dataset:
+Configured subset manifest:
+4:subset_manifest: "train_5100_tile_balanced.json"
+Configured batch size:
+Configured LoRA rank:
+Fri May 29 09:31:27 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.159.03             Driver Version: 580.159.03     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          Off |   00000000:5D:00.0 Off |                    0 |
+| N/A   39C    P0             73W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+BigEarthNet LoRA 5100 stdout log: /project/6109890/bacobax2/ir-generative-study/logs/bigearthnet-lora-5100-3800412.out
+BigEarthNet LoRA 5100 stderr log: /project/6109890/bacobax2/ir-generative-study/logs/bigearthnet-lora-5100-3800412.err
+BigEarthNet LoRA 5100 exit code: 0
+Stdout log: /project/6109890/bacobax2/ir-generative-study/logs/bigearthnet-lora-5100-3800412.out
+Stderr log: /project/6109890/bacobax2/ir-generative-study/logs/bigearthnet-lora-5100-3800412.err
+End time: Fri May 29 15:26:45 EDT 2026

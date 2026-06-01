@@ -1,0 +1,80 @@
+05/21/2026 12:41:17 - INFO - src.cli.adapt_stable_diffusion_stage1 - [RANK 0] Distributed environment: NO
+Num processes: 1
+Process index: 0
+Local process index: 0
+Device: cuda
+
+Mixed precision type: no
+
+05/21/2026 12:41:17 - INFO - src.cli.adapt_stable_diffusion_stage1 - [RANK 0] Loading models...
+05/21/2026 12:41:17 - INFO - src.algorithms.stable_diffusion.models - Loading model components...
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/scheduler/scheduler_config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/scheduler/scheduler_config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/scheduler%2Fscheduler_config.json "HTTP/1.1 200 OK"
+{'dynamic_thresholding_ratio', 'variance_type', 'clip_sample_range', 'thresholding', 'timestep_spacing', 'sample_max_value', 'rescale_betas_zero_snr', 'prediction_type'} was not found in config. Values will be initialized to default values.
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/tokenizer/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/tokenizer/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+05/21/2026 12:41:18 - WARNING - huggingface_hub.utils._http - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/tokenizer%2Ftokenizer_config.json "HTTP/1.1 200 OK"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/runwayml/stable-diffusion-v1-5/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/runwayml/stable-diffusion-v1-5/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: GET https://huggingface.co/api/models/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:18 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/text_encoder%2Fconfig.json "HTTP/1.1 200 OK"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/text_encoder%2Fconfig.json "HTTP/1.1 200 OK"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/text_encoder/model.safetensors "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/text_encoder/model.safetensors "HTTP/1.1 302 Found"
+Loading weights:   0%|          | 0/196 [00:00<?, ?it/s]Loading weights:  83%|████████▎ | 163/196 [00:00<00:00, 1606.36it/s]Loading weights: 100%|██████████| 196/196 [00:00<00:00, 1617.27it/s]
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/vae/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/vae/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/vae%2Fconfig.json "HTTP/1.1 200 OK"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/vae/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:19 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/vae/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 404 Not Found"
+{'latents_std', 'use_quant_conv', 'use_post_quant_conv', 'shift_factor', 'force_upcast', 'scaling_factor', 'mid_block_add_attention', 'latents_mean'} was not found in config. Values will be initialized to default values.
+All model checkpoint weights were used when initializing AutoencoderKL.
+
+All the weights of AutoencoderKL were initialized from the model checkpoint at runwayml/stable-diffusion-v1-5.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use AutoencoderKL for predictions without further training.
+05/21/2026 12:41:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/unet/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/unet/config.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/stable-diffusion-v1-5/stable-diffusion-v1-5/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet%2Fconfig.json "HTTP/1.1 200 OK"
+05/21/2026 12:41:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 307 Temporary Redirect"
+05/21/2026 12:41:20 - INFO - httpx - HTTP Request: HEAD https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/unet/diffusion_pytorch_model.safetensors.index.json "HTTP/1.1 404 Not Found"
+{'reverse_transformer_layers_per_block', 'only_cross_attention', 'num_class_embeds', 'attention_type', 'encoder_hid_dim', 'resnet_time_scale_shift', 'resnet_skip_time_act', 'mid_block_only_cross_attention', 'addition_embed_type_num_heads', 'time_embedding_type', 'resnet_out_scale_factor', 'time_embedding_dim', 'time_cond_proj_dim', 'conv_in_kernel', 'addition_embed_type', 'addition_time_embed_dim', 'class_embeddings_concat', 'class_embed_type', 'time_embedding_act_fn', 'dropout', 'use_linear_projection', 'mid_block_type', 'transformer_layers_per_block', 'encoder_hid_dim_type', 'cross_attention_norm', 'timestep_post_act', 'num_attention_heads', 'conv_out_kernel', 'dual_cross_attention', 'upcast_attention', 'projection_class_embeddings_input_dim'} was not found in config. Values will be initialized to default values.
+All model checkpoint weights were used when initializing UNet2DConditionModel.
+
+All the weights of UNet2DConditionModel were initialized from the model checkpoint at runwayml/stable-diffusion-v1-5.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use UNet2DConditionModel for predictions without further training.
+05/21/2026 12:41:35 - INFO - src.cli.adapt_stable_diffusion_stage1 - [RANK 0] Creating dataloader...
+Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/adapt_stable_diffusion.py", line 93, in <module>
+    main()
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/adapt_stable_diffusion.py", line 89, in main
+    stage_main(delegated_argv)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/adapt_stable_diffusion_stage1.py", line 148, in main
+    train_dataloader, normalization_mode = create_dataloader(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/data.py", line 561, in create_dataloader
+    raw_dataset, img_col, cap_col = load_training_dataset(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/data.py", line 521, in load_training_dataset
+    return _build_local_training_dataset(
+  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/stable_diffusion/data.py", line 433, in _build_local_training_dataset
+    npy_files = filter_files_by_subset_manifest(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/subset_manifest.py", line 100, in filter_files_by_subset_manifest
+    selected = load_subset_manifest_file_names(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/subset_manifest.py", line 48, in load_subset_manifest_file_names
+    manifest_path = resolve_subset_manifest_path(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/subset_manifest.py", line 36, in resolve_subset_manifest_path
+    raise FileNotFoundError(
+FileNotFoundError: Subset manifest 'train_2000_bbox_stratified.json' was not found. Searched: /project/6109890/bacobax2/ir-generative-study/train_2000_bbox_stratified.json, /project/6109890/bacobax2/ir-generative-study/data/raw/flir_private_proxy_alignment_v18/subsets/train_2000_bbox_stratified.json
+slurmstepd: error: *** JOB 3695480 ON kn176 CANCELLED AT 2026-05-21T12:41:36 ***

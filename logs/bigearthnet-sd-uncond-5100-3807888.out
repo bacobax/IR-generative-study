@@ -1,0 +1,164 @@
+[AugmentSchedule] start: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] start: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] warmup: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[AugmentSchedule] warmup: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[SDUncond Epoch 1] loss: 0.688786
+[SDUncond Epoch 2] loss: 0.228715
+[SDUncond Epoch 3] loss: 0.207254
+  [Eval loss: 0.882209]
+  ✅ New best eval_loss=0.882209 at epoch 3 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 4] loss: 0.193258
+[SDUncond Epoch 5] loss: 0.194254
+[SDUncond Epoch 6] loss: 0.187522
+  [Eval loss: 0.483702]
+  ✅ New best eval_loss=0.483702 at epoch 6 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 7] loss: 0.185057
+[SDUncond Epoch 8] loss: 0.182176
+[SDUncond Epoch 9] loss: 0.188272
+  [Eval loss: 0.293598]
+  ✅ New best eval_loss=0.293598 at epoch 9 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 10] loss: 0.183494
+[SDUncond Epoch 11] loss: 0.186126
+[SDUncond Epoch 12] loss: 0.181458
+  [Eval loss: 0.222552]
+  ✅ New best eval_loss=0.222552 at epoch 12 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 13] loss: 0.179711
+[SDUncond Epoch 14] loss: 0.174304
+[SDUncond Epoch 15] loss: 0.172309
+  [Eval loss: 0.211547]
+  ✅ New best eval_loss=0.211547 at epoch 15 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 16] loss: 0.175653
+[SDUncond Epoch 17] loss: 0.176521
+[SDUncond Epoch 18] loss: 0.174312
+  [Eval loss: 0.197558]
+  ✅ New best eval_loss=0.197558 at epoch 18 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 19] loss: 0.172920
+[SDUncond Epoch 20] loss: 0.177854
+[SDUncond Epoch 21] loss: 0.170919
+  [Eval loss: 0.184894]
+  ✅ New best eval_loss=0.184894 at epoch 21 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 22] loss: 0.169347
+[SDUncond Epoch 23] loss: 0.176132
+[SDUncond Epoch 24] loss: 0.174444
+  [Eval loss: 0.187569]
+[SDUncond Epoch 25] loss: 0.169306
+[SDUncond Epoch 26] loss: 0.172979
+[SDUncond Epoch 27] loss: 0.178096
+  [Eval loss: 0.184541]
+  ✅ New best eval_loss=0.184541 at epoch 27 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 28] loss: 0.172832
+[SDUncond Epoch 29] loss: 0.165764
+[SDUncond Epoch 30] loss: 0.172870
+  [Eval loss: 0.181777]
+  ✅ New best eval_loss=0.181777 at epoch 30 -> saved UNET/unet_sd_uncond_best.pt
+[AugmentSchedule] ramp: epoch=30 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] ramp: epoch=30 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[SDUncond Epoch 31] loss: 0.171596
+[SDUncond Epoch 32] loss: 0.165660
+[SDUncond Epoch 33] loss: 0.170252
+  [Eval loss: 0.177173]
+  ✅ New best eval_loss=0.177173 at epoch 33 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 34] loss: 0.165572
+[SDUncond Epoch 35] loss: 0.174493
+[SDUncond Epoch 36] loss: 0.167172
+  [Eval loss: 0.176948]
+  ✅ New best eval_loss=0.176948 at epoch 36 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 37] loss: 0.166932
+[SDUncond Epoch 38] loss: 0.165796
+[SDUncond Epoch 39] loss: 0.175372
+  [Eval loss: 0.178040]
+[SDUncond Epoch 40] loss: 0.167571
+[SDUncond Epoch 41] loss: 0.168004
+[SDUncond Epoch 42] loss: 0.166964
+  [Eval loss: 0.180354]
+[SDUncond Epoch 43] loss: 0.165393
+[SDUncond Epoch 44] loss: 0.168914
+[SDUncond Epoch 45] loss: 0.165206
+  [Eval loss: 0.172058]
+  ✅ New best eval_loss=0.172058 at epoch 45 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 46] loss: 0.169803
+[SDUncond Epoch 47] loss: 0.162553
+[SDUncond Epoch 48] loss: 0.164067
+  [Eval loss: 0.175835]
+[SDUncond Epoch 49] loss: 0.164845
+[SDUncond Epoch 50] loss: 0.168089
+[SDUncond Epoch 51] loss: 0.168035
+  [Eval loss: 0.174111]
+[SDUncond Epoch 52] loss: 0.162279
+[SDUncond Epoch 53] loss: 0.172684
+[SDUncond Epoch 54] loss: 0.161879
+  [Eval loss: 0.175727]
+[SDUncond Epoch 55] loss: 0.163938
+[SDUncond Epoch 56] loss: 0.163975
+[SDUncond Epoch 57] loss: 0.162814
+  [Eval loss: 0.175891]
+[SDUncond Epoch 58] loss: 0.162637
+[SDUncond Epoch 59] loss: 0.166790
+[SDUncond Epoch 60] loss: 0.167869
+  [Eval loss: 0.176818]
+[SDUncond Epoch 61] loss: 0.170814
+[SDUncond Epoch 62] loss: 0.170040
+[SDUncond Epoch 63] loss: 0.159251
+  [Eval loss: 0.171561]
+  ✅ New best eval_loss=0.171561 at epoch 63 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 64] loss: 0.162837
+[SDUncond Epoch 65] loss: 0.161507
+[SDUncond Epoch 66] loss: 0.164452
+  [Eval loss: 0.173769]
+[SDUncond Epoch 67] loss: 0.162514
+[SDUncond Epoch 68] loss: 0.169390
+[SDUncond Epoch 69] loss: 0.163130
+  [Eval loss: 0.169173]
+  ✅ New best eval_loss=0.169173 at epoch 69 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 70] loss: 0.163590
+[SDUncond Epoch 71] loss: 0.163820
+[SDUncond Epoch 72] loss: 0.158732
+  [Eval loss: 0.167114]
+  ✅ New best eval_loss=0.167114 at epoch 72 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 73] loss: 0.167477
+[SDUncond Epoch 74] loss: 0.165236
+[SDUncond Epoch 75] loss: 0.169884
+  [Eval loss: 0.169356]
+[SDUncond Epoch 76] loss: 0.163668
+[SDUncond Epoch 77] loss: 0.165247
+[SDUncond Epoch 78] loss: 0.163745
+  [Eval loss: 0.173332]
+[SDUncond Epoch 79] loss: 0.159520
+[SDUncond Epoch 80] loss: 0.163075
+[SDUncond Epoch 81] loss: 0.165311
+  [Eval loss: 0.169996]
+[SDUncond Epoch 82] loss: 0.161212
+[SDUncond Epoch 83] loss: 0.160258
+[SDUncond Epoch 84] loss: 0.165804
+  [Eval loss: 0.168717]
+[SDUncond Epoch 85] loss: 0.164448
+[SDUncond Epoch 86] loss: 0.163885
+[SDUncond Epoch 87] loss: 0.162970
+  [Eval loss: 0.167915]
+[SDUncond Epoch 88] loss: 0.167314
+[SDUncond Epoch 89] loss: 0.163552
+[SDUncond Epoch 90] loss: 0.161684
+  [Eval loss: 0.166103]
+  ✅ New best eval_loss=0.166103 at epoch 90 -> saved UNET/unet_sd_uncond_best.pt
+[SDUncond Epoch 91] loss: 0.159642
+[SDUncond Epoch 92] loss: 0.163402
+[SDUncond Epoch 93] loss: 0.161161
+  [Eval loss: 0.169563]
+[SDUncond Epoch 94] loss: 0.160865
+[SDUncond Epoch 95] loss: 0.163292
+[SDUncond Epoch 96] loss: 0.165513
+  [Eval loss: 0.171646]
+[SDUncond Epoch 97] loss: 0.162831
+[SDUncond Epoch 98] loss: 0.167608
+[SDUncond Epoch 99] loss: 0.161602
+  [Eval loss: 0.172602]
+[SDUncond Epoch 100] loss: 0.159765
+[SDUncond Epoch 101] loss: 0.165002
+[SDUncond Epoch 102] loss: 0.156755
+  [Eval loss: 0.167253]
+[SDUncond Epoch 103] loss: 0.162849
+[SDUncond Epoch 104] loss: 0.161952
+[SDUncond Epoch 105] loss: 0.161627
+  [Eval loss: 0.169268]
+[SDUncond Epoch 106] loss: 0.160412

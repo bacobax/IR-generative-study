@@ -1,0 +1,26 @@
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @torch.cuda.amp.autocast(enabled=False)
+Traceback (most recent call last):
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_latent_diffusion.py", line 143, in <module>
+    main()
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_latent_diffusion.py", line 139, in main
+    run_training(cfg)
+  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_latent_diffusion.py", line 112, in run_training
+    non_layout = build_non_layout_dataloaders(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/training_data.py", line 137, in build_non_layout_dataloaders
+    train_base_dataset = NPYImageDataset(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/datasets.py", line 46, in __init__
+    self.files = filter_files_by_subset_manifest(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/subset_manifest.py", line 100, in filter_files_by_subset_manifest
+    selected = load_subset_manifest_file_names(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/subset_manifest.py", line 48, in load_subset_manifest_file_names
+    manifest_path = resolve_subset_manifest_path(
+  File "/project/6109890/bacobax2/ir-generative-study/src/core/data/subset_manifest.py", line 36, in resolve_subset_manifest_path
+    raise FileNotFoundError(
+FileNotFoundError: Subset manifest 'train_2000_bbox_stratified.json' was not found. Searched: /project/6109890/bacobax2/ir-generative-study/train_2000_bbox_stratified.json, /project/6109890/bacobax2/ir-generative-study/data/raw/flir_private_proxy_alignment_v18/subsets/train_2000_bbox_stratified.json

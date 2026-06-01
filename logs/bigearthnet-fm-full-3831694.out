@@ -1,0 +1,32 @@
+[AugmentSchedule] start: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] start: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[AugmentSchedule] warmup: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[FM Precision] requested='auto' -> using 'bf16' on device=cuda
+[AugmentSchedule] warmup: epoch=0 p_crop=0.000 p_rot=0.000 p_hflip=0.000
+[FM Epoch 1] loss: 1.084505
+[FM Epoch 2] loss: 0.773802
+[FM Epoch 3] loss: 0.732867
+  [Eval loss: 1.013220]
+  ✅ New best eval_loss=1.013220 at epoch 3 -> saved UNET/unet_fm_best.pt
+[FM Epoch 4] loss: 0.717934
+[FM Epoch 5] loss: 0.704796
+[FM Epoch 6] loss: 0.690852
+  [Eval loss: 0.767081]
+  ✅ New best eval_loss=0.767081 at epoch 6 -> saved UNET/unet_fm_best.pt
+[FM Epoch 7] loss: 0.691955
+[FM Epoch 8] loss: 0.686976
+[FM Epoch 9] loss: 0.677739
+  [Eval loss: 0.720512]
+  ✅ New best eval_loss=0.720512 at epoch 9 -> saved UNET/unet_fm_best.pt
+[FM Epoch 10] loss: 0.673096
+[FM Epoch 11] loss: 0.678725
+[FM Epoch 12] loss: 0.668657
+  [Eval loss: 0.695079]
+  ✅ New best eval_loss=0.695079 at epoch 12 -> saved UNET/unet_fm_best.pt
+[FM Epoch 13] loss: 0.667506
+[FM Epoch 14] loss: 0.662313
+[FM Epoch 15] loss: 0.660022
+  [Eval loss: 0.681788]
+  ✅ New best eval_loss=0.681788 at epoch 15 -> saved UNET/unet_fm_best.pt
+[FM Epoch 16] loss: 0.662468
+[FM Epoch 17] loss: 0.659535
