@@ -725,12 +725,6 @@ def build_sd_stage1_pipeline(run: RunResolution, checkpoint: CheckpointCandidate
     return pipe, manifest
 
 
-def _save_preview(path: Path, arr: np.ndarray, *, normalization_mode: str) -> None:
-    preview_path = path.with_suffix(".png")
-    preview = raw_array_to_png_uint8(arr, normalization_mode=normalization_mode)
-    Image.fromarray(preview, mode="L").save(preview_path)
-
-
 def _analysis_preview_root(config: Mapping[str, Any], run_identifier: str) -> Path:
     root = resolve_path(config.get("analysis_output_root"))
     if root is None:
@@ -952,7 +946,6 @@ def generate_sd_stage1_samples(
         )
         arr = sd_output_to_npy(result.images[0], normalization_mode=normalization_mode)
         save_npy_atomic(output_path, arr)
-        _save_preview(output_path, arr, normalization_mode=normalization_mode)
 
     del pipe
     if torch.cuda.is_available() and str(device).startswith("cuda"):

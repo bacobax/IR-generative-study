@@ -245,6 +245,49 @@ def test_ensure_generated_stage_writes_analysis_preview_after_generation(
     assert (tmp_path / "selection" / "preview_run" / "best" / "stage2" / "preview_grid.png").is_file()
 
 
+def test_sd_stage1_generation_writes_only_npy_samples(tmp_path: Path, monkeypatch) -> None:
+    class FakePipe:
+        def __call__(self, *args, **kwargs):
+            return SimpleNamespace(images=[object()])
+
+    run = pipeline.RunResolution(
+        run_identifier="sd_preview_run",
+        run_dir=tmp_path / "run",
+        model_type="sd_lora",
+        sampler_name=None,
+        sampling_config_path=None,
+        preset={"data": {"image_size": 8}},
+        generation_backend_used="sd_lora_pipeline",
+    )
+    checkpoint = pipeline.CheckpointCandidate("best", str(tmp_path / "dummy"), "best")
+    images_dir = tmp_path / "generated_npy_images"
+    images_dir.mkdir()
+
+    monkeypatch.setattr(
+        pipeline,
+        "build_sd_stage1_pipeline",
+        lambda *args, **kwargs: (FakePipe(), {"normalization_mode": pipeline.UINT8_LINEAR}),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "sd_output_to_npy",
+        lambda *args, **kwargs: pipeline.np.ones((8, 8), dtype=pipeline.np.uint8),
+    )
+
+    pipeline.generate_sd_stage1_samples(
+        run=run,
+        checkpoint=checkpoint,
+        images_dir=images_dir,
+        seeds=[123],
+        config={"num_inference_steps": 1, "generation_prompt": "test"},
+        device="cpu",
+    )
+
+    assert (images_dir / "sample_000000.npy").is_file()
+    assert not (images_dir / "sample_000000.png").exists()
+    assert not list(images_dir.glob("*.png"))
+
+
 def _run_resolution(run_dir: Path, *, model_type: str) -> pipeline.RunResolution:
     return pipeline.RunResolution(
         run_identifier="run",
