@@ -34,6 +34,7 @@ def check(cond: bool, msg: str):
 WRAPPER_MAP = {
     "train_flow_matching.py":         ("src.cli.train_flow_matching",            "src/cli/train_flow_matching.py"),
     "adapt_stable_diffusion.py":          ("src.cli.adapt_stable_diffusion",         "src/cli/adapt_stable_diffusion.py"),
+    "train_sdxl.py":          ("src.cli.train_sdxl",         "src/cli/train_sdxl.py"),
     "train_latent_diffusion.py":   ("src.cli.train_latent_diffusion",  "src/cli/train_latent_diffusion.py"),
     "train_vae.py":         ("src.cli.train_vae",        "src/cli/train_vae.py"),
     "train_controlnet.py":  ("src.cli.train_controlnet", "src/cli/train_controlnet.py"),

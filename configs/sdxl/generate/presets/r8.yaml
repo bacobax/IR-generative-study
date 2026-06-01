@@ -1,0 +1,14 @@
+# SDXL generation: LoRA rank 8, specific prompt.
+# Launcher: scripts/generate/sdxl_r8.sh
+mode: sdxl
+stage1_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/out_ir_lora_sdxl_r8_p_norm
+base_model: stabilityai/stable-diffusion-xl-base-1.0
+max_samples: 200
+output_dir: ./artifacts/generated/main/sdxl_r8
+max_tries: 1
+sd_steps: 50
+lora_rank: 8
+guidance: 7.5
+precision: fp16
+resolution: 1024
+

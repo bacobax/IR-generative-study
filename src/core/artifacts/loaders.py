@@ -83,6 +83,28 @@ class SDStage1PipelineLoader:
         )
 
 
+class SDXLStage1PipelineLoader:
+    """Load Stage-1 Stable Diffusion XL artifacts."""
+
+    def load(self, request: ArtifactLoadRequest) -> ArtifactLoadResult:
+        path = Path(request.path)
+        if not path.exists():
+            raise FileNotFoundError(f"Missing SDXL stage-1 artifact: {path}")
+        from src.algorithms.stable_diffusion_xl.models import load_sdxl_stage1_pipeline
+
+        pipeline, manifest = load_sdxl_stage1_pipeline(
+            stage1_dir=str(path),
+            base_model=request.options.get("base_model"),
+            torch_dtype=request.options.get("torch_dtype"),
+        )
+        return ArtifactLoadResult(
+            kind="sdxl_stage1_pipeline",
+            path=path,
+            payload=pipeline,
+            metadata={"manifest": manifest},
+        )
+
+
 class RegionDiffGeneratorArtifactLoader:
     """Resolve and cheaply validate RegionDiff generator artifacts."""
 
@@ -107,6 +129,7 @@ class RegionDiffGeneratorArtifactLoader:
 
 _register_once(REGISTRIES.artifact_loader, "fm_unet_checkpoint", FMUnetCheckpointLoader())
 _register_once(REGISTRIES.artifact_loader, "sd_stage1_pipeline", SDStage1PipelineLoader())
+_register_once(REGISTRIES.artifact_loader, "sdxl_stage1_pipeline", SDXLStage1PipelineLoader())
 _register_once(REGISTRIES.artifact_loader, "regiondiff_generator", RegionDiffGeneratorArtifactLoader())
 
 
@@ -116,4 +139,5 @@ __all__ = [
     "FMUnetCheckpointLoader",
     "RegionDiffGeneratorArtifactLoader",
     "SDStage1PipelineLoader",
+    "SDXLStage1PipelineLoader",
 ]

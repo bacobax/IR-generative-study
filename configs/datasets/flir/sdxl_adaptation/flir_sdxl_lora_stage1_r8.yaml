@@ -1,0 +1,6 @@
+# Stage-1 SDXL IR LoRA r8 adaptation on the full FLIR proxy training split.
+extends: ../../../sdxl/train/presets/flir_lora_stage1_r8.yaml
+
+subset_manifest: null
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/flir_sdxl_lora_stage1_r8
+

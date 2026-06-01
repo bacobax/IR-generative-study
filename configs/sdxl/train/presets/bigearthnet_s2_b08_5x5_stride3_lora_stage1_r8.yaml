@@ -1,0 +1,21 @@
+# Stage-1 SDXL adaptation baseline: LoRA-only on BigEarthNet Sentinel-2 B08.
+pretrained_model_name_or_path: stabilityai/stable-diffusion-xl-base-1.0
+baseline_mode: sdxl_ir_lora
+dataset_id: bigearthnet_s2_b08_5x5_stride3
+train_split: train
+subset_manifest: null
+prompt_text: "satellite image"
+resolution: 1024
+train_batch_size: 1
+num_train_epochs: 100
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-4
+lr_warmup_steps: 0
+rank: 8
+lora_alpha_scale: 1.0
+validation_prompt: "satellite image"
+checkpointing_epochs: 100
+checkpoints_total_limit: 1
+save_optimizer_state: false
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/bigearthnet_s2_b08_5x5_stride3_sdxl_lora_stage1_r8
+seed: 42

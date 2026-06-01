@@ -130,8 +130,16 @@ def _disable_diffusers_optional_scipy(*, lightweight_imports: bool) -> None:
 def _install_lightweight_loaders_package() -> None:
     """Avoid importing optional single-file and PEFT loader stacks."""
     package_name = "diffusers.loaders"
-    if package_name in sys.modules:
+    existing = sys.modules.get(package_name)
+    if existing is not None and getattr(existing, "_flow_matching_lightweight_stub", False):
         return
+    if existing is not None:
+        for name in list(sys.modules):
+            if name == package_name or name.startswith(f"{package_name}."):
+                sys.modules.pop(name, None)
+        parent = sys.modules.get("diffusers")
+        if parent is not None and getattr(parent, "loaders", None) is existing:
+            delattr(parent, "loaders")
 
     loaders = types.ModuleType(package_name)
     loaders.__package__ = package_name

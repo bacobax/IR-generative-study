@@ -1,0 +1,19 @@
+# SDXL LoRA training: rank=4, specific IR prompt.
+# Launcher: scripts/train/sdxl_lora_r8.sh with --rank override for ad hoc r4 runs.
+pretrained_model_name_or_path: stabilityai/stable-diffusion-xl-base-1.0
+baseline_mode: sdxl_ir_lora
+dataset_id: v18
+subset_manifest: null
+prompt_text: "overhead infrared surveillance image, circular field of view"
+center_crop: true
+resolution: 1024
+train_batch_size: 1
+gradient_accumulation_steps: 4
+lr_warmup_steps: 0
+checkpointing_epochs: 1
+validation_prompt: "overhead infrared surveillance image of a room with 2 people"
+rank: 4
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/out_ir_lora_sdxl_r4_p_norm
+seed: 42
+use_ir_preprocessing: true
+

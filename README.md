@@ -47,7 +47,7 @@ flow_matching_trial/
 └── .gitignore
 ```
 
-Root-level Python scripts (`train_flow_matching.py`, `adapt_stable_diffusion.py`, `train_vae.py`,
+Root-level Python scripts (`train_flow_matching.py`, `adapt_stable_diffusion.py`, `train_sdxl.py`, `train_vae.py`,
 `train_controlnet.py`, `generate_datasets.py`, `serve_flir_analysis.py`) are
 **thin wrappers** that delegate to the corresponding module inside `src/cli/`.
 
@@ -55,6 +55,7 @@ Root-level Python scripts (`train_flow_matching.py`, `adapt_stable_diffusion.py`
 | ---------------------- | ---------------------------- | ---------------------------------------- |
 | `train_flow_matching.py`         | `src/cli/train_flow_matching.py`           | Flow-Matching training (YAML config)     |
 | `adapt_stable_diffusion.py`          | `src/cli/adapt_stable_diffusion.py`        | Stable Diffusion 1.5 LoRA fine-tuning    |
+| `train_sdxl.py`         | `src/cli/train_sdxl.py`       | Stable Diffusion XL LoRA fine-tuning     |
 | `train_vae.py`         | `src/cli/train_vae.py`       | VAE (KL) training                        |
 | `train_controlnet.py`  | `src/cli/train_controlnet.py`| ControlNet training                      |
 | `generate_datasets.py` | `src/cli/generate.py`        | Synthetic dataset generation (SD / FM)   |
@@ -91,6 +92,9 @@ python train_flow_matching.py --config configs/fm/train/default.yaml
 # Train SD 1.5 LoRA
 python adapt_stable_diffusion.py --stage stage1 --config configs/sd/train/default.yaml
 
+# Train SDXL LoRA
+python train_sdxl.py --config configs/sdxl/train/default.yaml
+
 # Train VAE
 python train_vae.py --train-dir ./data/raw/v18/train --val-dir ./data/raw/v18/val
 
@@ -102,6 +106,10 @@ python generate_datasets.py --mode fm \
 # Generate SD 1.5 LoRA samples
 python generate_datasets.py --mode sd15 \
   --lora_dir ./artifacts/checkpoints/stable_diffusion/lora_runs/.../checkpoint-32000
+
+# Generate SDXL LoRA samples
+python generate_datasets.py --mode sdxl \
+  --stage1_dir ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/...
 ```
 
 ## Multi-dataset subgroup analysis web app

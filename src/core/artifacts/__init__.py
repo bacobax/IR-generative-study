@@ -13,6 +13,7 @@ from src.core.artifacts.loaders import (
     FMUnetCheckpointLoader,
     RegionDiffGeneratorArtifactLoader,
     SDStage1PipelineLoader,
+    SDXLStage1PipelineLoader,
 )
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "FMUnetCheckpointLoader",
     "RegionDiffGeneratorArtifactLoader",
     "SDStage1PipelineLoader",
+    "SDXLStage1PipelineLoader",
     "read_artifact_manifest",
     "validate_manifest_compatibility",
     "write_artifact_manifest",

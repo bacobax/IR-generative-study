@@ -297,6 +297,63 @@ EXPECTED_HEADERS = {'slurm/killarney/generate_qcmp_stay_layout_fm_hflip_kl.slurm
                                             '#SBATCH --output=logs/%x-%j.out\n'
                                             '#SBATCH --error=logs/%x-%j.err\n'}
 
+EXPECTED_HEADERS.update({
+    'slurm/killarney/flir/sd_adaptation/train_flir_sdxl_lora_stage1_r8_full_kl.slurm': '#!/bin/bash\n'
+                                                                                       '#SBATCH --job-name=flir-sdxl-r8-full\n'
+                                                                                       '#SBATCH --account=aip-mpederso\n'
+                                                                                       '#SBATCH --time=48:00:00\n'
+                                                                                       '#SBATCH --cpus-per-task=10\n'
+                                                                                       '#SBATCH --mem=80G\n'
+                                                                                       '#SBATCH --gpus-per-node=h100:1\n'
+                                                                                       '#SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                                       '#SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+    'slurm/killarney/flir/sd_adaptation/train_flir_sdxl_lora_stage1_r8_train_2000_kl.slurm': '#!/bin/bash\n'
+                                                                                             '#SBATCH --job-name=flir-sdxl-r8-2k\n'
+                                                                                             '#SBATCH --account=aip-mpederso\n'
+                                                                                             '#SBATCH --time=24:00:00\n'
+                                                                                             '#SBATCH --cpus-per-task=10\n'
+                                                                                             '#SBATCH --mem=80G\n'
+                                                                                             '#SBATCH --gpus-per-node=h100:1\n'
+                                                                                             '#SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                                             '#SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+    'slurm/killarney/flir/sd_adaptation/train_flir_sdxl_lora_stage1_r8_train_5000_kl.slurm': '#!/bin/bash\n'
+                                                                                             '#SBATCH --job-name=flir-sdxl-r8-5k\n'
+                                                                                             '#SBATCH --account=aip-mpederso\n'
+                                                                                             '#SBATCH --time=36:00:00\n'
+                                                                                             '#SBATCH --cpus-per-task=10\n'
+                                                                                             '#SBATCH --mem=80G\n'
+                                                                                             '#SBATCH --gpus-per-node=h100:1\n'
+                                                                                             '#SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                                             '#SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+    'slurm/killarney/bigearthnet_s2_b08_5x5_stride3/sd_adaptation/train_bigearthnet_s2_b08_5x5_stride3_sdxl_lora_stage1_r8_full_kl.slurm': '#!/bin/bash\n'
+                                                                                                                                          '#SBATCH --job-name=ben-sdxl-r8-full\n'
+                                                                                                                                          '#SBATCH --account=aip-mpederso\n'
+                                                                                                                                          '#SBATCH --time=48:00:00\n'
+                                                                                                                                          '#SBATCH --cpus-per-task=10\n'
+                                                                                                                                          '#SBATCH --mem=80G\n'
+                                                                                                                                          '#SBATCH --gpus-per-node=h100:1\n'
+                                                                                                                                          '#SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                                                                                          '#SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+    'slurm/killarney/bigearthnet_s2_b08_5x5_stride3/sd_adaptation/train_bigearthnet_s2_b08_5x5_stride3_sdxl_lora_stage1_r8_train_2040_kl.slurm': '#!/bin/bash\n'
+                                                                                                                                                '#SBATCH --job-name=ben-sdxl-r8-2040\n'
+                                                                                                                                                '#SBATCH --account=aip-mpederso\n'
+                                                                                                                                                '#SBATCH --time=24:00:00\n'
+                                                                                                                                                '#SBATCH --cpus-per-task=10\n'
+                                                                                                                                                '#SBATCH --mem=80G\n'
+                                                                                                                                                '#SBATCH --gpus-per-node=h100:1\n'
+                                                                                                                                                '#SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                                                                                                '#SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+    'slurm/killarney/bigearthnet_s2_b08_5x5_stride3/sd_adaptation/train_bigearthnet_s2_b08_5x5_stride3_sdxl_lora_stage1_r8_train_5100_kl.slurm': '#!/bin/bash\n'
+                                                                                                                                                '#SBATCH --job-name=ben-sdxl-r8-5100\n'
+                                                                                                                                                '#SBATCH --account=aip-mpederso\n'
+                                                                                                                                                '#SBATCH --time=36:00:00\n'
+                                                                                                                                                '#SBATCH --cpus-per-task=10\n'
+                                                                                                                                                '#SBATCH --mem=80G\n'
+                                                                                                                                                '#SBATCH --gpus-per-node=h100:1\n'
+                                                                                                                                                '#SBATCH --output=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.out\n'
+                                                                                                                                                '#SBATCH --error=/home/bacobax2/projects/aip-mpederso/bacobax2/ir-generative-study/logs/%x-%j.err\n',
+})
+
 ok = fail = 0
 
 

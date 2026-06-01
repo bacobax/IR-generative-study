@@ -11,7 +11,7 @@ from src.models.adapters import ArtifactLoadRequest
 def test_artifact_loader_registry_resolves_known_loaders() -> None:
     import src.core.artifacts.loaders  # noqa: F401
 
-    for name in ("fm_unet_checkpoint", "sd_stage1_pipeline", "regiondiff_generator"):
+    for name in ("fm_unet_checkpoint", "sd_stage1_pipeline", "sdxl_stage1_pipeline", "regiondiff_generator"):
         assert name in REGISTRIES.artifact_loader
 
 

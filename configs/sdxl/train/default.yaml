@@ -1,0 +1,46 @@
+# Stage-1 Stable Diffusion XL IR LoRA adaptation default configuration.
+#
+# Source of truth:
+#   python -m src.cli.train_sdxl --config configs/sdxl/train/default.yaml
+
+pretrained_model_name_or_path: "stabilityai/stable-diffusion-xl-base-1.0"
+baseline_mode: "sdxl_ir_lora"
+dataset_id: "flir_private_proxy_alignment_v18"
+train_split: "train"
+subset_manifest: null
+prompt_text: "thermal image"
+
+freeze_vae: true
+freeze_text_encoder: true
+text_encoder_lora_enabled: false
+
+resolution: 1024
+image_interpolation_mode: "lanczos"
+train_batch_size: 1
+num_train_epochs: 80
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-4
+lr_scheduler: "constant"
+lr_warmup_steps: 0
+
+rank: 8
+lora_alpha_scale: 1.0
+lora_target_modules:
+  - "to_q"
+  - "to_k"
+  - "to_v"
+  - "to_out.0"
+text_encoder_lora_target_modules:
+  - "q_proj"
+  - "k_proj"
+  - "v_proj"
+  - "out_proj"
+
+logging_dir: "logs"
+report_to: "tensorboard"
+validation_num_inference_steps: 30
+checkpointing_epochs: 1
+save_optimizer_state: true
+output_dir: "./artifacts/checkpoints/stable_diffusion_xl/lora_runs/flir_sdxl_lora_r8"
+seed: 42
+
