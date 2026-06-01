@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=flir-sdxl-r8-5k
 #SBATCH --account=aip-mpederso
-#SBATCH --time=36:00:00
+#SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=80G
 #SBATCH --gpus-per-node=h100:1
