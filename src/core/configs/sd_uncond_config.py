@@ -45,12 +45,18 @@ class SDUncondTrainingConfig:
 
     epochs: int = 100
     lr: float = 1e-4
+    gradient_accumulation_steps: int = 1
     save_every_n_epochs: int = 10
     eval_every: int = 1
     patience: Optional[int] = None
     min_delta: float = 0.0
     strict_load: bool = True
     max_grad_norm: float = 1.0
+
+    def __post_init__(self) -> None:
+        self.gradient_accumulation_steps = int(self.gradient_accumulation_steps)
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError("training.gradient_accumulation_steps must be positive.")
 
 
 @dataclass
@@ -172,6 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1,
+                        help="Number of mini-batches to accumulate before each optimizer step.")
     parser.add_argument("--save_every_n_epochs", type=int, default=10,
                         help="Save checkpoint every N epochs")
     parser.add_argument("--eval_every", type=int, default=1,
@@ -286,6 +294,7 @@ _FLAT_TO_NESTED = {
     "resume": "output.resume",
     "epochs": "training.epochs",
     "lr": "training.lr",
+    "gradient_accumulation_steps": "training.gradient_accumulation_steps",
     "save_every_n_epochs": "training.save_every_n_epochs",
     "eval_every": "training.eval_every",
     "max_grad_norm": "training.max_grad_norm",

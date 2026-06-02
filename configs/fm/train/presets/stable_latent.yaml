@@ -13,6 +13,7 @@ augment:
 
 training:
   epochs: 300              # default 100
+  gradient_accumulation_steps: 1
   save_every_n_epochs: 50  # default 10
   eval_every: 1
 

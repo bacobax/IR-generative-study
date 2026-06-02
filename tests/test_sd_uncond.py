@@ -63,6 +63,7 @@ def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
                 "  subset_manifest: train_2000_bbox_stratified.json",
                 "training:",
                 "  epochs: 12",
+                "  gradient_accumulation_steps: 4",
                 "diffusion:",
                 "  prediction_type: v_prediction",
             ]
@@ -71,7 +72,16 @@ def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
     )
 
     parser = build_parser()
-    cli_argv = ["--config", str(config_path), "--epochs", "3", "--eval_every", "1"]
+    cli_argv = [
+        "--config",
+        str(config_path),
+        "--epochs",
+        "3",
+        "--eval_every",
+        "1",
+        "--gradient_accumulation_steps",
+        "2",
+    ]
     args = parser.parse_args(cli_argv)
     cfg = merge_config_and_cli(
         SDUncondTrainConfig,
@@ -86,6 +96,7 @@ def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
     assert cfg.data.subset_manifest == "train_2000_bbox_stratified.json"
     assert cfg.training.epochs == 3
     assert cfg.training.eval_every == 1
+    assert cfg.training.gradient_accumulation_steps == 2
     assert cfg.diffusion.prediction_type == "v_prediction"
 
 
@@ -312,7 +323,9 @@ def test_sd_uncond_train_from_config_skips_vae_weights_for_pretrained_vae(tmp_pa
     )
     cfg.model.vae_weights = "./vae_best.pt"
     cfg.model.vae_pretrained_model_name_or_path = "runwayml/stable-diffusion-v1-5"
+    cfg.training.gradient_accumulation_steps = 3
 
     trainer.train_from_config(cfg, dataloader=object(), eval_dataloader=None)
 
     assert calls["pretrained_vae_path"] is None
+    assert calls["gradient_accumulation_steps"] == 3

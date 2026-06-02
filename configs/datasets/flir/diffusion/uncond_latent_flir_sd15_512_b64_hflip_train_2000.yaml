@@ -4,6 +4,9 @@ extends: uncond_latent_flir_sd15_512_b64_hflip.yaml
 data:
   subset_manifest: "train_2000_bbox_stratified.json"
 
+training:
+  gradient_accumulation_steps: 1
+
 output:
   model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_hflip_train_2000"
   log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_flir_sd15_512_hflip_train_2000"

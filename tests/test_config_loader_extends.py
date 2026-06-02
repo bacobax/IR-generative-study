@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.cli.train_flow_matching import build_parser
+from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser
 from src.core.configs.config_loader import (
     is_experimental_config_shape,
     load_experimental_config,
@@ -197,7 +197,39 @@ def test_old_fm_yaml_still_parses_through_permissive_loader() -> None:
     )
 
     assert cfg.training.train_target == "v"
+    assert cfg.training.gradient_accumulation_steps == 1
     assert cfg.model.unet_config == "configs/models/fm/stable_unet_config.json"
+
+
+def test_fm_gradient_accumulation_cli_override(tmp_path: Path) -> None:
+    config_path = _write_yaml(
+        tmp_path / "fm_accum.yaml",
+        """
+training:
+  epochs: 5
+  gradient_accumulation_steps: 4
+""",
+    )
+    parser = build_parser()
+    cli_argv = [
+        "--config",
+        str(config_path),
+        "--gradient_accumulation_steps",
+        "2",
+    ]
+    args = parser.parse_args(cli_argv)
+
+    cfg = merge_config_and_cli(
+        FMTrainConfig,
+        str(config_path),
+        parser,
+        args,
+        flat_to_nested=_FLAT_TO_NESTED,
+        cli_argv=cli_argv,
+    )
+
+    assert cfg.training.epochs == 5
+    assert cfg.training.gradient_accumulation_steps == 2
 
 
 def test_old_config_path_still_ignores_unknown_keys(tmp_path: Path) -> None:

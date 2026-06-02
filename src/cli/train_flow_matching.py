@@ -145,6 +145,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Time scale for UNet")
     parser.add_argument("--max_grad_norm", type=float, default=1.0,
                         help="Gradient clipping norm.")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1,
+                        help="Number of mini-batches to accumulate before each optimizer step.")
     parser.add_argument("--weight_decay", type=float, default=0.01,
                         help="AdamW weight decay.")
     parser.add_argument("--beta1", type=float, default=0.9,
@@ -290,6 +292,7 @@ _FLAT_TO_NESTED = {
     "save_every_n_epochs": "training.save_every_n_epochs",
     "eval_every":          "training.eval_every",
     "max_grad_norm":       "training.max_grad_norm",
+    "gradient_accumulation_steps": "training.gradient_accumulation_steps",
     # Optimizer / scheduler / EMA / precision / path
     "weight_decay":        "optimizer.weight_decay",
     "beta1":               "optimizer.beta1",

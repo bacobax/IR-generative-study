@@ -65,6 +65,7 @@ distillation:
 training:
   epochs: 200
   lr: 1.0e-4
+  gradient_accumulation_steps: 1
   t_scale: 1000.0
   train_target: "v"
   save_every_n_epochs: 25

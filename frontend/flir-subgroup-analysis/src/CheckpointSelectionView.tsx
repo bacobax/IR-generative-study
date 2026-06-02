@@ -3,6 +3,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
@@ -29,6 +30,16 @@ const DEFAULT_ROOT = "artifacts/generated/checkpoint_selection";
 const METRIC_KEYS = ["KID", "FID", "MMD", "Intra-LPIPS"] as const;
 const ROOT_FILTER = "__root__";
 const ALL_FILTER = "__all__";
+const SUBROOT_COLORS = [
+  "#3d6cc8",
+  "#c8553d",
+  "#2f8f68",
+  "#ca8a04",
+  "#7c3aed",
+  "#0891b2",
+  "#db2777",
+  "#4d7c0f",
+];
 
 type MetricKey = (typeof METRIC_KEYS)[number];
 type SortKey = "run" | "subroot" | "status" | "selected_checkpoint" | MetricKey;
@@ -61,15 +72,59 @@ function compactLabel(value: unknown): string {
   return String(value);
 }
 
+function subrootLabel(value: string | null): string {
+  return value ?? "Root runs";
+}
+
+function extractOrderNumber(value: unknown): number | null {
+  const text = compactLabel(value);
+  const priorityPatterns = [
+    /(?:^|[_-])step[_-]?(\d+)/i,
+    /(?:^|[_-])epoch[_-]?(\d+)/i,
+    /(?:^|[_-])train[_-]?(\d+)/i,
+  ];
+  for (const pattern of priorityPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  const matches = [...text.matchAll(/(\d+)/g)];
+  const fallback = matches.length > 0 ? matches[matches.length - 1] : null;
+  return fallback ? Number(fallback[1]) : null;
+}
+
+function compareByStepEpoch(left: unknown, right: unknown): number {
+  const leftNumber = extractOrderNumber(left);
+  const rightNumber = extractOrderNumber(right);
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  if (leftNumber !== null && rightNumber === null) {
+    return -1;
+  }
+  if (leftNumber === null && rightNumber !== null) {
+    return 1;
+  }
+  return compactLabel(left).localeCompare(compactLabel(right));
+}
+
+function colorForSubroot(subroot: string | null, subroots: Array<string | null>): string {
+  const index = subroots.findIndex((candidate) => candidate === subroot);
+  return SUBROOT_COLORS[Math.max(index, 0) % SUBROOT_COLORS.length];
+}
+
 function stageRows(rows: CheckpointSelectionRunDetail["stage1_ranking"]): Array<Record<string, number | string>> {
-  return rows.map((row) => ({
-    checkpoint: compactLabel(row.checkpoint_identifier),
-    rank: Number(row.rank ?? 0),
-    KID: Number(row.KID ?? Number.NaN),
-    FID: Number(row.FID ?? Number.NaN),
-    MMD: Number(row.MMD ?? Number.NaN),
-    selection_score: Number(row.selection_score ?? Number.NaN),
-  }));
+  return rows
+    .map((row) => ({
+      checkpoint: compactLabel(row.checkpoint_identifier),
+      rank: Number(row.rank ?? 0),
+      KID: Number(row.KID ?? Number.NaN),
+      FID: Number(row.FID ?? Number.NaN),
+      MMD: Number(row.MMD ?? Number.NaN),
+      selection_score: Number(row.selection_score ?? Number.NaN),
+    }))
+    .sort((left, right) => compareByStepEpoch(left.checkpoint, right.checkpoint));
 }
 
 function warningsPanel(warnings: string[]) {
@@ -87,50 +142,80 @@ function warningsPanel(warnings: string[]) {
 }
 
 function MetricCharts({ runs }: { runs: CheckpointSelectionRunRow[] }) {
+  const orderedRuns = [...runs].sort((left, right) => {
+    const subrootCompare = subrootLabel(left.subroot).localeCompare(subrootLabel(right.subroot));
+    return subrootCompare !== 0 ? subrootCompare : compareByStepEpoch(left.run, right.run);
+  });
+  const subroots = Array.from(new Set(orderedRuns.map((run) => run.subroot)));
+
   return (
-    <div className="checkpoint-chart-grid">
-      {METRIC_KEYS.map((metric) => {
-        const data = runs
-          .map((run) => ({
-            run: run.run,
-            value: metricValue(run.metrics, metric),
-          }))
-          .filter((row) => row.value !== null);
-        return (
-          <div className="chart-panel" key={metric}>
-            <div className="panel-header panel-header--compact">
-              <div>
-                <p className="eyebrow">Final Metric</p>
-                <h3>{metric}</h3>
+    <>
+      {subroots.length > 1 ? (
+        <div className="checkpoint-subroot-legend">
+          {subroots.map((subroot) => (
+            <span key={subrootLabel(subroot)}>
+              <i style={{ backgroundColor: colorForSubroot(subroot, subroots) }} />
+              {subrootLabel(subroot)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div className="checkpoint-chart-grid">
+        {METRIC_KEYS.map((metric) => {
+          const data = orderedRuns
+            .map((run) => ({
+              run: run.run,
+              subroot: run.subroot,
+              subrootLabel: subrootLabel(run.subroot),
+              value: metricValue(run.metrics, metric),
+            }))
+            .filter((row) => row.value !== null);
+          return (
+            <div className="chart-panel" key={metric}>
+              <div className="panel-header panel-header--compact">
+                <div>
+                  <p className="eyebrow">Final Metric</p>
+                  <h3>{metric}</h3>
+                </div>
+                <p className="supporting-copy">{metric === "Intra-LPIPS" ? "higher is better" : "lower is better"}</p>
               </div>
-              <p className="supporting-copy">{metric === "Intra-LPIPS" ? "higher is better" : "lower is better"}</p>
+              {data.length > 0 ? (
+                <ResponsiveContainer width="100%" height={230}>
+                  <BarChart data={data} margin={{ left: 4, right: 18, bottom: 12 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="run"
+                      interval={0}
+                      height={12}
+                      tick={false}
+                      axisLine
+                    />
+                    <YAxis tickFormatter={(value) => formatMetric(Number(value))} />
+                    <Tooltip
+                      formatter={(value: number, name, item) => [
+                        formatMetric(value),
+                        `${metric} (${compactLabel(item.payload?.subrootLabel)})`,
+                      ]}
+                      labelFormatter={(label) => String(label)}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {data.map((row) => (
+                        <Cell
+                          key={`${metric}-${row.subrootLabel}-${row.run}`}
+                          fill={colorForSubroot(row.subroot, subroots)}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="status-panel">No {metric} values in the selected runs.</div>
+              )}
             </div>
-            {data.length > 0 ? (
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={data} margin={{ left: 4, right: 18, bottom: 12 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="run"
-                    interval={0}
-                    height={12}
-                    tick={false}
-                    axisLine
-                  />
-                  <YAxis tickFormatter={(value) => formatMetric(Number(value))} />
-                  <Tooltip
-                    formatter={(value: number) => [formatMetric(value), metric]}
-                    labelFormatter={(label) => String(label)}
-                  />
-                  <Bar dataKey="value" fill="#3d6cc8" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="status-panel">No {metric} values in the selected runs.</div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

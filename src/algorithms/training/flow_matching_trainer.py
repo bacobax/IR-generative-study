@@ -498,6 +498,7 @@ class FlowMatchingTrainer:
             early_sanity_sample_epoch=getattr(config.sampling, "early_sanity_sample_epoch", 0),
             save_debug_images=getattr(config.sampling, "save_debug_images", False),
             debug_dir=config.output.resolved_debug_dir(),
+            gradient_accumulation_steps=getattr(config.training, "gradient_accumulation_steps", 1),
         )
 
     # ------------------------------------------------------------------
@@ -1042,8 +1043,12 @@ class FlowMatchingTrainer:
         early_sanity_sample_epoch: int = 0,
         save_debug_images: bool = False,
         debug_dir: str = "./artifacts/debug/flow_matching",
+        gradient_accumulation_steps: int = 1,
     ) -> None:
         eval_every = int(eval_every)
+        gradient_accumulation_steps = int(gradient_accumulation_steps)
+        if gradient_accumulation_steps <= 0:
+            raise ValueError("gradient_accumulation_steps must be positive.")
         if patience is not None and eval_dataloader is None:
             raise ValueError("eval_dataloader must be provided when using patience early stopping.")
         if patience is not None and eval_every <= 0:
@@ -1068,7 +1073,11 @@ class FlowMatchingTrainer:
         elif pretrained_unet_path is not None:
             self.load_unet_weights(pretrained_unet_path, strict=strict_load)
 
-        total_steps = max(1, epochs * len(dataloader))
+        updates_per_epoch = max(
+            1,
+            (len(dataloader) + gradient_accumulation_steps - 1) // gradient_accumulation_steps,
+        )
+        total_steps = max(1, epochs * updates_per_epoch)
         precision, scaler = setup_precision(self.device, mixed_precision)
         self._distillation_teacher_torch_dtype = precision.dtype if precision.enabled else None
         optimizer_params = self.unet.parameters()
@@ -1171,98 +1180,117 @@ class FlowMatchingTrainer:
             set_epoch_for_dataloader(eval_dataloader, epoch)
             self.unet.train()
             total_loss = 0.0
+            optimizer.zero_grad(set_to_none=True)
 
-            for batch in tqdm(dataloader, desc=f"{self._progress_label()} Epoch {epoch+1}/{epochs}"):
+            for batch_idx, batch in enumerate(
+                tqdm(dataloader, desc=f"{self._progress_label()} Epoch {epoch+1}/{epochs}")
+            ):
                 x, cond_kw = self._prepare_batch(batch)
                 with torch.no_grad():
                     x_fm = self.encode_fm_input(x)
                 if self.conditioner is not None:
                     cond_kw.update(self.conditioner.prepare_for_training(x, self.device))
-                optimizer.zero_grad(set_to_none=True)
                 self._current_epoch = epoch
                 self._current_global_step = global_step
                 self._kd_training_enabled = True
+                accumulation_window_start = batch_idx - (batch_idx % gradient_accumulation_steps)
+                current_accumulation_steps = min(
+                    gradient_accumulation_steps,
+                    len(dataloader) - accumulation_window_start,
+                )
                 with autocast_context(precision):
                     loss = self._compute_batch_loss(x_fm, cond_kw)
+                    scaled_loss = loss / current_accumulation_steps
 
                 if scaler is not None:
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
+                    scaler.scale(scaled_loss).backward()
                 else:
-                    loss.backward()
+                    scaled_loss.backward()
 
-                if max_grad_norm and max_grad_norm > 0.0:
-                    torch.nn.utils.clip_grad_norm_(self.unet.parameters(), max_grad_norm)
+                should_step = (
+                    (batch_idx + 1) % gradient_accumulation_steps == 0
+                    or (batch_idx + 1) == len(dataloader)
+                )
 
-                if scaler is not None:
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    optimizer.step()
+                if should_step:
+                    if scaler is not None:
+                        scaler.unscale_(optimizer)
 
-                if scheduler is not None:
-                    scheduler.step()
-                if ema is not None and global_step >= int(ema_start_step):
-                    ema.update(self.unet)
+                    if max_grad_norm and max_grad_norm > 0.0:
+                        torch.nn.utils.clip_grad_norm_(self.unet.parameters(), max_grad_norm)
+
+                    if scaler is not None:
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
+                        optimizer.step()
+
+                    optimizer.zero_grad(set_to_none=True)
+
+                    if scheduler is not None:
+                        scheduler.step()
+                    if ema is not None and global_step >= int(ema_start_step):
+                        ema.update(self.unet)
 
                 total_loss += loss.item()
-                components = getattr(self, "_last_loss_components", {})
-                kd_diag = components.get("attention_kd_diagnostics", {}) if isinstance(components, dict) else {}
+                if should_step:
+                    components = getattr(self, "_last_loss_components", {})
+                    kd_diag = components.get("attention_kd_diagnostics", {}) if isinstance(components, dict) else {}
 
-                def _scalar_component(name: str, default: float) -> float:
-                    value = components.get(name, default) if isinstance(components, dict) else default
-                    if torch.is_tensor(value):
-                        return float(value.detach().float().cpu().item())
-                    return float(value)
+                    def _scalar_component(name: str, default: float) -> float:
+                        value = components.get(name, default) if isinstance(components, dict) else default
+                        if torch.is_tensor(value):
+                            return float(value.detach().float().cpu().item())
+                        return float(value)
 
-                writer.add_scalar(f"{self._metric_prefix()}/loss_step", loss.item(), global_step)
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/base_loss_step",
-                    _scalar_component("base_loss", loss.item()),
-                    global_step,
-                )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/total_loss_step",
-                    _scalar_component("total_loss", loss.item()),
-                    global_step,
-                )
-                if self._uses_attention_distillation():
+                    writer.add_scalar(f"{self._metric_prefix()}/loss_step", loss.item(), global_step)
                     writer.add_scalar(
-                        f"{self._metric_prefix()}/attention_kd_loss_step",
-                        _scalar_component("attention_kd_loss", 0.0),
+                        f"{self._metric_prefix()}/base_loss_step",
+                        _scalar_component("base_loss", loss.item()),
                         global_step,
                     )
                     writer.add_scalar(
-                        f"{self._metric_prefix()}/attention_kd_weighted_step",
-                        _scalar_component("attention_kd_weighted", 0.0),
+                        f"{self._metric_prefix()}/total_loss_step",
+                        _scalar_component("total_loss", loss.item()),
                         global_step,
                     )
+                    if self._uses_attention_distillation():
+                        writer.add_scalar(
+                            f"{self._metric_prefix()}/attention_kd_loss_step",
+                            _scalar_component("attention_kd_loss", 0.0),
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            f"{self._metric_prefix()}/attention_kd_weighted_step",
+                            _scalar_component("attention_kd_weighted", 0.0),
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            f"{self._metric_prefix()}/attention_kd_matched_layers",
+                            float(kd_diag.get("matched_layers", 0)),
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            f"{self._metric_prefix()}/attention_kd_selected_instances",
+                            float(kd_diag.get("selected_instances", 0)),
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            f"{self._metric_prefix()}/attention_kd_skipped_shape",
+                            float(kd_diag.get("skipped_layers_shape", 0)),
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            f"{self._metric_prefix()}/attention_kd_skipped_missing",
+                            float(kd_diag.get("skipped_layers_missing", 0)),
+                            global_step,
+                        )
                     writer.add_scalar(
-                        f"{self._metric_prefix()}/attention_kd_matched_layers",
-                        float(kd_diag.get("matched_layers", 0)),
+                        f"{self._metric_prefix()}/lr",
+                        float(optimizer.param_groups[0]["lr"]),
                         global_step,
                     )
-                    writer.add_scalar(
-                        f"{self._metric_prefix()}/attention_kd_selected_instances",
-                        float(kd_diag.get("selected_instances", 0)),
-                        global_step,
-                    )
-                    writer.add_scalar(
-                        f"{self._metric_prefix()}/attention_kd_skipped_shape",
-                        float(kd_diag.get("skipped_layers_shape", 0)),
-                        global_step,
-                    )
-                    writer.add_scalar(
-                        f"{self._metric_prefix()}/attention_kd_skipped_missing",
-                        float(kd_diag.get("skipped_layers_missing", 0)),
-                        global_step,
-                    )
-                writer.add_scalar(
-                    f"{self._metric_prefix()}/lr",
-                    float(optimizer.param_groups[0]["lr"]),
-                    global_step,
-                )
-                global_step += 1
+                    global_step += 1
 
             avg_loss = total_loss / max(1, len(dataloader))
             print(f"[{self._progress_label()} Epoch {epoch+1}] loss: {avg_loss:.6f}")

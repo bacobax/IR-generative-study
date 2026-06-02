@@ -660,6 +660,31 @@ tbody tr:hover {
   margin-top: 1rem;
 }
 
+.checkpoint-subroot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.checkpoint-subroot-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(91, 58, 41, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.78);
+  padding: 0.35rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.checkpoint-subroot-legend i {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+}
+
 .checkpoint-chart-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

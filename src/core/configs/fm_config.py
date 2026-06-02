@@ -127,6 +127,7 @@ class TrainHyperConfig:
 
     epochs: int = 100
     lr: float = 1e-4
+    gradient_accumulation_steps: int = 1
     t_scale: float = 1000.0
     train_target: str = "v"          # "v" | "x0"
     save_every_n_epochs: int = 10
@@ -137,6 +138,9 @@ class TrainHyperConfig:
     max_grad_norm: float = 1.0
 
     def __post_init__(self) -> None:
+        self.gradient_accumulation_steps = int(self.gradient_accumulation_steps)
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError("training.gradient_accumulation_steps must be positive.")
         self.t_scale = float(self.t_scale)
         if not math.isfinite(self.t_scale) or self.t_scale <= 0.0:
             raise ValueError(
@@ -457,6 +461,7 @@ class FMTrainConfig:
             training=TrainHyperConfig(
                 epochs=args.epochs,
                 lr=getattr(args, "lr", 1e-4),
+                gradient_accumulation_steps=getattr(args, "gradient_accumulation_steps", 1),
                 t_scale=args.t_scale,
                 train_target=args.train_target,
                 save_every_n_epochs=args.save_every_n_epochs,

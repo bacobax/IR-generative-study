@@ -54,6 +54,7 @@ layout_conditioning:
 training:
   epochs: 200
   lr: 1.0e-4
+  gradient_accumulation_steps: 1
   save_every_n_epochs: 25
   eval_every: 2
   patience: null

@@ -1,7 +1,0 @@
-{
-  "checkpointing_epochs": 1,
-  "global_step": 115499,
-  "lr_scheduler": "constant",
-  "lr_warmup_steps": 0,
-  "max_train_steps": 1000000
-}

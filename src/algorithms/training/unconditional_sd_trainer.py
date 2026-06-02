@@ -208,6 +208,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
             early_sanity_sample_epoch=getattr(config.sampling, "early_sanity_sample_epoch", 0),
             save_debug_images=getattr(config.sampling, "save_debug_images", False),
             debug_dir=config.output.resolved_debug_dir(),
+            gradient_accumulation_steps=getattr(config.training, "gradient_accumulation_steps", 1),
         )
 
     def _make_sampler(self) -> UnconditionalStableDiffusionSampler:

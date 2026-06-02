@@ -6,6 +6,7 @@ data:
 
 training:
   epochs: 2
+  gradient_accumulation_steps: 1
   save_every_n_epochs: 1
   eval_every: 1
 

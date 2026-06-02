@@ -32,6 +32,7 @@ augment:
 training:
   epochs: 300
   lr: 0.0001
+  gradient_accumulation_steps: 1
   t_scale: 1000.0
   train_target: "v"
   save_every_n_epochs: 50
@@ -78,4 +79,4 @@ output:
   debug_dir: "./artifacts/debug/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_ot"
   resume: null
 
-device: null
+device: cuda:1

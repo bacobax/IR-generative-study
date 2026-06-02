@@ -1,7 +1,0 @@
-{
-  "global_step": 13000,
-  "lr_scheduler": "constant",
-  "lr_warmup_steps": 500,
-  "max_train_steps": 16800,
-  "train_mode": "adapters_plus_partial_unet"
-}
