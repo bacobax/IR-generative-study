@@ -430,8 +430,15 @@ class Trainer:
         loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
         return loss.mean()
 
-    def _maybe_save_checkpoint(self, epoch: int) -> None:
-        if (epoch + 1) % self.config.checkpointing_epochs != 0 or not self.accelerator.is_main_process:
+    def _save_checkpoint(self, *, epoch: Optional[int] = None, force: bool = False) -> None:
+        if not self.accelerator.is_main_process:
+            return
+        if not force and epoch is not None:
+            if (epoch + 1) % self.config.checkpointing_epochs != 0:
+                return
+        save_path = Path(self.config.output_dir) / f"checkpoint-{self.global_step}"
+        if save_path.exists():
+            logger.info("Checkpoint already exists at %s; skipping save.", save_path)
             return
         if self.config.checkpoints_total_limit is not None:
             checkpoints = [d for d in os.listdir(self.config.output_dir) if d.startswith("checkpoint")]
@@ -439,12 +446,14 @@ class Trainer:
             if len(checkpoints) >= self.config.checkpoints_total_limit:
                 for checkpoint in checkpoints[: len(checkpoints) - self.config.checkpoints_total_limit + 1]:
                     shutil.rmtree(os.path.join(self.config.output_dir, checkpoint))
-        save_path = os.path.join(self.config.output_dir, f"checkpoint-{self.global_step}")
-        self.accelerator.save_state(save_path)
+        self.accelerator.save_state(str(save_path))
         if not self.config.save_optimizer_state:
-            self._prune_optimizer_state(Path(save_path))
-        self._write_checkpoint_metadata(Path(save_path))
+            self._prune_optimizer_state(save_path)
+        self._write_checkpoint_metadata(save_path)
         logger.info("Saved checkpoint to %s", save_path)
+
+    def _maybe_save_checkpoint(self, epoch: int) -> None:
+        self._save_checkpoint(epoch=epoch)
 
     def _run_validation(self, epoch: int, is_final: bool = False) -> List:
         pipeline = StableDiffusionXLPipeline.from_pretrained(
@@ -494,6 +503,7 @@ class Trainer:
     def _finalize_training(self) -> None:
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
+            self._save_checkpoint(force=True)
             self._finalize_lora_export()
             if self.config.validation_prompt is not None:
                 self._run_validation(self.config.num_train_epochs, is_final=True)
