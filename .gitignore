@@ -47,7 +47,8 @@ tensorboard/
 *.safetensors
 *.bin
 *.onnx
-
+*.gz
+*.tar
 # Project-specific outputs (now under artifacts/)
 /fm_src/**/runs/
 /fm_src/**/UNET/

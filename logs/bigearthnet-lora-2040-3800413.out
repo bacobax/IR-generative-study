@@ -1,6 +1,0 @@
-Parsing arguments...
-Initializing accelerator...
-Selected GPU: cuda:0
-GPU Info:
-0, GPU-68ac56b3-688c-d81d-fe42-90c97301240f, NVIDIA H100 80GB HBM3, 4, 81559, 0
-pixel_values: torch.Size([16, 3, 512, 512]) torch.float32 min=-1.000 max=1.000 mean=-0.557 std=0.263

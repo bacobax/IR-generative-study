@@ -1,105 +1,0 @@
-/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
-  @torch.cuda.amp.autocast(enabled=False)
-/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
-  @torch.cuda.amp.autocast(enabled=False)
-/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
-  warnings.warn(
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-SDUncond Epoch 1/300:   0%|          | 0/80 [00:00<?, ?it/s]SDUncond Epoch 1/300:   1%|▏         | 1/80 [00:03<04:08,  3.15s/it]SDUncond Epoch 1/300:   2%|▎         | 2/80 [00:04<02:48,  2.15s/it]SDUncond Epoch 1/300:   4%|▍         | 3/80 [00:06<02:21,  1.84s/it]SDUncond Epoch 1/300:   5%|▌         | 4/80 [00:07<02:08,  1.69s/it]SDUncond Epoch 1/300:   6%|▋         | 5/80 [00:08<02:00,  1.61s/it]SDUncond Epoch 1/300:   8%|▊         | 6/80 [00:10<01:55,  1.56s/it]SDUncond Epoch 1/300:   9%|▉         | 7/80 [00:11<01:51,  1.53s/it]SDUncond Epoch 1/300:  10%|█         | 8/80 [00:13<01:48,  1.51s/it]SDUncond Epoch 1/300:  11%|█▏        | 9/80 [00:14<01:45,  1.49s/it]SDUncond Epoch 1/300:  12%|█▎        | 10/80 [00:16<01:43,  1.48s/it]SDUncond Epoch 1/300:  14%|█▍        | 11/80 [00:17<01:41,  1.48s/it]SDUncond Epoch 1/300:  15%|█▌        | 12/80 [00:19<01:40,  1.47s/it]SDUncond Epoch 1/300:  16%|█▋        | 13/80 [00:20<01:38,  1.47s/it]SDUncond Epoch 1/300:  18%|█▊        | 14/80 [00:22<01:36,  1.47s/it]SDUncond Epoch 1/300:  19%|█▉        | 15/80 [00:23<01:35,  1.47s/it]SDUncond Epoch 1/300:  20%|██        | 16/80 [00:25<01:33,  1.46s/it]SDUncond Epoch 1/300:  21%|██▏       | 17/80 [00:26<01:32,  1.46s/it]SDUncond Epoch 1/300:  22%|██▎       | 18/80 [00:27<01:30,  1.46s/it]SDUncond Epoch 1/300:  24%|██▍       | 19/80 [00:29<01:29,  1.46s/it]SDUncond Epoch 1/300:  25%|██▌       | 20/80 [00:30<01:27,  1.46s/it]SDUncond Epoch 1/300:  26%|██▋       | 21/80 [00:32<01:26,  1.46s/it]SDUncond Epoch 1/300:  28%|██▊       | 22/80 [00:33<01:24,  1.46s/it]SDUncond Epoch 1/300:  29%|██▉       | 23/80 [00:35<01:23,  1.46s/it]SDUncond Epoch 1/300:  30%|███       | 24/80 [00:36<01:21,  1.46s/it]SDUncond Epoch 1/300:  31%|███▏      | 25/80 [00:38<01:20,  1.46s/it]SDUncond Epoch 1/300:  32%|███▎      | 26/80 [00:39<01:18,  1.46s/it]SDUncond Epoch 1/300:  34%|███▍      | 27/80 [00:41<01:17,  1.46s/it]SDUncond Epoch 1/300:  35%|███▌      | 28/80 [00:42<01:16,  1.46s/it]SDUncond Epoch 1/300:  36%|███▋      | 29/80 [00:44<01:14,  1.46s/it]SDUncond Epoch 1/300:  38%|███▊      | 30/80 [00:45<01:13,  1.46s/it]SDUncond Epoch 1/300:  39%|███▉      | 31/80 [00:46<01:11,  1.46s/it]SDUncond Epoch 1/300:  40%|████      | 32/80 [00:48<01:10,  1.46s/it]SDUncond Epoch 1/300:  41%|████▏     | 33/80 [00:49<01:08,  1.46s/it]SDUncond Epoch 1/300:  42%|████▎     | 34/80 [00:51<01:07,  1.46s/it]SDUncond Epoch 1/300:  44%|████▍     | 35/80 [00:52<01:05,  1.46s/it]SDUncond Epoch 1/300:  45%|████▌     | 36/80 [00:54<01:04,  1.46s/it]SDUncond Epoch 1/300:  46%|████▋     | 37/80 [00:55<01:02,  1.46s/it]SDUncond Epoch 1/300:  48%|████▊     | 38/80 [00:57<01:01,  1.46s/it]SDUncond Epoch 1/300:  49%|████▉     | 39/80 [00:58<00:59,  1.46s/it]SDUncond Epoch 1/300:  50%|█████     | 40/80 [01:00<00:58,  1.46s/it]SDUncond Epoch 1/300:  51%|█████▏    | 41/80 [01:01<00:57,  1.46s/it]SDUncond Epoch 1/300:  52%|█████▎    | 42/80 [01:03<00:55,  1.46s/it]SDUncond Epoch 1/300:  54%|█████▍    | 43/80 [01:04<00:54,  1.47s/it]SDUncond Epoch 1/300:  55%|█████▌    | 44/80 [01:06<00:52,  1.47s/it]SDUncond Epoch 1/300:  56%|█████▋    | 45/80 [01:07<00:51,  1.47s/it]SDUncond Epoch 1/300:  57%|█████▊    | 46/80 [01:08<00:49,  1.47s/it]SDUncond Epoch 1/300:  59%|█████▉    | 47/80 [01:10<00:48,  1.47s/it]SDUncond Epoch 1/300:  60%|██████    | 48/80 [01:11<00:47,  1.47s/it]SDUncond Epoch 1/300:  61%|██████▏   | 49/80 [01:13<00:45,  1.47s/it]SDUncond Epoch 1/300:  62%|██████▎   | 50/80 [01:14<00:44,  1.47s/it]SDUncond Epoch 1/300:  64%|██████▍   | 51/80 [01:16<00:42,  1.47s/it]SDUncond Epoch 1/300:  65%|██████▌   | 52/80 [01:17<00:41,  1.47s/it]SDUncond Epoch 1/300:  66%|██████▋   | 53/80 [01:19<00:39,  1.47s/it]SDUncond Epoch 1/300:  68%|██████▊   | 54/80 [01:20<00:38,  1.47s/it]SDUncond Epoch 1/300:  69%|██████▉   | 55/80 [01:22<00:36,  1.47s/it]SDUncond Epoch 1/300:  70%|███████   | 56/80 [01:23<00:35,  1.47s/it]SDUncond Epoch 1/300:  71%|███████▏  | 57/80 [01:25<00:33,  1.47s/it]SDUncond Epoch 1/300:  72%|███████▎  | 58/80 [01:26<00:32,  1.47s/it]SDUncond Epoch 1/300:  74%|███████▍  | 59/80 [01:28<00:30,  1.47s/it]SDUncond Epoch 1/300:  75%|███████▌  | 60/80 [01:29<00:29,  1.47s/it]SDUncond Epoch 1/300:  76%|███████▋  | 61/80 [01:31<00:28,  1.48s/it]SDUncond Epoch 1/300:  78%|███████▊  | 62/80 [01:32<00:26,  1.47s/it]SDUncond Epoch 1/300:  79%|███████▉  | 63/80 [01:33<00:25,  1.47s/it]SDUncond Epoch 1/300:  80%|████████  | 64/80 [01:35<00:23,  1.47s/it]SDUncond Epoch 1/300:  81%|████████▏ | 65/80 [01:36<00:22,  1.47s/it]SDUncond Epoch 1/300:  82%|████████▎ | 66/80 [01:38<00:20,  1.47s/it]SDUncond Epoch 1/300:  84%|████████▍ | 67/80 [01:39<00:19,  1.47s/it]SDUncond Epoch 1/300:  85%|████████▌ | 68/80 [01:41<00:17,  1.47s/it]SDUncond Epoch 1/300:  86%|████████▋ | 69/80 [01:42<00:16,  1.47s/it]SDUncond Epoch 1/300:  88%|████████▊ | 70/80 [01:44<00:14,  1.47s/it]SDUncond Epoch 1/300:  89%|████████▉ | 71/80 [01:45<00:13,  1.47s/it]SDUncond Epoch 1/300:  90%|█████████ | 72/80 [01:47<00:11,  1.47s/it]SDUncond Epoch 1/300:  91%|█████████▏| 73/80 [01:48<00:10,  1.47s/it]SDUncond Epoch 1/300:  92%|█████████▎| 74/80 [01:50<00:08,  1.47s/it]SDUncond Epoch 1/300:  94%|█████████▍| 75/80 [01:51<00:07,  1.47s/it]SDUncond Epoch 1/300:  95%|█████████▌| 76/80 [01:53<00:05,  1.47s/it]SDUncond Epoch 1/300:  96%|█████████▋| 77/80 [01:54<00:04,  1.47s/it]SDUncond Epoch 1/300:  98%|█████████▊| 78/80 [01:56<00:02,  1.47s/it]SDUncond Epoch 1/300:  99%|█████████▉| 79/80 [01:57<00:01,  1.47s/it]SDUncond Epoch 1/300: 100%|██████████| 80/80 [01:58<00:00,  1.36s/it]SDUncond Epoch 1/300: 100%|██████████| 80/80 [01:58<00:00,  1.48s/it]
-SDUncond Epoch 2/300:   0%|          | 0/80 [00:00<?, ?it/s]SDUncond Epoch 2/300:   1%|▏         | 1/80 [00:02<03:20,  2.53s/it]SDUncond Epoch 2/300:   2%|▎         | 2/80 [00:04<02:31,  1.94s/it]SDUncond Epoch 2/300:   4%|▍         | 3/80 [00:05<02:14,  1.75s/it]SDUncond Epoch 2/300:   5%|▌         | 4/80 [00:07<02:06,  1.66s/it]SDUncond Epoch 2/300:   6%|▋         | 5/80 [00:08<02:00,  1.61s/it]SDUncond Epoch 2/300:   8%|▊         | 6/80 [00:10<01:56,  1.58s/it]SDUncond Epoch 2/300:   9%|▉         | 7/80 [00:11<01:53,  1.56s/it]SDUncond Epoch 2/300:  10%|█         | 8/80 [00:13<01:51,  1.55s/it]SDUncond Epoch 2/300:  11%|█▏        | 9/80 [00:14<01:49,  1.54s/it]SDUncond Epoch 2/300:  12%|█▎        | 10/80 [00:16<01:47,  1.54s/it]SDUncond Epoch 2/300:  14%|█▍        | 11/80 [00:17<01:46,  1.54s/it]SDUncond Epoch 2/300:  15%|█▌        | 12/80 [00:19<01:44,  1.54s/it]SDUncond Epoch 2/300:  16%|█▋        | 13/80 [00:20<01:42,  1.54s/it]SDUncond Epoch 2/300:  18%|█▊        | 14/80 [00:22<01:41,  1.54s/it]SDUncond Epoch 2/300:  19%|█▉        | 15/80 [00:23<01:40,  1.54s/it]SDUncond Epoch 2/300:  20%|██        | 16/80 [00:25<01:38,  1.54s/it]SDUncond Epoch 2/300:  21%|██▏       | 17/80 [00:27<01:37,  1.54s/it]SDUncond Epoch 2/300:  22%|██▎       | 18/80 [00:28<01:35,  1.55s/it]SDUncond Epoch 2/300:  24%|██▍       | 19/80 [00:30<01:34,  1.54s/it]SDUncond Epoch 2/300:  25%|██▌       | 20/80 [00:31<01:32,  1.54s/it]SDUncond Epoch 2/300:  26%|██▋       | 21/80 [00:33<01:30,  1.54s/it]SDUncond Epoch 2/300:  28%|██▊       | 22/80 [00:34<01:29,  1.55s/it]SDUncond Epoch 2/300:  29%|██▉       | 23/80 [00:36<01:28,  1.55s/it]SDUncond Epoch 2/300:  30%|███       | 24/80 [00:37<01:26,  1.55s/it]SDUncond Epoch 2/300:  31%|███▏      | 25/80 [00:39<01:24,  1.54s/it]SDUncond Epoch 2/300:  32%|███▎      | 26/80 [00:40<01:23,  1.55s/it]SDUncond Epoch 2/300:  34%|███▍      | 27/80 [00:42<01:21,  1.54s/it]SDUncond Epoch 2/300:  35%|███▌      | 28/80 [00:44<01:20,  1.54s/it]Fatal Python error: Segmentation fault
-
-Thread 0x000015553c8006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 320 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 953 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Thread 0x000015553bc006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 320 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 953 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Thread 0x000015553c0006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 320 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 953 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Thread 0x000015553b4006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 320 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/queues.py", line 231 in _feed
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 953 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Thread 0x000015553b8006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/selectors.py", line 416 in select
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/connection.py", line 931 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/connection.py", line 424 in _poll
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/connection.py", line 257 in poll
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/multiprocessing/queues.py", line 113 in get
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/utils/data/_utils/pin_memory.py", line 35 in do_one_step
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/utils/data/_utils/pin_memory.py", line 59 in _pin_memory_loop
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 953 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Current thread 0x000015553c4006c0 (most recent call first):
-  <no Python frame>
-
-Thread 0x0000155248a006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 324 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 607 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/tqdm/_monitor.py", line 60 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Thread 0x0000155248e006c0 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 324 in wait
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/queue.py", line 180 in get
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 269 in _run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 244 in run
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/threading.py", line 973 in _bootstrap
-
-Thread 0x0000155555407740 (most recent call first):
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/autograd/graph.py", line 823 in _engine_run_backward
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/autograd/__init__.py", line 347 in backward
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/site-packages/torch/_tensor.py", line 626 in backward
-  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/flow_matching_trainer.py", line 1192 in train
-  File "/project/6109890/bacobax2/ir-generative-study/src/algorithms/training/unconditional_sd_trainer.py", line 177 in train_from_config
-  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_latent_diffusion.py", line 133 in run_training
-  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_latent_diffusion.py", line 139 in main
-  File "/project/6109890/bacobax2/ir-generative-study/src/cli/train_latent_diffusion.py", line 143 in <module>
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 86 in _run_code
-  File "/home/bacobax2/miniforge3/envs/diffusers-dev/lib/python3.10/runpy.py", line 196 in _run_module_as_main
-
-Extension modules: regex._regex, numpy._core._multiarray_umath, numpy.linalg._umath_linalg, yaml._yaml, markupsafe._speedups, PIL._imaging, torch._C, torch._C._dynamo.autograd_compiler, torch._C._dynamo.eval_frame, torch._C._dynamo.guards, torch._C._dynamo.utils, torch._C._fft, torch._C._linalg, torch._C._nested, torch._C._nn, torch._C._sparse, torch._C._special, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philox, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator, kiwisolver._cext, psutil._psutil_linux, pandas._libs.tslibs.ccalendar, pandas._libs.tslibs.np_datetime, pandas._libs.tslibs.dtypes, pandas._libs.tslibs.base, pandas._libs.tslibs.nattype, pandas._libs.tslibs.timezones, pandas._libs.tslibs.fields, pandas._libs.tslibs.timedeltas, pandas._libs.tslibs.tzconversion, pandas._libs.tslibs.timestamps, pandas._libs.properties, pandas._libs.tslibs.offsets, pandas._libs.tslibs.strptime, pandas._libs.tslibs.parsing, pandas._libs.tslibs.conversion, pandas._libs.tslibs.period, pandas._libs.tslibs.vectorized, pandas._libs.ops_dispatch, pandas._libs.missing, pandas._libs.hashtable, pandas._libs.algos, pandas._libs.interval, pandas._libs.lib, pandas._libs.ops, pandas._libs.hashing, pandas._libs.arrays, pandas._libs.tslib, pandas._libs.sparse, pandas._libs.internals, pandas._libs.indexing, pandas._libs.index, pandas._libs.writers, pandas._libs.join, pandas._libs.window.aggregations, pandas._libs.window.indexers, pandas._libs.reshape, pandas._libs.groupby, pandas._libs.json, pandas._libs.parsers, pandas._libs.testing, PIL._imagingft, PIL._imagingmath, google._upb._message, PIL._avif, PIL._webp (total: 73)
-Command terminated by signal 11
-	Command being timed: "python -m src.cli.train_latent_diffusion --config /project/6109890/bacobax2/ir-generative-study/configs/datasets/bigearthnet_s2_b08_5x5_stride3/diffusion/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_b64_hflip_train_5100.yaml --mixed_precision auto"
-	User time (seconds): 146.05
-	System time (seconds): 73.06
-	Percent of CPU this job got: 117%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:07.10
-	Average shared text size (kbytes): 0
-	Average unshared data size (kbytes): 0
-	Average stack size (kbytes): 0
-	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 3420400
-	Average resident set size (kbytes): 0
-	Major (requiring I/O) page faults: 0
-	Minor (reclaiming a frame) page faults: 3488153
-	Voluntary context switches: 48668
-	Involuntary context switches: 2099
-	Swaps: 0
-	File system inputs: 0
-	File system outputs: 7672
-	Socket messages sent: 0
-	Socket messages received: 0
-	Signals delivered: 0
-	Page size (bytes): 4096
-	Exit status: 0

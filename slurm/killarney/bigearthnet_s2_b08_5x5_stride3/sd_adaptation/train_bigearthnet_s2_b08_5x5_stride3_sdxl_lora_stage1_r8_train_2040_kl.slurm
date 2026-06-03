@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ben-sdxl-r8-2040
 #SBATCH --account=aip-mpederso
-#SBATCH --time=12:00:00
+#SBATCH --time=17:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=80G
 #SBATCH --gpus-per-node=h100:1

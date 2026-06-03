@@ -11,4 +11,3 @@ output:
   model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_train_2040"
   log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_train_2040"
   debug_dir: "./artifacts/debug/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_train_2040"
-  resume: "latest"

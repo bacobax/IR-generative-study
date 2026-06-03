@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sel-ben-fm-2040
 #SBATCH --account=aip-mpederso
-#SBATCH --time=05:00:00
+#SBATCH --time=03:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=48G
 #SBATCH --gpus-per-node=h100:1
