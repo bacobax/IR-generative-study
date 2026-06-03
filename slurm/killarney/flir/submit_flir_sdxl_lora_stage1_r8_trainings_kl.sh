@@ -42,14 +42,14 @@ done
 
 if [[ "${DRY_RUN}" = "1" || "${DRY_RUN}" = "true" ]]; then
   echo "DRY RUN: commands that would be submitted"
-  # echo sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FULL_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FULL_WORKER}"
   echo sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${TWO_K_WORKER}"
-  # echo sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FIVE_K_WORKER}"
+  echo sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FIVE_K_WORKER}"
   exit 0
 fi
 
 echo "Submitting FLIR SDXL LoRA r8 jobs"
-# sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FULL_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FULL_WORKER}"
 sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${TWO_K_WORKER}"
-# sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FIVE_K_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}" "${FIVE_K_WORKER}"
 

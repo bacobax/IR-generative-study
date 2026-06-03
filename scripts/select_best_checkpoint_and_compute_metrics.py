@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import os
@@ -1518,6 +1519,901 @@ def run_final_metrics(
     return payload
 
 
+SUPPORTED_REFERENCE_SOURCES = {"train", "val", "test", "train_val_test"}
+
+
+def pipeline_mode(config: Mapping[str, Any]) -> str:
+    mode = str(config.get("pipeline_mode") or "legacy_staged_kid_fid").strip()
+    return mode or "legacy_staged_kid_fid"
+
+
+def _nested_mapping(config: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    value = config.get(key)
+    return value if isinstance(value, Mapping) else {}
+
+
+def _nested_get(config: Mapping[str, Any], section: str, key: str, default: Any = None) -> Any:
+    section_value = _nested_mapping(config, section)
+    if key in section_value:
+        return section_value[key]
+    return config.get(key, default)
+
+
+def _output_root_from_config(config: Mapping[str, Any]) -> Path:
+    output_cfg = _nested_mapping(config, "output")
+    output_value = output_cfg.get("output_root", config.get("output_root") or "/scratch/bacobax02")
+    output_root = resolve_path(output_value)
+    if output_root is None:
+        raise ValueError("output_root cannot be empty.")
+    return output_root
+
+
+def _publication_flat_generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Flatten nested publication config keys for existing generation helpers."""
+    flattened = dict(config)
+    generation_cfg = _nested_mapping(config, "generation")
+    metrics_cfg = _nested_mapping(config, "metrics")
+    output_cfg = _nested_mapping(config, "output")
+    reference_cfg = _nested_mapping(config, "reference_data")
+    for key, value in generation_cfg.items():
+        flattened[key] = value
+    for key, value in metrics_cfg.items():
+        flattened[key] = value
+    for key, value in output_cfg.items():
+        flattened[key] = value
+    if "dataset_id" in reference_cfg:
+        flattened["dataset_id"] = reference_cfg["dataset_id"]
+    return flattened
+
+
+def _reference_cfg(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    return _nested_mapping(config, "reference_data")
+
+
+def _reference_split_for_source(config: Mapping[str, Any], source_name: str) -> str:
+    ref_cfg = _reference_cfg(config)
+    split_map = ref_cfg.get("real_reference_splits", {})
+    if isinstance(split_map, Mapping) and source_name in split_map:
+        return str(split_map[source_name])
+    if source_name == "val":
+        return str(config.get("real_reference_split", "val"))
+    return source_name
+
+
+def _reference_limit_for_source(config: Mapping[str, Any], source_name: str) -> int | None:
+    ref_cfg = _reference_cfg(config)
+    limit_map = ref_cfg.get("real_reference_num_samples", {})
+    if isinstance(limit_map, Mapping) and source_name in limit_map:
+        value = limit_map[source_name]
+    else:
+        value = config.get("real_reference_num_samples")
+    if value in (None, "", "null"):
+        return None
+    return int(value)
+
+
+def _reference_discovery_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    ref_cfg = _reference_cfg(config)
+    discovery_config = dict(config)
+    if ref_cfg.get("dataset_id") not in (None, ""):
+        discovery_config["dataset_id"] = ref_cfg["dataset_id"]
+    if ref_cfg.get("real_reference_path") not in (None, ""):
+        discovery_config["real_reference_path"] = ref_cfg["real_reference_path"]
+    return discovery_config
+
+
+def discover_reference_images_for_split(
+    config: Mapping[str, Any],
+    run: RunResolution,
+    *,
+    source_name: str,
+) -> dict[str, Any]:
+    """Resolve one named real reference source for the publication pipeline."""
+    if source_name not in {"train", "val", "test"}:
+        raise ValueError(f"Unsupported split reference source: {source_name!r}")
+    discovery_config = _reference_discovery_config(config)
+    split = _reference_split_for_source(config, source_name)
+    paths, normalization_mode, reference_root = discover_reference_images(
+        discovery_config,
+        run,
+        split_override=split,
+        limit_override=_reference_limit_for_source(config, source_name),
+    )
+    return {
+        "reference_source": source_name,
+        "splits": [split],
+        "paths": paths,
+        "normalization_mode": normalization_mode,
+        "reference_root": reference_root,
+        "num_real_images": len(paths),
+    }
+
+
+def discover_reference_sources(
+    config: Mapping[str, Any],
+    run: RunResolution,
+    source_names: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    """Resolve train/val/test/train_val_test reference sources deterministically."""
+    requested = [str(name) for name in source_names]
+    unknown = sorted(set(requested) - SUPPORTED_REFERENCE_SOURCES)
+    if unknown:
+        raise ValueError(f"Unsupported real reference source(s): {unknown}.")
+
+    resolved: dict[str, dict[str, Any]] = {}
+    for source_name in requested:
+        if source_name in {"train", "val", "test"} and source_name not in resolved:
+            resolved[source_name] = discover_reference_images_for_split(
+                config,
+                run,
+                source_name=source_name,
+            )
+
+    if "train_val_test" in requested:
+        components = []
+        for source_name in ("train", "val", "test"):
+            if source_name not in resolved:
+                resolved[source_name] = discover_reference_images_for_split(
+                    config,
+                    run,
+                    source_name=source_name,
+                )
+            components.append(resolved[source_name])
+        seen: set[str] = set()
+        combined_paths: list[Path] = []
+        combined_splits: list[str] = []
+        normalization_modes = {str(component["normalization_mode"]) for component in components}
+        if len(normalization_modes) != 1:
+            raise ValueError(f"Reference source normalization modes differ: {sorted(normalization_modes)}")
+        for component in components:
+            combined_splits.extend(str(split) for split in component["splits"])
+            for path in component["paths"]:
+                key = str(Path(path).resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                combined_paths.append(Path(path))
+        limit = _reference_limit_for_source(config, "train_val_test")
+        if limit is not None:
+            combined_paths = combined_paths[:limit]
+        resolved["train_val_test"] = {
+            "reference_source": "train_val_test",
+            "splits": combined_splits,
+            "paths": combined_paths,
+            "normalization_mode": components[0]["normalization_mode"],
+            "reference_root": "train+val+test",
+            "num_real_images": len(combined_paths),
+        }
+
+    return {name: resolved[name] for name in requested}
+
+
+def make_publication_seeds(config: Mapping[str, Any]) -> dict[str, list[int]]:
+    selection_cfg = _nested_mapping(config, "selection")
+    final_cfg = _nested_mapping(config, "final")
+    generation_cfg = _nested_mapping(config, "generation")
+    base = int(generation_cfg.get("generation_seed", config.get("generation_seed", 1234)))
+    selection_n = int(selection_cfg.get("selection_num_images", config.get("selection_num_images", 10000)))
+    final_extra_n = int(final_cfg.get("final_extra_images", config.get("final_extra_images", 20000)))
+    selection_offset = int(generation_cfg.get("selection_seed_offset", config.get("selection_seed_offset", 0)))
+    final_offset = int(generation_cfg.get("final_extra_seed_offset", config.get("final_extra_seed_offset", 1000000)))
+    if selection_n <= 0:
+        raise ValueError("selection_num_images must be > 0.")
+    if final_extra_n < 0:
+        raise ValueError("final_extra_images must be >= 0.")
+    seeds = {
+        "selection": [base + selection_offset + idx for idx in range(selection_n)],
+        "final_extra": [base + final_offset + idx for idx in range(final_extra_n)],
+    }
+    flattened = [seed for values in seeds.values() for seed in values]
+    if len(flattened) != len(set(flattened)):
+        raise ValueError("Publication generation seeds overlap; adjust seed offsets.")
+    reuse_selection = bool(final_cfg.get("reuse_selection_images_for_top1", True))
+    final_total = final_cfg.get("final_total_images", config.get("final_total_images"))
+    if reuse_selection and final_total not in (None, ""):
+        expected = selection_n + final_extra_n
+        if int(final_total) != expected:
+            raise ValueError(
+                "final_total_images must equal selection_num_images + final_extra_images "
+                f"when reuse_selection_images_for_top1 is true: {final_total} != {expected}."
+            )
+    return seeds
+
+
+def _publication_metrics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    return _nested_mapping(config, "metrics")
+
+
+def _metric_enabled(config: Mapping[str, Any], key: str, default: bool) -> bool:
+    metrics_cfg = _publication_metrics_config(config)
+    if key in metrics_cfg:
+        return bool(metrics_cfg[key])
+    return bool(config.get(key, default))
+
+
+def _publication_feature_config(config: Mapping[str, Any], feature_name: str) -> dict[str, Any]:
+    feature_cfg = _nested_mapping(config, "feature_extractors")
+    if feature_name == "inception":
+        clean_cfg = feature_cfg.get("clean_fid", {})
+        inception_cfg = dict(config.get("inception", {}) if isinstance(config.get("inception"), Mapping) else {})
+        if isinstance(clean_cfg, Mapping):
+            inception_cfg.update({k: v for k, v in clean_cfg.items() if k not in {"name", "implementation"}})
+        return {"inception": inception_cfg}
+    if feature_name == "dinov2":
+        dinov2_cfg = feature_cfg.get("dinov2", {})
+        if not isinstance(dinov2_cfg, Mapping):
+            dinov2_cfg = {}
+        mapped = dict(dinov2_cfg)
+        if mapped.get("feature_layer") == "cls_or_pooled":
+            mapped["pooling"] = "cls"
+        elif mapped.get("feature_layer") not in (None, ""):
+            mapped["pooling"] = mapped["feature_layer"]
+        if mapped.get("model_name") == "dinov2_vitb14":
+            mapped["model_name"] = "facebook/dinov2-base"
+        return {"dinov2": mapped}
+    return {}
+
+
+def _clean_fid_importable() -> bool:
+    return importlib.util.find_spec("cleanfid") is not None
+
+
+def _load_paths_as_clean_fid_png_dir(
+    paths: Sequence[Path],
+    output_dir: Path,
+    *,
+    normalization_mode: str,
+    overwrite: bool,
+) -> Path:
+    from src.evaluation.feature_extractors import load_image_rgb
+
+    manifest_path = output_dir / "manifest.json"
+    path_strings = [str(Path(path)) for path in paths]
+    if manifest_path.is_file() and not overwrite:
+        payload = load_json_if_valid(manifest_path)
+        existing = list(output_dir.glob("sample_*.png"))
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("paths") == path_strings
+            and len(existing) == len(path_strings)
+        ):
+            return output_dir
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for idx, path in enumerate(paths):
+        image = load_image_rgb(path, normalization_mode=normalization_mode)
+        image.save(output_dir / f"sample_{idx:06d}.png")
+    save_json(
+        manifest_path,
+        {
+            "paths": path_strings,
+            "normalization_mode": normalization_mode,
+            "num_images": len(path_strings),
+            "timestamp": utc_timestamp(),
+        },
+    )
+    return output_dir
+
+
+def _compute_clean_fid_with_package(
+    *,
+    real_paths: Sequence[Path],
+    generated_paths: Sequence[Path],
+    real_normalization_mode: str,
+    generated_normalization_mode: str,
+    cache_root: Path,
+    device: str,
+    overwrite: bool,
+) -> float | None:
+    if not _clean_fid_importable():
+        return None
+    try:
+        from cleanfid import fid as clean_fid
+    except Exception:
+        return None
+
+    real_dir = _load_paths_as_clean_fid_png_dir(
+        real_paths,
+        cache_root / "real_cleanfid_png",
+        normalization_mode=real_normalization_mode,
+        overwrite=overwrite,
+    )
+    generated_dir = _load_paths_as_clean_fid_png_dir(
+        generated_paths,
+        cache_root / "generated_cleanfid_png",
+        normalization_mode=generated_normalization_mode,
+        overwrite=overwrite,
+    )
+    try:
+        return float(
+            clean_fid.compute_fid(
+                fdir1=str(real_dir),
+                fdir2=str(generated_dir),
+                mode="clean",
+                device=device,
+                num_workers=0,
+            )
+        )
+    except TypeError:
+        return float(clean_fid.compute_fid(fdir1=str(real_dir), fdir2=str(generated_dir), mode="clean"))
+
+
+def _build_publication_feature_extractor(feature_name: str, config: Mapping[str, Any], device: str):
+    from src.evaluation.feature_extractors import build_feature_extractor
+
+    try:
+        return build_feature_extractor(feature_name, _publication_feature_config(config, feature_name), device)
+    except Exception as exc:
+        if feature_name == "dinov2":
+            raise RuntimeError(
+                "FD-DINOv2 was enabled, but the DINOv2 feature extractor could not be built. "
+                "Install the required transformers/DINOv2 dependencies or disable metrics.compute_fd_dinov2."
+            ) from exc
+        raise
+
+
+def _publication_feature_cache_root(run_output_dir: Path, reference_source: str) -> Path:
+    return run_output_dir / "features" / sanitize_identifier(reference_source, field_name="reference_source")
+
+
+def _compute_publication_metrics_for_source(
+    *,
+    run: RunResolution,
+    run_output_dir: Path,
+    reference: Mapping[str, Any],
+    generated_paths: Sequence[Path],
+    generated_stage_name: str,
+    generated_cache_label: str,
+    config: Mapping[str, Any],
+    device: str,
+    include_clean_fid: bool,
+    include_fd_dinov2: bool,
+    include_kid: bool,
+    include_mmd: bool,
+    include_intra_lpips: bool,
+    metric_seed: int,
+) -> dict[str, Any]:
+    real_paths = [Path(path) for path in reference["paths"]]
+    real_normalization = str(reference["normalization_mode"])
+    generated_normalization = generated_normalization_mode(config, run)
+    overwrite_metrics = bool(config.get("overwrite_existing_metrics", False))
+    metric_values: dict[str, float] = {}
+    feature_extractors_used: list[dict[str, Any]] = []
+    cache_paths: dict[str, str] = {}
+
+    inception_features_real = None
+    inception_features_generated = None
+    needs_inception = include_kid or include_mmd or include_clean_fid
+    if needs_inception:
+        extractor = _build_publication_feature_extractor("inception", config, device)
+        reference_source = str(reference["reference_source"])
+        real_cache = _publication_feature_cache_root(run_output_dir, reference_source) / "real_inception.npz"
+        generated_cache = run_output_dir / "features" / f"{generated_cache_label}_inception.npz"
+        inception_features_real = _features_for_paths(
+            paths=real_paths,
+            extractor=extractor,
+            cache_path=real_cache,
+            config=config,
+            normalization_mode=real_normalization,
+        )
+        inception_features_generated = _features_for_paths(
+            paths=generated_paths,
+            extractor=extractor,
+            cache_path=generated_cache,
+            config=config,
+            normalization_mode=generated_normalization,
+        )
+        feature_extractors_used.append({"name": "inception", "implementation": "torchvision_or_local"})
+        cache_paths["real_inception_features"] = str(real_cache)
+        cache_paths["generated_inception_features"] = str(generated_cache)
+
+    clean_fid_value = None
+    clean_fid_error = None
+    if include_clean_fid:
+        try:
+            clean_fid_value = _compute_clean_fid_with_package(
+                real_paths=real_paths,
+                generated_paths=generated_paths,
+                real_normalization_mode=real_normalization,
+                generated_normalization_mode=generated_normalization,
+                cache_root=run_output_dir / "features" / "clean_fid_png" / generated_cache_label,
+                device=device,
+                overwrite=overwrite_metrics,
+            )
+        except Exception as exc:
+            clean_fid_error = f"{type(exc).__name__}: {exc}"
+            clean_fid_value = None
+        if clean_fid_value is not None:
+            metric_values["clean_fid"] = float(clean_fid_value)
+            feature_extractors_used.append({"name": "inception", "implementation": "clean_fid"})
+        else:
+            if inception_features_real is None or inception_features_generated is None:
+                raise RuntimeError("Inception features are required for inception_fid_fallback.")
+            from src.evaluation.generative_metrics import compute_fid
+
+            metric_values["inception_fid_fallback"] = compute_fid(
+                inception_features_real,
+                inception_features_generated,
+            )
+
+    if include_kid:
+        if inception_features_real is None or inception_features_generated is None:
+            raise RuntimeError("Inception features are required for KID.")
+        kid_cfg = config.get("kid", {}) if isinstance(config.get("kid"), Mapping) else {}
+        from src.evaluation.generative_metrics import compute_kid
+
+        min_count = min(inception_features_real.shape[0], inception_features_generated.shape[0])
+        metric_values["KID"] = compute_kid(
+            inception_features_real,
+            inception_features_generated,
+            subsets=int(kid_cfg.get("subsets", 100)),
+            subset_size=min(int(kid_cfg.get("subset_size", 1000)), min_count),
+            seed=int(metric_seed),
+        )
+
+    if include_mmd:
+        if inception_features_real is None or inception_features_generated is None:
+            raise RuntimeError("Inception features are required for MMD.")
+        mmd_cfg = config.get("mmd", {}) if isinstance(config.get("mmd"), Mapping) else {}
+        from src.evaluation.mmd import compute_rbf_mmd
+
+        metric_values["MMD"] = compute_rbf_mmd(
+            inception_features_real,
+            inception_features_generated,
+            bandwidths=mmd_cfg.get("bandwidths", [0.1, 1.0, 10.0]),
+        )
+
+    if include_fd_dinov2:
+        extractor = _build_publication_feature_extractor("dinov2", config, device)
+        reference_source = str(reference["reference_source"])
+        real_cache = _publication_feature_cache_root(run_output_dir, reference_source) / "real_dinov2.npz"
+        generated_cache = run_output_dir / "features" / f"{generated_cache_label}_dinov2.npz"
+        real_dino = _features_for_paths(
+            paths=real_paths,
+            extractor=extractor,
+            cache_path=real_cache,
+            config=config,
+            normalization_mode=real_normalization,
+        )
+        generated_dino = _features_for_paths(
+            paths=generated_paths,
+            extractor=extractor,
+            cache_path=generated_cache,
+            config=config,
+            normalization_mode=generated_normalization,
+        )
+        from src.evaluation.generative_metrics import compute_fid
+
+        metric_values["fd_dinov2"] = compute_fid(real_dino, generated_dino)
+        feature_extractors_used.append({"name": "dinov2", "implementation": "transformers"})
+        cache_paths["real_dinov2_features"] = str(real_cache)
+        cache_paths["generated_dinov2_features"] = str(generated_cache)
+
+    lpips_result = None
+    if include_intra_lpips:
+        from src.evaluation.intra_lpips import compute_intra_lpips
+
+        lpips_result = compute_intra_lpips(
+            real_paths=real_paths,
+            generated_paths=generated_paths,
+            backbone=str(config.get("lpips_backbone", "alex")),
+            device=device,
+            batch_size=max(1, int(config.get("lpips_batch_size") or config.get("metric_batch_size") or 8)),
+            real_normalization_mode=real_normalization,
+            generated_normalization_mode=generated_normalization,
+            resize_to=(
+                None
+                if config.get("lpips_resize_to") in (None, "none", "null", 0)
+                else int(config.get("lpips_resize_to", 256))
+            ),
+        )
+        metric_values["Intra-LPIPS"] = lpips_result.value
+
+    return {
+        "reference_source": str(reference["reference_source"]),
+        "splits": list(reference["splits"]),
+        "reference_root": str(reference["reference_root"]),
+        "num_real_images": len(real_paths),
+        "num_synthetic_images": len(generated_paths),
+        "generated_stage": generated_stage_name,
+        "generated_normalization_mode": generated_normalization,
+        "real_normalization_mode": real_normalization,
+        "feature_extractors_used": feature_extractors_used,
+        "cache_paths": cache_paths,
+        "metric_values": metric_values,
+        "clean_fid_status": {
+            "available": _clean_fid_importable(),
+            "used": clean_fid_value is not None,
+            "fallback_metric": "inception_fid_fallback" if include_clean_fid and clean_fid_value is None else None,
+            "error": clean_fid_error,
+        },
+        "lpips_diagnostics": lpips_result.to_dict() if lpips_result is not None else None,
+        "timestamp": utc_timestamp(),
+    }
+
+
+def _effective_selection_metric(row: Mapping[str, Any], requested_metric: str) -> str:
+    metric_values = row.get("metric_values", {})
+    if not isinstance(metric_values, Mapping):
+        metric_values = row
+    if requested_metric in metric_values:
+        return requested_metric
+    if requested_metric == "clean_fid" and "inception_fid_fallback" in metric_values:
+        return "inception_fid_fallback"
+    raise ValueError(
+        f"selection_metric={requested_metric!r} was requested but not computed. "
+        f"Available metrics: {sorted(metric_values)}"
+    )
+
+
+def _rank_publication_selection_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    requested_metric: str,
+    lower_is_better: bool,
+) -> tuple[list[dict[str, Any]], str]:
+    if not rows:
+        return [], requested_metric
+    effective_metric = _effective_selection_metric(rows[0], requested_metric)
+    for row in rows:
+        if _effective_selection_metric(row, requested_metric) != effective_metric:
+            raise ValueError("Selection rows produced inconsistent effective selection metrics.")
+
+    def metric_value(row: Mapping[str, Any]) -> float:
+        values = row["metric_values"]
+        return float(values[effective_metric])
+
+    ranked = sorted((dict(row) for row in rows), key=metric_value, reverse=not lower_is_better)
+    for rank, row in enumerate(ranked, start=1):
+        row["rank"] = rank
+        row["requested_selection_metric"] = requested_metric
+        row["effective_selection_metric"] = effective_metric
+        row["selection_metric_value"] = metric_value(row)
+    return ranked, effective_metric
+
+
+def _write_final_combined_manifest(
+    *,
+    manifest_path: Path,
+    selection_paths: Sequence[Path],
+    final_extra_paths: Sequence[Path],
+    selected: CheckpointCandidate,
+    run: RunResolution,
+    seeds: Mapping[str, Sequence[int]],
+) -> dict[str, Any]:
+    rows = []
+    for idx, path in enumerate(selection_paths):
+        rows.append(
+            {
+                "index": idx,
+                "phase": "selection",
+                "path": str(path),
+                "seed": int(seeds["selection"][idx]),
+            }
+        )
+    offset = len(rows)
+    for idx, path in enumerate(final_extra_paths):
+        rows.append(
+            {
+                "index": offset + idx,
+                "phase": "final_extra",
+                "path": str(path),
+                "seed": int(seeds["final_extra"][idx]),
+            }
+        )
+    payload = {
+        "run_identifier": run.run_identifier,
+        "selected_checkpoint_identifier": selected.checkpoint_identifier,
+        "selected_checkpoint_path": selected.checkpoint_path,
+        "num_selection_images": len(selection_paths),
+        "num_final_extra_images": len(final_extra_paths),
+        "total_images": len(rows),
+        "image_paths": rows,
+        "timestamp": utc_timestamp(),
+    }
+    save_json(manifest_path, payload)
+    return payload
+
+
+def _publication_summary_text(
+    path: Path,
+    *,
+    run: RunResolution,
+    discovery: DiscoveryResult,
+    ranking: Sequence[Mapping[str, Any]],
+    selected: CheckpointCandidate,
+    final_summary: Mapping[str, Any],
+) -> None:
+    lines = [
+        f"Pipeline mode: clean_fid_selection_publication",
+        f"Run: {run.run_identifier}",
+        f"Run directory: {run.run_dir}",
+        f"Model type: {run.model_type}",
+        f"Generation backend: {run.generation_backend_used}",
+        f"Sampling config: {run.sampling_config_path}",
+        "",
+        "Candidate checkpoints:",
+    ]
+    for candidate in discovery.candidates:
+        lines.append(f"- {candidate.checkpoint_identifier}: {candidate.checkpoint_path}")
+    lines.append("")
+    lines.append("Excluded checkpoints:")
+    if discovery.excluded:
+        for excluded in discovery.excluded:
+            lines.append(f"- {excluded.path}: {excluded.reason}")
+    else:
+        lines.append("- none")
+    lines.append("")
+    lines.append("Selection ranking:")
+    for row in ranking:
+        metric = row.get("effective_selection_metric")
+        value = row.get("selection_metric_value")
+        lines.append(f"{row['rank']}. {row['checkpoint_identifier']} {metric}={float(value):.6g}")
+    lines.extend(
+        [
+            "",
+            f"Selected checkpoint: {selected.checkpoint_identifier}",
+            "Final synthetic image count:",
+            f"- reused selection images: {final_summary.get('num_reused_selection_images')}",
+            f"- new final extra images: {final_summary.get('num_final_extra_images')}",
+            f"- total: {final_summary.get('total_synthetic_images')}",
+            "",
+            "Final metrics by reference source:",
+        ]
+    )
+    for source_name, row in final_summary.get("metrics_by_reference_source", {}).items():
+        values = row.get("metric_values", {}) if isinstance(row, Mapping) else {}
+        rendered = ", ".join(f"{key}={float(value):.6g}" for key, value in values.items())
+        lines.append(f"- {source_name}: {rendered}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def run_clean_fid_publication_one(
+    run_entry: Mapping[str, Any],
+    config: Mapping[str, Any],
+    *,
+    cleanup_checkpoints: bool = False,
+) -> dict[str, Any]:
+    if cleanup_checkpoints:
+        raise ValueError("--cleanup-checkpoints is only supported for the legacy staged pipeline.")
+
+    flat_config = _publication_flat_generation_config(config)
+    run = resolve_run(run_entry, flat_config)
+    run_output_dir = _output_root_from_config(flat_config) / run.run_identifier
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    save_json(
+        run_output_dir / "run_resolution.json",
+        {
+            "run_identifier": run.run_identifier,
+            "run_dir": str(run.run_dir),
+            "model_type": run.model_type,
+            "sampler_name": run.sampler_name,
+            "sampling_config_path": str(run.sampling_config_path) if run.sampling_config_path else None,
+            "generation_backend_used": run.generation_backend_used,
+        },
+    )
+
+    discovery = discover_candidate_checkpoints(
+        run.run_dir,
+        model_type=run.model_type,
+        checkpoint_min_epoch=int(flat_config.get("checkpoint_min_epoch", 50)),
+        checkpoint_min_step=flat_config.get("checkpoint_min_step"),
+    )
+    save_json(run_output_dir / "checkpoint_discovery.json", discovery)
+    by_id = {candidate.checkpoint_identifier: candidate for candidate in discovery.candidates}
+    seeds = make_publication_seeds(flat_config)
+    device = get_device(flat_config)
+    selection_cfg = _nested_mapping(flat_config, "selection")
+    final_cfg = _nested_mapping(flat_config, "final")
+    requested_metric = str(selection_cfg.get("selection_metric", "clean_fid"))
+    lower_is_better = bool(selection_cfg.get("lower_is_better", True))
+    selection_source_name = str(selection_cfg.get("selection_reference_source", "val"))
+    if selection_source_name not in SUPPORTED_REFERENCE_SOURCES:
+        raise ValueError(f"selection_reference_source must be one of {sorted(SUPPORTED_REFERENCE_SOURCES)}.")
+    final_source_names = list(final_cfg.get("real_reference_sources", ["train", "val", "test", "train_val_test"]))
+    if selection_source_name not in final_source_names:
+        reference_source_names = [selection_source_name, *final_source_names]
+    else:
+        reference_source_names = final_source_names
+    references = discover_reference_sources(flat_config, run, reference_source_names)
+    selection_reference = references[selection_source_name]
+
+    selection_metrics_path = run_output_dir / "selection_metrics.json"
+    selection_ranking_path = run_output_dir / "selection_ranking.json"
+    selection_payload = None if bool(flat_config.get("overwrite_existing_metrics", False)) else load_json_if_valid(selection_metrics_path)
+    if selection_payload is not None:
+        selection_rows = list(selection_payload.get("metrics", []))
+        ranking = list(load_json_if_valid(selection_ranking_path).get("ranking", [])) if load_json_if_valid(selection_ranking_path) else list(selection_payload.get("ranking", []))
+        effective_metric = selection_payload.get("effective_selection_metric") or (ranking[0].get("effective_selection_metric") if ranking else requested_metric)
+    else:
+        selection_rows = []
+        for checkpoint in discovery.candidates:
+            stage_dir = _stage_paths(run_output_dir, checkpoint, "selection")
+            images_dir, _cached = ensure_generated_stage(
+                run=run,
+                checkpoint=checkpoint,
+                stage_dir=stage_dir,
+                seeds=seeds["selection"],
+                config=flat_config,
+                device=device,
+            )
+            generated_paths = _image_paths(images_dir, len(seeds["selection"]))
+            result = _compute_publication_metrics_for_source(
+                run=run,
+                run_output_dir=run_output_dir,
+                reference=selection_reference,
+                generated_paths=generated_paths,
+                generated_stage_name="selection",
+                generated_cache_label=f"{checkpoint.checkpoint_identifier}_selection_{selection_source_name}",
+                config=flat_config,
+                device=device,
+                include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
+                include_fd_dinov2=_metric_enabled(flat_config, "compute_fd_dinov2", False),
+                include_kid=_metric_enabled(flat_config, "compute_kid", True),
+                include_mmd=_metric_enabled(flat_config, "compute_mmd", True),
+                include_intra_lpips=False,
+                metric_seed=int(flat_config.get("generation_seed", 1234)),
+            )
+            selection_rows.append(
+                {
+                    "run_identifier": run.run_identifier,
+                    "run_dir": str(run.run_dir),
+                    "checkpoint_identifier": checkpoint.checkpoint_identifier,
+                    "checkpoint_path": checkpoint.checkpoint_path,
+                    "checkpoint_kind": checkpoint.checkpoint_kind,
+                    "epoch": checkpoint.epoch,
+                    "step": checkpoint.step,
+                    "model_type": run.model_type,
+                    "generation_backend_used": run.generation_backend_used,
+                    "generated_image_folder": str(images_dir),
+                    "num_generated_images": len(generated_paths),
+                    **result,
+                }
+            )
+        ranking, effective_metric = _rank_publication_selection_rows(
+            selection_rows,
+            requested_metric=requested_metric,
+            lower_is_better=lower_is_better,
+        )
+        selection_payload = {
+            "pipeline_mode": "clean_fid_selection_publication",
+            "requested_selection_metric": requested_metric,
+            "effective_selection_metric": effective_metric,
+            "selection_reference_source": selection_source_name,
+            "metrics": selection_rows,
+            "ranking": ranking,
+            "timestamp": utc_timestamp(),
+        }
+        save_json(selection_metrics_path, selection_payload)
+        save_json(
+            selection_ranking_path,
+            {
+                "pipeline_mode": "clean_fid_selection_publication",
+                "requested_selection_metric": requested_metric,
+                "effective_selection_metric": effective_metric,
+                "ranking": ranking,
+                "timestamp": utc_timestamp(),
+            },
+        )
+
+    if not ranking:
+        raise RuntimeError(f"No selection ranking rows were produced for {run.run_identifier}.")
+    selected = by_id.get(str(ranking[0]["checkpoint_identifier"]))
+    if selected is None:
+        selected = _cached_candidate_from_row(ranking[0], fallback_identifier=str(ranking[0]["checkpoint_identifier"]))
+
+    selection_images_dir = _stage_paths(run_output_dir, selected, "selection") / "generated_npy_images"
+    selection_paths = _image_paths(selection_images_dir, len(seeds["selection"]))
+    final_extra_stage_dir = _stage_paths(run_output_dir, selected, "final_extra")
+    final_extra_images_dir, _cached = ensure_generated_stage(
+        run=run,
+        checkpoint=selected,
+        stage_dir=final_extra_stage_dir,
+        seeds=seeds["final_extra"],
+        config=flat_config,
+        device=device,
+    )
+    final_extra_paths = _image_paths(final_extra_images_dir, len(seeds["final_extra"])) if seeds["final_extra"] else []
+    final_combined_dir = _stage_paths(run_output_dir, selected, "final_combined")
+    manifest = _write_final_combined_manifest(
+        manifest_path=final_combined_dir / "image_manifest.json",
+        selection_paths=selection_paths,
+        final_extra_paths=final_extra_paths,
+        selected=selected,
+        run=run,
+        seeds=seeds,
+    )
+    final_generated_paths = [Path(row["path"]) for row in manifest["image_paths"]]
+
+    final_metrics_path = run_output_dir / "final_metrics_by_reference_source.json"
+    cached_final = None if bool(flat_config.get("overwrite_existing_metrics", False)) else load_json_if_valid(final_metrics_path)
+    if cached_final is not None:
+        final_metrics_by_source = dict(cached_final.get("metrics_by_reference_source", cached_final))
+    else:
+        final_metrics_by_source = {}
+        final_references = discover_reference_sources(flat_config, run, final_source_names)
+        for source_name, reference in final_references.items():
+            final_metrics_by_source[source_name] = _compute_publication_metrics_for_source(
+                run=run,
+                run_output_dir=run_output_dir,
+                reference=reference,
+                generated_paths=final_generated_paths,
+                generated_stage_name="final_combined",
+                generated_cache_label=f"{selected.checkpoint_identifier}_final_combined_{source_name}",
+                config=flat_config,
+                device=device,
+                include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
+                include_fd_dinov2=_metric_enabled(flat_config, "compute_fd_dinov2", False),
+                include_kid=_metric_enabled(flat_config, "compute_kid", True),
+                include_mmd=_metric_enabled(flat_config, "compute_mmd", True),
+                include_intra_lpips=_metric_enabled(flat_config, "compute_intra_lpips", False),
+                metric_seed=int(flat_config.get("generation_seed", 1234)) + 29,
+            )
+        save_json(
+            final_metrics_path,
+            {
+                "pipeline_mode": "clean_fid_selection_publication",
+                "selected_checkpoint_identifier": selected.checkpoint_identifier,
+                "selected_checkpoint_path": selected.checkpoint_path,
+                "metrics_by_reference_source": final_metrics_by_source,
+                "timestamp": utc_timestamp(),
+            },
+        )
+
+    preview_summary = save_run_analysis_previews(
+        run=run,
+        run_output_dir=run_output_dir,
+        discovery=discovery,
+        top_candidates=[selected],
+        selected=selected,
+        config=flat_config,
+    )
+    final_summary = {
+        "pipeline_mode": "clean_fid_selection_publication",
+        "run_identifier": run.run_identifier,
+        "run_dir": str(run.run_dir),
+        "model_type": run.model_type,
+        "generation_backend_used": run.generation_backend_used,
+        "sampling_config_path": str(run.sampling_config_path) if run.sampling_config_path else None,
+        "selected_checkpoint_identifier": selected.checkpoint_identifier,
+        "selected_checkpoint_path": selected.checkpoint_path,
+        "requested_selection_metric": requested_metric,
+        "effective_selection_metric": effective_metric,
+        "selection_reference_source": selection_source_name,
+        "num_reused_selection_images": len(selection_paths),
+        "num_final_extra_images": len(final_extra_paths),
+        "total_synthetic_images": len(final_generated_paths),
+        "final_combined_manifest": str(final_combined_dir / "image_manifest.json"),
+        "final_reference_sources": final_source_names,
+        "metrics_by_reference_source": final_metrics_by_source,
+        "analysis_previews": preview_summary,
+        "timestamp": utc_timestamp(),
+    }
+    save_json(run_output_dir / "final_metrics_summary.json", final_summary)
+    summary = {
+        **final_summary,
+        "all_candidate_checkpoints": discovery.candidates,
+        "excluded_checkpoints": discovery.excluded,
+        "selection_full_ranking": ranking,
+        "candidate_checkpoints": discovery.candidates,
+        "cache_paths": {
+            "run_output_dir": str(run_output_dir),
+            "features_dir": str(run_output_dir / "features"),
+        },
+    }
+    save_json(run_output_dir / "checkpoint_selection_summary.json", summary)
+    _publication_summary_text(
+        run_output_dir / "checkpoint_selection_summary.txt",
+        run=run,
+        discovery=discovery,
+        ranking=ranking,
+        selected=selected,
+        final_summary=final_summary,
+    )
+    return {"run_identifier": run.run_identifier, "output_dir": str(run_output_dir), **summary}
+
+
 def write_text_summary(
     path: Path,
     *,
@@ -2086,35 +2982,198 @@ def _infer_preflight_vae_downsample_factor(vae_cfg: Mapping[str, Any]) -> int:
     return 8
 
 
+def preflight_publication_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    flat_config = _publication_flat_generation_config(config)
+    selection_cfg = _nested_mapping(flat_config, "selection")
+    final_cfg = _nested_mapping(flat_config, "final")
+    selection_source = str(selection_cfg.get("selection_reference_source", "val"))
+    final_sources = list(final_cfg.get("real_reference_sources", ["train", "val", "test", "train_val_test"]))
+    if selection_source not in final_sources:
+        reference_sources = [selection_source, *final_sources]
+    else:
+        reference_sources = final_sources
+    seeds = make_publication_seeds(flat_config)
+    runs_payload = []
+    output_root = _output_root_from_config(flat_config)
+    for run_entry in flat_config.get("runs") or []:
+        try:
+            run = resolve_run(run_entry, flat_config)
+            discovery = discover_candidate_checkpoints(
+                run.run_dir,
+                model_type=run.model_type,
+                checkpoint_min_epoch=int(flat_config.get("checkpoint_min_epoch", 50)),
+                checkpoint_min_step=flat_config.get("checkpoint_min_step"),
+            )
+            references = discover_reference_sources(flat_config, run, reference_sources)
+            run_output_dir = output_root / run.run_identifier
+            runs_payload.append(
+                {
+                    "status": "ok",
+                    "run_identifier": run.run_identifier,
+                    "run_dir": str(run.run_dir),
+                    "model_type": run.model_type,
+                    "generation_backend_used": run.generation_backend_used,
+                    "sampling_config_path": str(run.sampling_config_path) if run.sampling_config_path else None,
+                    "sampling_resolution": _preflight_sampling_resolution(run, flat_config),
+                    "generated_normalization_mode": generated_normalization_mode(flat_config, run),
+                    "candidate_checkpoints": discovery.candidates,
+                    "excluded_checkpoints": discovery.excluded,
+                    "selection_reference_source": selection_source,
+                    "selection_num_real_images": references[selection_source]["num_real_images"],
+                    "final_reference_sources": {
+                        name: {
+                            "splits": references[name]["splits"],
+                            "num_real_images": references[name]["num_real_images"],
+                            "normalization_mode": references[name]["normalization_mode"],
+                            "reference_root": references[name]["reference_root"],
+                        }
+                        for name in final_sources
+                    },
+                    "planned_num_generated_images_per_checkpoint": len(seeds["selection"]),
+                    "planned_final_extra_images": len(seeds["final_extra"]),
+                    "planned_total_final_synthetic_count": len(seeds["selection"]) + len(seeds["final_extra"]),
+                    "feature_extractors_to_use": {
+                        "clean_fid_available": _clean_fid_importable(),
+                        "inception": bool(
+                            _metric_enabled(flat_config, "compute_clean_fid", True)
+                            or _metric_enabled(flat_config, "compute_kid", True)
+                            or _metric_enabled(flat_config, "compute_mmd", True)
+                        ),
+                        "dinov2": _metric_enabled(flat_config, "compute_fd_dinov2", False),
+                    },
+                    "expected_output_paths": {
+                        "run_output_dir": str(run_output_dir),
+                        "run_resolution": str(run_output_dir / "run_resolution.json"),
+                        "checkpoint_discovery": str(run_output_dir / "checkpoint_discovery.json"),
+                        "selection_metrics": str(run_output_dir / "selection_metrics.json"),
+                        "selection_ranking": str(run_output_dir / "selection_ranking.json"),
+                        "final_metrics_by_reference_source": str(run_output_dir / "final_metrics_by_reference_source.json"),
+                        "final_metrics_summary": str(run_output_dir / "final_metrics_summary.json"),
+                        "checkpoint_selection_summary": str(run_output_dir / "checkpoint_selection_summary.json"),
+                    },
+                }
+            )
+        except Exception as exc:
+            runs_payload.append(
+                {
+                    "status": "error",
+                    "run_identifier": str(run_entry.get("run_identifier", "")),
+                    "run_dir": str(run_entry.get("run_dir", "")),
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+    return {
+        "preflight": True,
+        "pipeline_mode": "clean_fid_selection_publication",
+        "runs": runs_payload,
+    }
+
+
 def preflight_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    if pipeline_mode(config) == "clean_fid_selection_publication":
+        return preflight_publication_config(config)
+    if pipeline_mode(config) != "legacy_staged_kid_fid":
+        raise ValueError(f"Unsupported pipeline_mode={pipeline_mode(config)!r}.")
     runs_payload = []
     for run_entry in config.get("runs") or []:
-        run = resolve_run(run_entry, config)
+        try:
+            run = resolve_run(run_entry, config)
+            discovery = discover_candidate_checkpoints(
+                run.run_dir,
+                model_type=run.model_type,
+                checkpoint_min_epoch=int(config.get("checkpoint_min_epoch", 50)),
+                checkpoint_min_step=config.get("checkpoint_min_step"),
+            )
+            real_paths, _real_normalization, real_reference_path = discover_reference_images(config, run)
+            runs_payload.append(
+                {
+                    "status": "ok",
+                    "run_identifier": run.run_identifier,
+                    "run_dir": str(run.run_dir),
+                    "model_type": run.model_type,
+                    "generation_backend_used": run.generation_backend_used,
+                    "sampling_resolution": _preflight_sampling_resolution(run, config),
+                    "generated_normalization_mode": generated_normalization_mode(config, run),
+                    "candidate_checkpoints": discovery.candidates,
+                    "excluded_checkpoints": discovery.excluded,
+                    "real_reference_path": str(real_reference_path),
+                    "num_real_reference_images": len(real_paths),
+                }
+            )
+        except Exception as exc:
+            runs_payload.append(
+                {
+                    "status": "error",
+                    "run_identifier": str(run_entry.get("run_identifier", "")),
+                    "run_dir": str(run_entry.get("run_dir", "")),
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+    return {"preflight": True, "pipeline_mode": "legacy_staged_kid_fid", "runs": runs_payload}
+
+
+def run_publication_generation_smoke_test(config: Mapping[str, Any]) -> dict[str, Any]:
+    flat_config = _publication_flat_generation_config(config)
+    device = get_device(flat_config)
+    smoke_config = dict(flat_config)
+    smoke_config["overwrite_existing_generations"] = True
+    output_root = _output_root_from_config(flat_config)
+    rows = []
+    for run_entry in flat_config.get("runs") or []:
+        run = resolve_run(run_entry, flat_config)
         discovery = discover_candidate_checkpoints(
             run.run_dir,
             model_type=run.model_type,
-            checkpoint_min_epoch=int(config.get("checkpoint_min_epoch", 50)),
-            checkpoint_min_step=config.get("checkpoint_min_step"),
+            checkpoint_min_epoch=int(flat_config.get("checkpoint_min_epoch", 50)),
+            checkpoint_min_step=flat_config.get("checkpoint_min_step"),
         )
-        real_paths, _real_normalization, real_reference_path = discover_reference_images(config, run)
-        runs_payload.append(
+        if not discovery.candidates:
+            raise RuntimeError(f"No candidate checkpoints discovered for smoke test: {run.run_identifier}")
+        checkpoint = discovery.candidates[0]
+        stage_dir = output_root / run.run_identifier / "_generation_smoke" / checkpoint.checkpoint_identifier / "selection"
+        seed = int(_nested_mapping(flat_config, "generation").get("generation_seed", flat_config.get("generation_seed", 1234)))
+        images_dir, _cached = ensure_generated_stage(
+            run=run,
+            checkpoint=checkpoint,
+            stage_dir=stage_dir,
+            seeds=[seed],
+            config=smoke_config,
+            device=device,
+        )
+        sample_path = images_dir / "sample_000000.npy"
+        arr = np.load(sample_path, allow_pickle=False)
+        rows.append(
             {
                 "run_identifier": run.run_identifier,
-                "run_dir": str(run.run_dir),
-                "model_type": run.model_type,
-                "generation_backend_used": run.generation_backend_used,
-                "sampling_resolution": _preflight_sampling_resolution(run, config),
-                "generated_normalization_mode": generated_normalization_mode(config, run),
-                "candidate_checkpoints": discovery.candidates,
-                "excluded_checkpoints": discovery.excluded,
-                "real_reference_path": str(real_reference_path),
-                "num_real_reference_images": len(real_paths),
+                "checkpoint_identifier": checkpoint.checkpoint_identifier,
+                "generated_sample": str(sample_path),
+                "shape": list(arr.shape),
+                "dtype": str(arr.dtype),
+                "min": float(arr.min()),
+                "max": float(arr.max()),
+                "std": float(arr.std()),
+                "expected_hw": list(resolve_generation_hw(flat_config, run)),
+                "generated_normalization_mode": generated_normalization_mode(flat_config, run),
             }
         )
-    return {"preflight": True, "runs": runs_payload}
+    payload = {
+        "generation_smoke_test": True,
+        "pipeline_mode": "clean_fid_selection_publication",
+        "device": device,
+        "runs": rows,
+        "timestamp": utc_timestamp(),
+    }
+    save_json(output_root / "generation_smoke_summary.json", payload)
+    return payload
 
 
 def run_generation_smoke_test(config: Mapping[str, Any]) -> dict[str, Any]:
+    if pipeline_mode(config) == "clean_fid_selection_publication":
+        return run_publication_generation_smoke_test(config)
+    if pipeline_mode(config) != "legacy_staged_kid_fid":
+        raise ValueError(f"Unsupported pipeline_mode={pipeline_mode(config)!r}.")
     device = get_device(config)
     smoke_config = dict(config)
     smoke_config["overwrite_existing_generations"] = True
@@ -2185,9 +3244,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(json.dumps(_jsonable(run_generation_smoke_test(config)), indent=2, sort_keys=True))
         return
 
+    mode = pipeline_mode(config)
+    if mode not in {"legacy_staged_kid_fid", "clean_fid_selection_publication"}:
+        raise ValueError(f"Unsupported pipeline_mode={mode!r}.")
     summaries = []
     for run_entry in runs:
-        summaries.append(run_one(run_entry, config, cleanup_checkpoints=bool(args.cleanup_checkpoints)))
+        if mode == "clean_fid_selection_publication":
+            summaries.append(
+                run_clean_fid_publication_one(
+                    run_entry,
+                    config,
+                    cleanup_checkpoints=bool(args.cleanup_checkpoints),
+                )
+            )
+        else:
+            summaries.append(run_one(run_entry, config, cleanup_checkpoints=bool(args.cleanup_checkpoints)))
     print(json.dumps(_jsonable({"runs": summaries}), indent=2, sort_keys=True))
 
 

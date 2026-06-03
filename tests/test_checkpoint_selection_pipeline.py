@@ -116,6 +116,51 @@ def test_stage_seed_partitions_do_not_overlap() -> None:
     assert len(flattened) == len(set(flattened))
 
 
+def test_pipeline_mode_defaults_to_legacy() -> None:
+    assert pipeline.pipeline_mode({}) == "legacy_staged_kid_fid"
+    assert pipeline.pipeline_mode({"pipeline_mode": "clean_fid_selection_publication"}) == "clean_fid_selection_publication"
+
+
+def test_publication_seed_partitions_do_not_overlap() -> None:
+    seeds = pipeline.make_publication_seeds(
+        {
+            "selection": {"selection_num_images": 3},
+            "final": {
+                "final_extra_images": 2,
+                "reuse_selection_images_for_top1": True,
+                "final_total_images": 5,
+            },
+            "generation": {
+                "generation_seed": 1234,
+                "selection_seed_offset": 0,
+                "final_extra_seed_offset": 1000000,
+            },
+        }
+    )
+
+    assert seeds["selection"] == [1234, 1235, 1236]
+    assert seeds["final_extra"] == [1001234, 1001235]
+    assert len(seeds["selection"] + seeds["final_extra"]) == len(set(seeds["selection"] + seeds["final_extra"]))
+
+
+def test_publication_seed_validation_rejects_final_total_mismatch() -> None:
+    try:
+        pipeline.make_publication_seeds(
+            {
+                "selection": {"selection_num_images": 3},
+                "final": {
+                    "final_extra_images": 2,
+                    "reuse_selection_images_for_top1": True,
+                    "final_total_images": 4,
+                },
+            }
+        )
+    except ValueError as exc:
+        assert "final_total_images" in str(exc)
+    else:
+        raise AssertionError("Expected final_total_images validation to fail.")
+
+
 def test_weighted_normalized_ranking_handles_identical_values() -> None:
     rows = [
         {"checkpoint_identifier": "a", "KID": 1.0, "FID": 5.0},
@@ -128,6 +173,51 @@ def test_weighted_normalized_ranking_handles_identical_values() -> None:
     assert [row["checkpoint_identifier"] for row in ranked] == ["a", "c", "b"]
     assert all(row["normalized_KID"] == 0.0 for row in ranked)
     assert [row["rank"] for row in ranked] == [1, 2, 3]
+
+
+def test_publication_ranking_uses_inception_fid_fallback_when_clean_fid_missing() -> None:
+    ranked, effective = pipeline._rank_publication_selection_rows(
+        [
+            {"checkpoint_identifier": "a", "metric_values": {"inception_fid_fallback": 3.0}},
+            {"checkpoint_identifier": "b", "metric_values": {"inception_fid_fallback": 1.0}},
+        ],
+        requested_metric="clean_fid",
+        lower_is_better=True,
+    )
+
+    assert effective == "inception_fid_fallback"
+    assert [row["checkpoint_identifier"] for row in ranked] == ["b", "a"]
+    assert ranked[0]["requested_selection_metric"] == "clean_fid"
+    assert ranked[0]["effective_selection_metric"] == "inception_fid_fallback"
+
+
+def test_final_combined_manifest_contains_selection_then_final_extra(tmp_path: Path) -> None:
+    run = pipeline.RunResolution(
+        run_identifier="run",
+        run_dir=tmp_path / "run",
+        model_type="latent_flow_matching",
+        sampler_name=None,
+        sampling_config_path=None,
+        preset={},
+        generation_backend_used="native_flow_matching_sampler",
+    )
+    checkpoint = pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "ckpt.pt"), "epoch", epoch=1)
+    selection_paths = [tmp_path / "selection" / f"sample_{idx:06d}.npy" for idx in range(2)]
+    final_paths = [tmp_path / "final_extra" / "sample_000000.npy"]
+
+    manifest = pipeline._write_final_combined_manifest(
+        manifest_path=tmp_path / "final_combined" / "image_manifest.json",
+        selection_paths=selection_paths,
+        final_extra_paths=final_paths,
+        selected=checkpoint,
+        run=run,
+        seeds={"selection": [10, 11], "final_extra": [100]},
+    )
+
+    assert manifest["total_images"] == 3
+    assert [row["phase"] for row in manifest["image_paths"]] == ["selection", "selection", "final_extra"]
+    assert [row["seed"] for row in manifest["image_paths"]] == [10, 11, 100]
+    assert (tmp_path / "final_combined" / "image_manifest.json").is_file()
 
 
 def test_preview_writer_accepts_channel_first_arrays(tmp_path: Path) -> None:
@@ -654,6 +744,135 @@ def test_discover_reference_images_accepts_explicit_tiff_reference_path(tmp_path
     assert [path.name for path in paths] == ["sample.npy", "sample_a.tiff"]
     assert normalization_mode == pipeline.UINT8_LINEAR
     assert reference_root == reference_dir
+
+
+def test_discover_publication_reference_sources_train_val_test_combined(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from src.core.data.dataset_targets import DEFAULT_DATASET_TARGETS, DatasetTarget
+
+    dataset_root = tmp_path / "dataset"
+    for split in ("train", "val", "test"):
+        split_dir = dataset_root / split
+        split_dir.mkdir(parents=True)
+        pipeline.np.save(split_dir / f"{split}_a.npy", pipeline.np.zeros((4, 4), dtype=pipeline.np.uint8))
+        pipeline.np.save(split_dir / f"{split}_b.npy", pipeline.np.ones((4, 4), dtype=pipeline.np.uint8))
+    monkeypatch.setitem(
+        DEFAULT_DATASET_TARGETS,
+        "unit_reference_sources",
+        DatasetTarget(
+            dataset_id="unit_reference_sources",
+            root=dataset_root,
+            normalization_mode=pipeline.UINT8_LINEAR,
+        ),
+    )
+
+    sources = pipeline.discover_reference_sources(
+        {
+            "reference_data": {
+                "dataset_id": "unit_reference_sources",
+                "real_reference_splits": {"train": "train", "val": "val", "test": "test"},
+                "real_reference_num_samples": {
+                    "train": None,
+                    "val": None,
+                    "test": None,
+                    "train_val_test": None,
+                },
+            }
+        },
+        _run_resolution(tmp_path / "run", model_type="latent_flow_matching"),
+        ["train", "val", "test", "train_val_test"],
+    )
+
+    assert sources["train"]["num_real_images"] == 2
+    assert sources["val"]["num_real_images"] == 2
+    assert sources["test"]["num_real_images"] == 2
+    assert sources["train_val_test"]["num_real_images"] == 6
+    assert sources["train_val_test"]["splits"] == ["train", "val", "test"]
+    assert [path.name for path in sources["train_val_test"]["paths"]] == [
+        "train_a.npy",
+        "train_b.npy",
+        "val_a.npy",
+        "val_b.npy",
+        "test_a.npy",
+        "test_b.npy",
+    ]
+
+
+def test_publication_preflight_reports_reference_counts_and_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from src.core.data.dataset_targets import DEFAULT_DATASET_TARGETS, DatasetTarget
+
+    dataset_root = tmp_path / "dataset"
+    for split in ("train", "val", "test"):
+        split_dir = dataset_root / split
+        split_dir.mkdir(parents=True)
+        pipeline.np.save(split_dir / f"{split}.npy", pipeline.np.ones((8, 8), dtype=pipeline.np.uint8))
+    monkeypatch.setitem(
+        DEFAULT_DATASET_TARGETS,
+        "unit_preflight_refs",
+        DatasetTarget(
+            dataset_id="unit_preflight_refs",
+            root=dataset_root,
+            normalization_mode=pipeline.UINT8_LINEAR,
+        ),
+    )
+
+    run_dir = tmp_path / "run"
+    unet_dir = run_dir / "UNET"
+    unet_dir.mkdir(parents=True)
+    (unet_dir / "config.json").write_text(
+        json.dumps({"sample_size": 8, "in_channels": 4}),
+        encoding="utf-8",
+    )
+    (unet_dir / "unet_fm_best.pt").write_bytes(b"best")
+    (unet_dir / "unet_fm_epoch_050.pt").write_bytes(b"epoch")
+    preset_path = tmp_path / "preset.yaml"
+    preset_path.write_text(
+        "\n".join(
+            [
+                "data:",
+                "  dataset_id: unit_preflight_refs",
+                "  image_size: 64",
+                "training:",
+                "  t_scale: 1000.0",
+                "  train_target: v",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = pipeline.preflight_config(
+        {
+            "pipeline_mode": "clean_fid_selection_publication",
+            "runs": [
+                {
+                    "run_identifier": "unit_run",
+                    "run_dir": str(run_dir),
+                    "model_type": "latent_flow_matching",
+                    "sampling_config_path": str(preset_path),
+                }
+            ],
+            "checkpoint_min_epoch": 50,
+            "selection": {"selection_num_images": 2, "selection_reference_source": "val"},
+            "final": {"final_extra_images": 1, "final_total_images": 3},
+            "generation": {"device": "cpu"},
+            "reference_data": {"dataset_id": "unit_preflight_refs"},
+            "output": {"output_root": str(tmp_path / "out")},
+        }
+    )
+
+    run_payload = payload["runs"][0]
+    assert payload["pipeline_mode"] == "clean_fid_selection_publication"
+    assert run_payload["selection_num_real_images"] == 1
+    assert run_payload["final_reference_sources"]["train_val_test"]["num_real_images"] == 3
+    assert run_payload["planned_num_generated_images_per_checkpoint"] == 2
+    assert run_payload["planned_final_extra_images"] == 1
+    assert run_payload["expected_output_paths"]["selection_metrics"].endswith("selection_metrics.json")
 
 
 def test_validate_generation_dir_rejects_wrong_resolution_and_black_cache(tmp_path: Path) -> None:
