@@ -80,12 +80,12 @@ fi
 echo "Submitting BigEarthNet FM OT jobs"
 # sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-fm-ot-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_FULL_CONFIG}",SIZE=full "${FM_WORKER}"
 # sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-fm-ot-5100 --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_5100_CONFIG}",SIZE=5100 "${FM_WORKER}"
-sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-fm-ot-2040 --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_2040_CONFIG}",SIZE=2040 "${FM_WORKER}"
+# sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-fm-ot-2040 --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${FM_2040_CONFIG}",SIZE=2040 "${FM_WORKER}"
 
 echo "Submitting BigEarthNet SD uncond jobs"
 # sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-sd-uncond-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_FULL_CONFIG}",SIZE=full "${SD_WORKER}"
 # sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-sd-uncond-5100 --time=15:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_5100_CONFIG}",SIZE=5100 "${SD_WORKER}"
-sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-sd-uncond-2040 --time=05:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_2040_CONFIG}",SIZE=2040 "${SD_WORKER}"
+sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-sd-uncond-2040 --time=10:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${SD_2040_CONFIG}",SIZE=2040 "${SD_WORKER}"
 
 # echo "Submitt    ing BigEarthNet SD LoRA r8 jobs"
 # sbatch --chdir="${PROJECT_ROOT}" --array=0-0 --job-name=ben-sd-lora-r8-full --time=24:00:00 --export=ALL,PROJECT_ROOT="${PROJECT_ROOT}",CONFIG_REL="${LORA_FULL_CONFIG}",SIZE=full "${SD_STAGE1_WORKER}"
