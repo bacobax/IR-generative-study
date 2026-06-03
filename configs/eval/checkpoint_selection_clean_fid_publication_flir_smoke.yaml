@@ -61,7 +61,7 @@ final:
 
 metrics:
   compute_clean_fid: true
-  compute_fd_dinov2: false
+  compute_fd_dinov2: true
   compute_kid: true
   compute_mmd: true
   compute_intra_lpips: false
@@ -71,7 +71,7 @@ feature_extractors:
     name: inception
     implementation: clean_fid
   dinov2:
-    enabled: false
+    enabled: true
     model_name: facebook/dinov2-base
     feature_layer: cls
     channel_handling: replicate_grayscale_to_rgb
