@@ -4,7 +4,7 @@ runs:
     run_dir: "artifacts/checkpoints/stable_diffusion/lora_runs/bigearthnet_s2_b08_5x5_stride3_sd15_lora_stage1_r8_train_2040"
     model_type: "sd_lora"
     sampler_name: null
-    sampling_config_path: "configs/datasets/bigearthnet_s2_b08_5x5_stride3/sd_adaptation/bigearthnet_s2_b08_5x5_stride3_lora_stage1_r8_train_2040.yaml"
+    sampling_config_path: "configs/datasets/ben/sd_adaptation/lora_sd15_ben_2k.yaml"
     generation_entrypoint: null
 
 checkpoint_min_epoch: 50

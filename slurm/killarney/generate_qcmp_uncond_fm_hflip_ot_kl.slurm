@@ -11,8 +11,8 @@
 set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
-WEIGHTS_DIR="${WEIGHTS_DIR:-artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot/UNET}"
-PRESET_PATH="${PRESET_PATH:-configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml}"
+WEIGHTS_DIR="${WEIGHTS_DIR:-artifacts/checkpoints/flow_matching/serious_runs/fm_scratch_flir_uncond_full_ot/UNET}"
+PRESET_PATH="${PRESET_PATH:-configs/datasets/flir/flow_matching/fm_scratch_flir_uncond_full_ot.yaml}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts/generated/checkpoint_compare/uncond_latent_flir_sd15_512_hflip_ot}"
 MAX_SAMPLES="${MAX_SAMPLES:-100}"
 STEPS="${STEPS:-50}"

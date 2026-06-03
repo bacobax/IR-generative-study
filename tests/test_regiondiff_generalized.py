@@ -541,7 +541,7 @@ def test_regiondiff_fm_ot_flir_preset_is_fixed_quality_first() -> None:
     from src.core.configs.config_loader import merge_config_and_cli
     from src.core.configs.fm_config import FMTrainConfig
 
-    preset_path = "configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml"
+    preset_path = "configs/fm/train/presets/fm_scratch_flir_bbox_2_stage_full_ot_hflip.yaml"
     parser = build_parser()
     args = parser.parse_args(["--config", preset_path])
     cfg = merge_config_and_cli(
@@ -567,7 +567,7 @@ def test_regiondiff_sd_uncond_flir_preset_is_fixed_quality_first() -> None:
     cfg = parse_sd_uncond_args(
         [
             "--config",
-            "configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml",
+            "configs/sd_uncond/train/presets/diff_scratch_flir_bbox_2_stage_full_hflip.yaml",
         ]
     )
 

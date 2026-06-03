@@ -4,7 +4,7 @@ runs:
     run_dir: "artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512_hflip_ot"
     model_type: "latent_flow_matching"
     sampler_name: null
-    sampling_config_path: "configs/datasets/flir/flow_matching/uncond_latent_flir_sd15_512_b64_hflip_ot.yaml"
+    sampling_config_path: "configs/datasets/flir/flow_matching/fm_scratch_flir_uncond_full_ot.yaml"
     generation_entrypoint: null
 
 checkpoint_min_epoch: 50

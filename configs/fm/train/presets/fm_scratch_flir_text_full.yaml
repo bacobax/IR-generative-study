@@ -1,0 +1,94 @@
+# Text-conditioned flow matching with CFG — full training preset
+#
+# Captions are derived dynamically from annotations.json (COCO format).
+# captions.json is no longer used.
+
+data:
+  train_dir: "./data/raw/v18/train/"
+  val_dir: "./data/raw/v18/val/"
+  annotations_path: "data/raw/v18/train/annotations.json"   # COCO-format annotations
+  text_caption_source: "annotations"
+  fallback_text: ""
+  batch_size: 8
+  num_workers: 4
+  subset_manifest: null
+
+model:
+  unet_config: "configs/models/fm/text_unet_config.json"
+  vae_config: "configs/models/fm/vae_config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt"
+  pretrained_unet_path: null
+
+conditioning:
+  text_encoder: "openai/clip-vit-large-patch14"
+  max_text_length: 77
+  cond_drop_prob: 0.1          # 10% conditioning dropout for CFG
+
+augment:
+  warmup_frac: 0.1
+  ramp_frac: 0.3
+  p_crop_warmup: 0.05
+  p_crop_max: 0.20
+  p_crop_final: 0.05
+  p_rot_warmup: 0.05
+  p_rot_max: 0.30
+  p_rot_final: 0.05
+
+training:
+  epochs: 100
+  lr: 1.0e-4
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 10
+  eval_every: 1
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+
+sampling:
+  sample_every: 1
+  sample_steps: 50
+  sample_batch_size: 4
+
+attention_vis:
+  enabled: false               # set to true to enable cross-attention heatmaps
+  target_tokens:
+    - "person"
+    - "people"
+  num_vis_steps: 8             # how many timesteps to capture
+  layer_filter: "all"          # "all", "up", "down", "mid"
+  head_reduction: "mean"       # "mean" or "none" (per-head)
+  overlay: true                # overlay heatmap on generated image
+  colormap: "jet"
+  per_layer: false             # also log per-layer heatmaps
+  vis_guidance_scale: 7.5
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/fm_scratch_flir_text_full/"
+  log_dir: null
+  resume: null
+
+# Curriculum learning (person-centered crops)
+# When enabled, crops are sampled around annotated people.
+# Captions reflect the number of people in the final crop.
+curriculum:
+  enabled: false
+  crop_prob_start: 0.0
+  crop_prob_end: 0.3
+  schedule: "linear"           # "linear" or "fixed"
+  margin_min: 1.2
+  margin_max: 2.0
+  center_jitter: 0.15
+  force_square: false
+
+# Count filtering (generalization testing)
+count_filter:
+  seen_counts: null
+  unseen_counts: null
+  max_crop_retries: 5
+
+# Device selection: null → auto-detect, or "cuda:0", "cuda:1", etc.
+device: null
+
+trainer_name: "text_fm_cfg"
+sampler_name: "cfg_fm"

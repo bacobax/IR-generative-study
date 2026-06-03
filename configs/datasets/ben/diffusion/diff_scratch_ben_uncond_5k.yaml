@@ -1,0 +1,13 @@
+# Unconditional latent diffusion on the 5.1k tile-balanced BigEarthNet B08 subset.
+extends: diff_scratch_ben_uncond_full.yaml
+
+data:
+  subset_manifest: "train_5100_tile_balanced.json"
+
+training:
+  gradient_accumulation_steps: 1
+
+output:
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/diff_scratch_ben_uncond_5k"
+  log_dir: "./artifacts/runs/main/stable_diffusion/diff_scratch_ben_uncond_5k"
+  debug_dir: "./artifacts/debug/diff_scratch_ben_uncond_5k"

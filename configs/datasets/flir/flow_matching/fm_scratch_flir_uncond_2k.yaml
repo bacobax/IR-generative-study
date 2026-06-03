@@ -1,0 +1,13 @@
+# Unconditional latent Flow Matching OT on the 2k FLIR stratified subset.
+extends: fm_scratch_flir_uncond_full_ot.yaml
+
+data:
+  subset_manifest: "train_2000_bbox_stratified.json"
+
+training:
+  gradient_accumulation_steps: 1
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/fm_scratch_flir_uncond_2k"
+  log_dir: "./artifacts/runs/main/flow_matching/fm_scratch_flir_uncond_2k"
+  debug_dir: "./artifacts/debug/fm_scratch_flir_uncond_2k"

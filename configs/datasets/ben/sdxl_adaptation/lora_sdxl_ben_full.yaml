@@ -1,0 +1,6 @@
+# Stage-1 SDXL LoRA r8 adaptation on the full BigEarthNet Sentinel-2 B08 split.
+extends: ../../../sdxl/train/presets/lora_sd15_ben_full.yaml
+
+subset_manifest: null
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/lora_sdxl_ben_full
+

@@ -1,0 +1,8 @@
+# Stage-1 SDXL LoRA r8 adaptation on the 2.04k tile-balanced BigEarthNet B08 subset.
+extends: lora_sdxl_ben_full.yaml
+
+subset_manifest: "train_2040_tile_balanced.json"
+checkpointing_epochs: 1
+save_optimizer_state: true
+resume_from_checkpoint: latest
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/lora_sdxl_ben_2k

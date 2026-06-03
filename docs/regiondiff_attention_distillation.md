@@ -10,7 +10,7 @@ intermediate latent features.
 Baseline scratch FM + RegionDiff remains:
 
 ```bash
-python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/fm_scratch_flir_bbox_2_stage_full_ot_hflip.yaml
 ```
 
 Attention-KD ablations:
@@ -19,7 +19,7 @@ Attention-KD ablations:
 python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l001.yaml
 python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l005.yaml
 python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_l010.yaml
-python -m src.cli.train_flow_matching --config configs/fm/train/presets/regiondiff_attention_kd_latent_flir_sd15_512_selected_person_car_truck_l005.yaml
+python -m src.cli.train_flow_matching --config configs/fm/train/presets/fm_scratch_flir_bbox_2_stage_full_kd_sel_l005.yaml
 ```
 
 The default teacher path in the KD presets is:

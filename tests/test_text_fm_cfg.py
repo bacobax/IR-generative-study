@@ -217,13 +217,13 @@ def test_config_system():
     assert cfg.conditioning.cond_drop_prob == 0.1
     assert cfg.training.eval_every == 1
 
-    yaml_data = load_yaml("configs/fm/train/presets/text_cfg.yaml")
+    yaml_data = load_yaml("configs/fm/train/presets/fm_scratch_flir_text_full.yaml")
     assert "conditioning" in yaml_data
     assert yaml_data["training"]["eval_every"] == 1
 
     parser = build_text_parser()
     args = parser.parse_args([
-        "--config", "configs/fm/train/presets/text_cfg.yaml",
+        "--config", "configs/fm/train/presets/fm_scratch_flir_text_full.yaml",
         "--epochs", "5",
         "--eval_every", "3",
     ])

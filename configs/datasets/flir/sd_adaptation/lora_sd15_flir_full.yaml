@@ -1,0 +1,19 @@
+# Stage-1 SD IR adaptation baseline A: LoRA-only on FLIR proxy.
+pretrained_model_name_or_path: runwayml/stable-diffusion-v1-5
+baseline_mode: sd_ir_lora
+dataset_id: flir_private_proxy_alignment_v18
+train_split: train
+subset_manifest: null
+prompt_text: "thermal image"
+resolution: 512
+train_batch_size: 16
+num_train_epochs: 100
+gradient_accumulation_steps: 2
+learning_rate: 1.0e-4
+lr_warmup_steps: 0
+rank: 8
+lora_alpha_scale: 1.0
+validation_prompt: "thermal image"
+checkpointing_epochs: 20
+output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/lora_sd15_flir_full
+seed: 42

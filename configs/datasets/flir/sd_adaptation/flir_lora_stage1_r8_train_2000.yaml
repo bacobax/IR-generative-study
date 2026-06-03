@@ -1,5 +1,0 @@
-# Stage-1 SD IR LoRA r8 adaptation on the 2k FLIR stratified subset.
-extends: flir_lora_stage1_r8.yaml
-
-subset_manifest: "train_2000_bbox_stratified.json"
-output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/flir_sd15_lora_stage1_r8_train_2000

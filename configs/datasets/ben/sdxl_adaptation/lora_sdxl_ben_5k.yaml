@@ -1,0 +1,6 @@
+# Stage-1 SDXL LoRA r8 adaptation on the 5.1k tile-balanced BigEarthNet B08 subset.
+extends: lora_sdxl_ben_full.yaml
+
+subset_manifest: "train_5100_tile_balanced.json"
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/lora_sdxl_ben_5k
+

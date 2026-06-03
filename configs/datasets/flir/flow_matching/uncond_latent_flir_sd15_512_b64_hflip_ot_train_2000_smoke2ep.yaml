@@ -1,5 +1,5 @@
 # Two-epoch checkpoint smoke run for unconditional latent Flow Matching OT.
-extends: uncond_latent_flir_sd15_512_b64_hflip_ot_train_2000.yaml
+extends: fm_scratch_flir_uncond_2k.yaml
 
 data:
   batch_size: 8
@@ -14,6 +14,6 @@ sampling:
   sample_every: 1
 
 output:
-  model_dir: "./artifacts/checkpoints/flow_matching/smoke_runs/uncond_latent_flir_sd15_512_hflip_ot_train_2000_smoke2ep"
-  log_dir: "./artifacts/runs/test/flow_matching/uncond_latent_flir_sd15_512_hflip_ot_train_2000_smoke2ep"
-  debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512_hflip_ot_train_2000_smoke2ep"
+  model_dir: "./artifacts/checkpoints/flow_matching/smoke_runs/fm_scratch_flir_uncond_2k_smoke2ep"
+  log_dir: "./artifacts/runs/test/flow_matching/fm_scratch_flir_uncond_2k_smoke2ep"
+  debug_dir: "./artifacts/debug/fm_scratch_flir_uncond_2k_smoke2ep"

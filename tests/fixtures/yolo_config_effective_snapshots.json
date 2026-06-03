@@ -2449,7 +2449,7 @@
         "batch_size": 8,
         "checkpoint_path": "artifacts/checkpoints/flow_matching/serious_runs/regiondiff_latent_flir_sd15_512_from_uncond_ot_hflip_fixed",
         "name": "regiondiff_fm_ot_hflip_fixed",
-        "preset_path": "configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml",
+        "preset_path": "configs/fm/train/presets/fm_scratch_flir_bbox_2_stage_full_ot_hflip.yaml",
         "seed_offset": 100000,
         "steps": 20
       },
@@ -2458,7 +2458,7 @@
         "batch_size": 8,
         "checkpoint_path": "artifacts/checkpoints/stable_diffusion/uncond_runs/regiondiff_latent_flir_sd15_512_from_uncond_hflip_fixed_x0",
         "name": "regiondiff_sd_hflip_fixed_x0",
-        "preset_path": "configs/sd_uncond/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml",
+        "preset_path": "configs/sd_uncond/train/presets/diff_scratch_flir_bbox_2_stage_full_hflip.yaml",
         "seed_offset": 200000,
         "steps": 80
       }

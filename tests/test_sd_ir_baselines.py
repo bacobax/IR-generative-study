@@ -213,11 +213,11 @@ def test_flir_stage1_presets_are_epoch_driven_by_default():
     preset_paths = [
         "configs/sd/train/presets/flir_unet_full_stage1.yaml",
         "configs/sd/train/presets/flir_unet_partial_stage1.yaml",
-        "configs/datasets/flir/sd_adaptation/flir_lora_stage1_r8.yaml",
-        "configs/sd/train/presets/flir_lora_stage1_r16.yaml",
-        "configs/sd/train/presets/flir_lora_stage1_r32.yaml",
-        "configs/sd/train/presets/flir_lora_stage1_r64.yaml",
-        "configs/sd/train/presets/flir_lora_stage1_r128.yaml",
+        "configs/datasets/flir/sd_adaptation/lora_sd15_flir_full.yaml",
+        "configs/sd/train/presets/lora_sd15_flir_full_r16.yaml",
+        "configs/sd/train/presets/lora_sd15_flir_full_r32.yaml",
+        "configs/sd/train/presets/lora_sd15_flir_full_r64.yaml",
+        "configs/sd/train/presets/lora_sd15_flir_full_r128.yaml",
     ]
 
     for preset_path in preset_paths:
@@ -610,7 +610,7 @@ def test_lora_mode_trains_only_adapter_params():
 
 
 def test_flir_lora_r64_preset_reaches_lora_and_checkpoint_consumers(tmp_path: Path, monkeypatch):
-    cfg = parse_args(["--config", "configs/sd/train/presets/flir_lora_stage1_r64.yaml"])
+    cfg = parse_args(["--config", "configs/sd/train/presets/lora_sd15_flir_full_r64.yaml"])
     cfg.output_dir = str(tmp_path / "flir_lora_r64")
 
     models = _build_model_components()

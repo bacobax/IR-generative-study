@@ -10,7 +10,7 @@ guidance_scale: 7.5
 prompt: ""                     # set via CLI: --prompt "a thermal image of ..."
 metadata: "/projets/Fbassignana/diffusers_try/flow_matching_trial/data/raw/v18/metadata.jsonl"                 # optional metadata.jsonl path; uses each row's "text" prompt
 max_samples: 200
-output_dir: "./artifacts/generated/main/text_fm_cfg"
+output_dir: "./artifacts/generated/main/fm_scratch_flir_text_full_cfg"
 device: null
 text_encoder: "openai/clip-vit-large-patch14"
 max_text_length: 77

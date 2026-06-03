@@ -1,0 +1,13 @@
+# Unconditional latent diffusion on the 2k FLIR stratified subset.
+extends: diff_scratch_flir_uncond_full.yaml
+
+data:
+  subset_manifest: "train_2000_bbox_stratified.json"
+
+training:
+  gradient_accumulation_steps: 1
+
+output:
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/diff_scratch_flir_uncond_2k"
+  log_dir: "./artifacts/runs/main/stable_diffusion/diff_scratch_flir_uncond_2k"
+  debug_dir: "./artifacts/debug/diff_scratch_flir_uncond_2k"

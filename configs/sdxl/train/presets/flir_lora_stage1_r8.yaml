@@ -17,5 +17,5 @@ validation_prompt: "thermal image"
 checkpointing_epochs: 100
 checkpoints_total_limit: 1
 save_optimizer_state: false
-output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/flir_sdxl_lora_stage1_r8
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/lora_sdxl_flir_full
 seed: 42

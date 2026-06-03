@@ -1,5 +1,5 @@
 # STAY-style latent FM on FLIR using the Stable Diffusion 1.5 VAE.
-# Sweep preset derived from stay_layout_latent_flir_sd15_512_b64.yaml.
+# Sweep preset derived from fm_scratch_flir_bbox_one_shot_full.yaml.
 # Uses batch size 8 and training.t_scale=100.0.
 
 data:
@@ -102,9 +102,9 @@ sampling:
   save_debug_images: true
 
 output:
-  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_flir_sd15_512_hflip_t100_b8"
-  log_dir: "./artifacts/runs/main/flow_matching/stay_layout_latent_flir_sd15_512_hflip_t100_b8"
-  debug_dir: "./artifacts/debug/stay_layout_latent_flir_sd15_512_hflip_t100_b8"
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/fm_scratch_flir_bbox_one_shot_full_t100_b8"
+  log_dir: "./artifacts/runs/main/flow_matching/fm_scratch_flir_bbox_one_shot_full_t100_b8"
+  debug_dir: "./artifacts/debug/fm_scratch_flir_bbox_one_shot_full_t100_b8"
   resume: null
 
 trainer_name: "layout_fm"

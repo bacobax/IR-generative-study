@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sbatch slurm/fir/flir/diff_scratch/diff_scratch_flir_bbox_2_stage_full.slurm
+sbatch slurm/fir/flir/diff_scratch/diff_scratch_flir_bbox_2_stage_full_hflip.slurm
+sbatch slurm/fir/flir/diff_scratch/diff_scratch_flir_uncond_2k.slurm
+sbatch slurm/fir/flir/diff_scratch/diff_scratch_flir_uncond_5k.slurm
+sbatch slurm/fir/flir/diff_scratch/diff_scratch_flir_uncond_full.slurm
+sbatch slurm/fir/flir/diff_scratch/diff_scratch_flir_uncond_full_no_hflip.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_bbox_2_stage_full.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_bbox_2_stage_full_hflip.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_bbox_2_stage_full_kd_sel_l005.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_bbox_2_stage_full_ot_hflip.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_bbox_one_shot_full.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_uncond_2k.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_uncond_5k.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_uncond_full.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_uncond_full_no_hflip.slurm
+sbatch slurm/fir/flir/fm_scratch/fm_scratch_flir_uncond_full_ot.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_2k.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_5k.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full_bbox_2_stage.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full_bbox_2_stage_fm_comparable.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full_r128.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full_r16.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full_r32.slurm
+sbatch slurm/fir/flir/lora_sd15/lora_sd15_flir_full_r64.slurm
+sbatch slurm/fir/flir/lora_sdxl/lora_sdxl_flir_2k.slurm
+sbatch slurm/fir/flir/lora_sdxl/lora_sdxl_flir_5k.slurm
+sbatch slurm/fir/flir/lora_sdxl/lora_sdxl_flir_full.slurm

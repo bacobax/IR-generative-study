@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from PIL import Image
 
 from src.algorithms.stable_diffusion_xl.config import (
     DEFAULT_SDXL_LORA_TARGET_MODULES,
@@ -26,6 +27,7 @@ from src.algorithms.stable_diffusion_xl.models import (
     load_sdxl_stage1_pipeline,
     save_stage1_manifest,
 )
+from src.algorithms.stable_diffusion_xl.training import log_validation
 
 
 class _TokenizerOutput:
@@ -64,6 +66,88 @@ class _FakeTextEncoder(torch.nn.Module):
         )
         pooled = torch.ones(batch, self.pooled_dim) * (self.offset + 10)
         return (pooled, hidden_states)
+
+
+class _FakeTensorboardWriter:
+    def __init__(self) -> None:
+        self.images = {}
+        self.scalars = {}
+
+    def add_images(self, tag, images, step, dataformats):
+        self.images[tag] = {
+            "images": images,
+            "step": step,
+            "dataformats": dataformats,
+        }
+
+    def add_scalar(self, tag, value, step):
+        self.scalars[tag] = {
+            "value": value,
+            "step": step,
+        }
+
+
+class _FakeValidationAccelerator:
+    def __init__(self) -> None:
+        self.writer = _FakeTensorboardWriter()
+        self.trackers = [SimpleNamespace(name="tensorboard", writer=self.writer)]
+
+
+class _FakeValidationVAE(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.anchor = torch.nn.Parameter(torch.zeros(1, dtype=torch.float16))
+        self.config = SimpleNamespace(
+            scaling_factor=2.0,
+            latents_mean=None,
+            latents_std=None,
+        )
+        self.decode_dtypes = []
+
+    @property
+    def dtype(self):
+        return next(self.parameters()).dtype
+
+    def decode(self, latents, return_dict=False):
+        self.decode_dtypes.append(latents.dtype)
+        image = torch.full(
+            (latents.shape[0], 3, 2, 2),
+            0.5,
+            device=latents.device,
+            dtype=latents.dtype,
+        )
+        return (image,)
+
+
+class _FakeImageProcessor:
+    def postprocess(self, image, output_type="pil"):
+        assert output_type == "pil"
+        arrays = image.detach().cpu().permute(0, 2, 3, 1).numpy()
+        arrays = (np.clip(arrays, 0.0, 1.0) * 255.0).astype(np.uint8)
+        return [Image.fromarray(array) for array in arrays]
+
+
+class _FakeSDXLValidationPipeline:
+    def __init__(self) -> None:
+        self.vae = _FakeValidationVAE()
+        self.image_processor = _FakeImageProcessor()
+        self.watermark = None
+        self.calls = []
+        self.progress_bar_disabled = False
+        self.device = torch.device("cpu")
+
+    def to(self, device):
+        self.device = torch.device(device)
+        self.vae.to(device=self.device)
+        return self
+
+    def set_progress_bar_config(self, *, disable):
+        self.progress_bar_disabled = disable
+
+    def __call__(self, prompt, **kwargs):
+        self.calls.append({"prompt": prompt, **kwargs})
+        latents = torch.zeros(1, 4, 2, 2, device=self.device, dtype=torch.float16)
+        return SimpleNamespace(images=latents)
 
 
 def test_sdxl_config_defaults_and_validation(tmp_path: Path) -> None:
@@ -239,6 +323,39 @@ def test_sdxl_stage1_manifest_and_pipeline_loader(monkeypatch, tmp_path: Path) -
     assert pipe.loaded == str(tmp_path)
 
 
+def test_sdxl_validation_decodes_latents_in_fp32_for_tensorboard() -> None:
+    pipeline = _FakeSDXLValidationPipeline()
+    accelerator = _FakeValidationAccelerator()
+
+    images = log_validation(
+        pipeline=pipeline,
+        validation_prompt="thermal image",
+        num_images=2,
+        num_inference_steps=17,
+        device=torch.device("cpu"),
+        seed=123,
+        accelerator=accelerator,
+        epoch=5,
+        height=512,
+        width=512,
+    )
+
+    assert len(images) == 2
+    assert pipeline.progress_bar_disabled is True
+    assert [call["num_inference_steps"] for call in pipeline.calls] == [17, 17]
+    assert [call["output_type"] for call in pipeline.calls] == ["latent", "latent"]
+    assert pipeline.vae.decode_dtypes == [torch.float32, torch.float32]
+    assert pipeline.vae.dtype == torch.float16
+
+    logged = accelerator.writer.images["validation/generated_rgb_01"]
+    assert logged["step"] == 5
+    assert logged["dataformats"] == "NHWC"
+    assert logged["images"].shape == (2, 2, 2, 3)
+    assert float(logged["images"].mean()) > 0.0
+    assert "validation/generated_mean" in accelerator.writer.scalars
+    assert "validation/generated_std" in accelerator.writer.scalars
+
+
 def test_generate_cli_accepts_sdxl_and_routes(monkeypatch, tmp_path: Path) -> None:
     import src.cli.generate as generate
 
@@ -269,4 +386,3 @@ def test_generate_cli_accepts_sdxl_and_routes(monkeypatch, tmp_path: Path) -> No
     generate.main()
 
     assert calls == [("sdxl", str(tmp_path / "stage1"), 2)]
-

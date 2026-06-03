@@ -50,6 +50,10 @@ logger = get_logger(__name__, log_level="INFO")
 CHECKPOINT_METADATA_FILENAME = "training_state.json"
 
 
+def _module_dtype(module: torch.nn.Module) -> torch.dtype:
+    return next(module.parameters()).dtype
+
+
 def _sanitize_tracker_value(value):
     if value is None:
         return "null"
@@ -537,22 +541,27 @@ def log_validation(
     is_final: bool = False,
 ) -> List:
     pipeline = pipeline.to(device)
+    pipeline.vae.to(device=device)
     pipeline.set_progress_bar_config(disable=True)
     generator = torch.Generator(device=device)
     if seed is not None:
         generator = generator.manual_seed(seed)
     autocast_ctx = nullcontext() if torch.backends.mps.is_available() else torch.autocast(device.type)
     images = []
-    with autocast_ctx:
-        for _ in range(num_images):
-            image = pipeline(
+    for _ in range(num_images):
+        with autocast_ctx:
+            latent_output = pipeline(
                 validation_prompt,
                 height=height,
                 width=width,
                 num_inference_steps=num_inference_steps,
                 generator=generator,
-            ).images[0]
-            images.append(image)
+                output_type="latent",
+            )
+            latents = latent_output.images
+            if isinstance(latents, (tuple, list)):
+                latents = latents[0]
+        images.extend(_decode_validation_latents_fp32(pipeline, latents))
     phase_name = "test" if is_final else "validation"
     for tracker in accelerator.trackers:
         if tracker.name == "tensorboard":
@@ -563,6 +572,16 @@ def log_validation(
                 np_images_01,
                 epoch,
                 dataformats="NHWC",
+            )
+            tracker.writer.add_scalar(
+                f"{phase_name}/generated_mean",
+                float(np_images_01.mean()),
+                epoch,
+            )
+            tracker.writer.add_scalar(
+                f"{phase_name}/generated_std",
+                float(np_images_01.std()),
+                epoch,
             )
         elif tracker.name == "wandb":
             tracker.log(
@@ -575,3 +594,36 @@ def log_validation(
             )
     return images
 
+
+def _decode_validation_latents_fp32(pipeline, latents: torch.Tensor) -> List:
+    """Decode SDXL validation latents in fp32 to avoid black fp16 VAE previews."""
+    vae = pipeline.vae
+    original_dtype = _module_dtype(vae)
+    try:
+        vae.to(dtype=torch.float32)
+        latents = latents.to(device=next(vae.parameters()).device, dtype=torch.float32)
+        has_latents_mean = hasattr(vae.config, "latents_mean") and vae.config.latents_mean is not None
+        has_latents_std = hasattr(vae.config, "latents_std") and vae.config.latents_std is not None
+        if has_latents_mean and has_latents_std:
+            latents_mean = torch.tensor(
+                vae.config.latents_mean,
+                device=latents.device,
+                dtype=latents.dtype,
+            ).view(1, 4, 1, 1)
+            latents_std = torch.tensor(
+                vae.config.latents_std,
+                device=latents.device,
+                dtype=latents.dtype,
+            ).view(1, 4, 1, 1)
+            latents = latents * latents_std / vae.config.scaling_factor + latents_mean
+        else:
+            latents = latents / vae.config.scaling_factor
+
+        with torch.no_grad():
+            image = vae.decode(latents, return_dict=False)[0]
+        if getattr(pipeline, "watermark", None) is not None:
+            image = pipeline.watermark.apply_watermark(image)
+        return pipeline.image_processor.postprocess(image, output_type="pil")
+    finally:
+        if original_dtype != torch.float32:
+            vae.to(dtype=original_dtype)

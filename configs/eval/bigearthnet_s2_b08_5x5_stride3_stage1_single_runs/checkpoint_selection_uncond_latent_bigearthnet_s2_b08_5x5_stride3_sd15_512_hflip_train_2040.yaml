@@ -4,7 +4,7 @@ runs:
     run_dir: "artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_train_2040"
     model_type: "sd_uncond"
     sampler_name: null
-    sampling_config_path: "configs/datasets/bigearthnet_s2_b08_5x5_stride3/diffusion/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_b64_hflip_train_2040.yaml"
+    sampling_config_path: "configs/datasets/ben/diffusion/diff_scratch_ben_uncond_2k.yaml"
     generation_entrypoint: null
 
 checkpoint_min_epoch: 50

@@ -1,0 +1,5 @@
+# Stage-1 SD LoRA r8 adaptation on the 2.04k tile-balanced BigEarthNet B08 subset.
+extends: lora_sd15_ben_full.yaml
+
+subset_manifest: "train_2040_tile_balanced.json"
+output_dir: ./artifacts/checkpoints/stable_diffusion/lora_runs/lora_sd15_ben_2k

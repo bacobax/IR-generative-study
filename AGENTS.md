@@ -39,7 +39,7 @@ Cluster jobs use Slurm wrappers such as `slurm/killarney/*.slurm` and usually ac
 Slurm launchers must use plain Bash/Slurm syntax directly. Do not add macro, wrapper, helper, or function calls for runtime setup, diagnostics, config inspection, path checks, GPU checks, or timed execution. In particular, do not use `slurm_*` helpers such as `slurm_grep_config_keys`, `slurm_print_gpu_diagnostics`, or `slurm_run_timed`; write the `echo`, `grep`, conditionals, `nvidia-smi`, `/usr/bin/time`, and command lines inline in the `.slurm` file.
 
 ## Config & Launcher Conventions
-Prefer adding YAML presets under the matching `configs/<area>/<action>/presets/` directory rather than hard-coding behavior. Keep names descriptive and stable, for example `flir_unet_full_domainstudio_512.yaml` or `regiondiff_latent_flir_sd15_512_from_uncond_b64_hflip.yaml`.
+Prefer adding YAML presets under the matching `configs/<area>/<action>/presets/` directory rather than hard-coding behavior. Keep names descriptive and stable, for example `flir_unet_full_domainstudio_512.yaml` or `diff_scratch_flir_bbox_2_stage_full_hflip.yaml`.
 
 When a shell or Slurm wrapper launches an experiment, it should point at a config via a variable such as `CONFIG_REL` or a clear command-line argument. If you change a config schema or registry mapping, update the matching loader, defaults, tests, and check scripts together.
 

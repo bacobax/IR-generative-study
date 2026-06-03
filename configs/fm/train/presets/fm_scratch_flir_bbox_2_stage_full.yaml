@@ -1,0 +1,89 @@
+# RegionDiff stage-2 latent Flow Matching on FLIR, initialized from the
+# completed unconditional latent FM SD1.5-VAE run.
+
+data:
+  dataset_id: "flir_private_proxy_alignment_v18"
+  image_size: 512
+  batch_size: 8
+  num_workers: 4
+  subset_manifest: null
+
+model:
+  unet_config: "configs/models/fm/stable_unet_x4_512.json"
+  vae_config: null
+  vae_weights: null
+  vae_pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+  vae_pretrained_subfolder: "vae"
+  pretrained_unet_path: "./artifacts/checkpoints/flow_matching/serious_runs/uncond_latent_flir_sd15_512/UNET/unet_fm_best.pt"
+
+augment:
+  warmup_frac: 0.0
+  ramp_frac: 0.0
+  p_crop_warmup: 0.0
+  p_crop_max: 0.0
+  p_crop_final: 0.0
+  p_rot_warmup: 0.0
+  p_rot_max: 0.0
+  p_rot_final: 0.0
+
+layout_conditioning:
+  enabled: true
+  variant: "regiondiff_v1"
+  active_region_resolutions: [64, 32, 16]
+  layout_token_dim: 256
+  bbox_fourier_dim: 64
+  same_class_position_slots: 128
+  use_background_token: true
+  train_mode: "adapters_only"
+  partial_backbone_modules: [mid_block, up_blocks]
+  adapter_learning_rate: 1.0e-4
+  backbone_learning_rate: 1.0e-5
+
+training:
+  epochs: 80
+  lr: 1.0e-4
+  gradient_accumulation_steps: 1
+  t_scale: 1000.0
+  train_target: "v"
+  save_every_n_epochs: 10
+  eval_every: 1
+  patience: null
+  min_delta: 0.0
+  strict_load: true
+  max_grad_norm: 1.0
+
+optimizer:
+  name: "adamw"
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+scheduler:
+  name: "constant_with_warmup"
+  warmup_ratio: 0.05
+  min_lr_ratio: 1.0
+
+ema:
+  enabled: true
+  decay: 0.999
+  start_step: 100
+
+precision:
+  mixed_precision: "auto"
+
+sampling:
+  sample_every: 10
+  sample_steps: 40
+  sample_batch_size: 4
+  sample_shape: null
+  fixed_validation_examples: 4
+  save_debug_images: true
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/fm_scratch_flir_bbox_2_stage_full"
+  log_dir: "./artifacts/runs/main/flow_matching/fm_scratch_flir_bbox_2_stage_full"
+  debug_dir: "./artifacts/debug/fm_scratch_flir_bbox_2_stage_full"
+  resume: null
+
+trainer_name: "default_fm"
+device: null

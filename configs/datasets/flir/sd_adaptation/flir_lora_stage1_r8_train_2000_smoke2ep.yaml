@@ -1,8 +1,8 @@
 # Two-epoch checkpoint smoke run for Stage-1 SD IR LoRA r8 adaptation.
-extends: flir_lora_stage1_r8_train_2000.yaml
+extends: lora_sd15_flir_2k.yaml
 
 train_batch_size: 8
 num_train_epochs: 2
 checkpointing_epochs: 1
 validation_prompt: "thermal image"
-output_dir: ./artifacts/checkpoints/stable_diffusion/lora_smoke_runs/flir_sd15_lora_stage1_r8_train_2000_smoke2ep
+output_dir: ./artifacts/checkpoints/stable_diffusion/lora_smoke_runs/lora_sd15_flir_2k_smoke2ep

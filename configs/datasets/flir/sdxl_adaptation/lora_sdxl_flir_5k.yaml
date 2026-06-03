@@ -1,0 +1,6 @@
+# Stage-1 SDXL IR LoRA r8 adaptation on the 5k FLIR stratified subset.
+extends: lora_sdxl_flir_full.yaml
+
+subset_manifest: "train_5000_bbox_stratified.json"
+output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/lora_sdxl_flir_5k
+

@@ -86,7 +86,7 @@ def test_distillation_config_defaults_and_validation() -> None:
 def test_existing_regiondiff_baseline_config_remains_kd_disabled() -> None:
     from src.cli.train_flow_matching import _FLAT_TO_NESTED, build_parser
 
-    preset = "configs/fm/train/presets/regiondiff_latent_flir_sd15_512_from_uncond_ot_b64_hflip.yaml"
+    preset = "configs/fm/train/presets/fm_scratch_flir_bbox_2_stage_full_ot_hflip.yaml"
     parser = build_parser()
     args = parser.parse_args(["--config", preset])
     cfg = merge_config_and_cli(
