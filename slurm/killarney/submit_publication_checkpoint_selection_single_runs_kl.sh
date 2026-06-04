@@ -1,7 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -z "${PROJECT_ROOT:-}" ]]; then
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "${SLURM_SUBMIT_DIR}/configs" ]]; then
+    PROJECT_ROOT="$(cd "${SLURM_SUBMIT_DIR}" && pwd -P)"
+  else
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+  fi
+else
+  PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd -P)"
+fi
+
+if [[ "${PROJECT_ROOT}" == "${HOME}/projects/"* ]]; then
+  PROJECT_CANDIDATE="/project/${PROJECT_ROOT#"${HOME}/projects/"}"
+  if [[ -d "${PROJECT_CANDIDATE}/configs" ]]; then
+    PROJECT_ROOT="$(cd "${PROJECT_CANDIDATE}" && pwd -P)"
+  fi
+fi
+
+if [[ "${PROJECT_ROOT}" == /home/* ]]; then
+  echo "ERROR: Killarney does not allow sbatch submission from /home." >&2
+  echo "       Run this from the repo path under /project or /scratch, or set PROJECT_ROOT to that path." >&2
+  echo "       Current resolved PROJECT_ROOT: ${PROJECT_ROOT}" >&2
+  exit 1
+fi
+
 cd "${PROJECT_ROOT}"
 
 echo "Submitting publication checkpoint-selection jobs from ${PROJECT_ROOT}"
