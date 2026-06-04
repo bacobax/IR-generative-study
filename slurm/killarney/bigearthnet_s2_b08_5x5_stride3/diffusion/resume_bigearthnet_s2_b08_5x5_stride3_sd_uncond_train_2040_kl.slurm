@@ -12,6 +12,8 @@ set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
 MIXED_PRECISION="${MIXED_PRECISION:-auto}"
+NUM_WORKERS="${NUM_WORKERS:-0}"
+SAVE_EVERY_N_EPOCHS="${SAVE_EVERY_N_EPOCHS:-5}"
 SIZE="${SIZE:-2040}"
 CONFIG_REL="${CONFIG_REL:-configs/datasets/bigearthnet_s2_b08_5x5_stride3/diffusion/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_b64_hflip_train_2040.yaml}"
 RESUME="${RESUME:-${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_train_2040/UNET/unet_sd_uncond_epoch_150_ckpt.pt}"
@@ -61,6 +63,8 @@ echo "CPU count: $(nproc 2>/dev/null || echo '<unknown>')"
 echo "BigEarthNet subset size: ${SIZE}"
 echo "Config: ${CONFIG}"
 echo "MIXED_PRECISION: ${MIXED_PRECISION}"
+echo "NUM_WORKERS: ${NUM_WORKERS}"
+echo "SAVE_EVERY_N_EPOCHS: ${SAVE_EVERY_N_EPOCHS}"
 echo "RESUME: ${RESUME}"
 which python
 python --version
@@ -89,6 +93,8 @@ set +e
   python -m src.cli.train_latent_diffusion \
     --config "${CONFIG}" \
     --mixed_precision "${MIXED_PRECISION}" \
+    --num_workers "${NUM_WORKERS}" \
+    --save_every_n_epochs "${SAVE_EVERY_N_EPOCHS}" \
     --resume "${RESUME}" > "${LOG_OUT}" 2> "${LOG_ERR}"
 STATUS=$?
 set -e
