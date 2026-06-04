@@ -12,9 +12,9 @@ set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 ENV_NAME="${ENV_NAME:-diffusers-dev}"
 MIXED_PRECISION="${MIXED_PRECISION:-auto}"
-RESUME="${RESUME:-latest}"
 SIZE="${SIZE:-2040}"
 CONFIG_REL="${CONFIG_REL:-configs/datasets/bigearthnet_s2_b08_5x5_stride3/diffusion/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_b64_hflip_train_2040.yaml}"
+RESUME="${RESUME:-${PROJECT_ROOT}/artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip_train_2040/UNET/unet_sd_uncond_epoch_150_ckpt.pt}"
 if [[ "${CONFIG_REL}" = /* ]]; then
   CONFIG="${CONFIG_REL}"
 else

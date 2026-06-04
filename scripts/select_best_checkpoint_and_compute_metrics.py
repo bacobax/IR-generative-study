@@ -353,7 +353,14 @@ def discover_candidate_checkpoints(
 
     normalized_model_type = (model_type or infer_model_type(run_path, None)).lower()
     stage1_manifest = run_path / "stage1_manifest.json"
-    if normalized_model_type in {"sd_lora", "sd_stage1", "stable_diffusion_lora"} or stage1_manifest.is_file():
+    if normalized_model_type in {
+        "sd_lora",
+        "sd_stage1",
+        "stable_diffusion_lora",
+        "sdxl_lora",
+        "sdxl_stage1",
+        "stable_diffusion_xl_lora",
+    } or stage1_manifest.is_file():
         if stage1_manifest.is_file() and _has_sd_stage1_final_export(run_path):
             include(
                 CheckpointCandidate(
@@ -458,6 +465,8 @@ def find_sampling_config_for_run(run_dir: Path, model_type: str) -> Path | None:
         search_roots.append(REPO_ROOT / "configs" / "sd_uncond" / "train")
     elif model_type in {"sd_lora", "sd_stage1", "stable_diffusion_lora"}:
         search_roots.append(REPO_ROOT / "configs" / "sd" / "train")
+    elif model_type in {"sdxl_lora", "sdxl_stage1", "stable_diffusion_xl_lora"}:
+        search_roots.append(REPO_ROOT / "configs" / "sdxl" / "train")
     else:
         search_roots.extend([
             REPO_ROOT / "configs" / "fm" / "train",
@@ -498,6 +507,8 @@ def infer_model_type(run_dir: Path, config_model_type: str | None) -> str:
     stage1_manifest = run_dir / "stage1_manifest.json"
     if stage1_manifest.is_file():
         data = json.loads(stage1_manifest.read_text(encoding="utf-8"))
+        if data.get("model_family") == "sdxl" or data.get("baseline_mode") == "sdxl_ir_lora":
+            return "sdxl_lora"
         if data.get("baseline_mode") == "sd_ir_lora":
             return "sd_lora"
         return "sd_stage1"
@@ -525,7 +536,14 @@ def resolve_run(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> RunR
         if not sampling_config_path.is_file():
             raise FileNotFoundError(f"sampling_config_path not found: {sampling_config_path}")
         preset = load_yaml(sampling_config_path)
-    elif model_type not in {"sd_lora", "sd_stage1", "stable_diffusion_lora"}:
+    elif model_type not in {
+        "sd_lora",
+        "sd_stage1",
+        "stable_diffusion_lora",
+        "sdxl_lora",
+        "sdxl_stage1",
+        "stable_diffusion_xl_lora",
+    }:
         manifest = _read_artifact_manifest_dict(run_dir)
         if manifest is not None:
             preset = {
@@ -535,7 +553,14 @@ def resolve_run(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> RunR
                 }
             }
 
-    if not preset and model_type not in {"sd_lora", "sd_stage1", "stable_diffusion_lora"}:
+    if not preset and model_type not in {
+        "sd_lora",
+        "sd_stage1",
+        "stable_diffusion_lora",
+        "sdxl_lora",
+        "sdxl_stage1",
+        "stable_diffusion_xl_lora",
+    }:
         raise ValueError(
             f"Could not resolve sampling config for {run_identifier}. "
             "Set sampling_config_path or provide a run with artifact_manifest.json."
@@ -551,6 +576,9 @@ def resolve_run(run_entry: Mapping[str, Any], config: Mapping[str, Any]) -> RunR
         "sd_lora": "diffusers_stable_diffusion_lora",
         "sd_stage1": "diffusers_stable_diffusion_stage1",
         "stable_diffusion_lora": "diffusers_stable_diffusion_lora",
+        "sdxl_lora": "diffusers_stable_diffusion_xl_lora",
+        "sdxl_stage1": "diffusers_stable_diffusion_xl_stage1",
+        "stable_diffusion_xl_lora": "diffusers_stable_diffusion_xl_lora",
     }.get(str(model_type), "")
     if not backend:
         raise ValueError(f"Unsupported model_type={model_type!r} for run {run_identifier}.")
@@ -721,6 +749,36 @@ def build_sd_stage1_pipeline(run: RunResolution, checkpoint: CheckpointCandidate
         from src.algorithms.stable_diffusion.models import load_lora_weights_compat
 
         load_lora_weights_compat(pipe, checkpoint.checkpoint_path)
+    pipe.to(device)
+    pipe.set_progress_bar_config(disable=True)
+    return pipe, manifest
+
+
+def build_sdxl_stage1_pipeline(run: RunResolution, checkpoint: CheckpointCandidate, *, config: Mapping[str, Any], device: str):
+    dtype = get_weight_dtype(config, device)
+    from src.algorithms.stable_diffusion_xl.models import (
+        load_sdxl_stage1_pipeline,
+        load_stage1_manifest as load_sdxl_stage1_manifest,
+    )
+
+    manifest = load_sdxl_stage1_manifest(run.run_dir)
+    base_model = config.get("base_model_name_or_path") or manifest.get("pretrained_model_name_or_path")
+    if checkpoint.checkpoint_kind == "final":
+        pipe, manifest = load_sdxl_stage1_pipeline(
+            stage1_dir=str(run.run_dir),
+            base_model=str(base_model) if base_model else None,
+            torch_dtype=dtype,
+        )
+    else:
+        from diffusers import StableDiffusionXLPipeline
+
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            str(base_model),
+            revision=manifest.get("revision"),
+            variant=manifest.get("variant"),
+            torch_dtype=dtype,
+        )
+        pipe.load_lora_weights(str(checkpoint.checkpoint_path))
     pipe.to(device)
     pipe.set_progress_bar_config(disable=True)
     return pipe, manifest
@@ -953,6 +1011,45 @@ def generate_sd_stage1_samples(
         torch.cuda.empty_cache()
 
 
+def generate_sdxl_stage1_samples(
+    *,
+    run: RunResolution,
+    checkpoint: CheckpointCandidate,
+    images_dir: Path,
+    seeds: Sequence[int],
+    config: Mapping[str, Any],
+    device: str,
+) -> None:
+    pipe, manifest = build_sdxl_stage1_pipeline(run, checkpoint, config=config, device=device)
+    prompt = str(config.get("generation_prompt") or manifest.get("prompt_text") or "thermal image")
+    negative_prompt = str(config.get("negative_prompt", ""))
+    steps = int(config.get("num_inference_steps", config.get("sd_steps", 40)))
+    guidance_scale = float(config.get("guidance_scale", 1.0))
+    height, width = resolve_generation_hw(config, run)
+    normalization_mode = str(manifest.get("normalization_mode", UINT8_LINEAR))
+
+    for idx, seed in tqdm(list(enumerate(seeds)), desc=f"Generating {checkpoint.checkpoint_identifier}", unit="img"):
+        output_path = images_dir / f"sample_{idx:06d}.npy"
+        if output_path.is_file():
+            continue
+        generator = torch.Generator(device=device).manual_seed(int(seed))
+        result = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            height=height,
+            width=width,
+            generator=generator,
+        )
+        arr = sd_output_to_npy(result.images[0], normalization_mode=normalization_mode)
+        save_npy_atomic(output_path, arr)
+
+    del pipe
+    if torch.cuda.is_available() and str(device).startswith("cuda"):
+        torch.cuda.empty_cache()
+
+
 def _sample_native_one(sampler, *, model_family: str, seed: int, steps: int, sample: Mapping[str, Any] | None = None):
     torch.manual_seed(int(seed))
     if torch.cuda.is_available() and str(getattr(sampler, "device", "")).startswith("cuda"):
@@ -1094,7 +1191,16 @@ def ensure_generated_stage(
         return images_dir, True
 
     active_seeds = list(seeds)
-    if run.generation_backend_used.startswith("diffusers_stable_diffusion"):
+    if run.generation_backend_used.startswith("diffusers_stable_diffusion_xl"):
+        generate_sdxl_stage1_samples(
+            run=run,
+            checkpoint=checkpoint,
+            images_dir=images_dir,
+            seeds=active_seeds,
+            config=config,
+            device=device,
+        )
+    elif run.generation_backend_used.startswith("diffusers_stable_diffusion"):
         generate_sd_stage1_samples(
             run=run,
             checkpoint=checkpoint,
@@ -2469,7 +2575,14 @@ def write_text_summary(
 
 
 def _is_lora_model_type(model_type: str) -> bool:
-    return str(model_type).lower() in {"sd_lora", "sd_stage1", "stable_diffusion_lora"}
+    return str(model_type).lower() in {
+        "sd_lora",
+        "sd_stage1",
+        "stable_diffusion_lora",
+        "sdxl_lora",
+        "sdxl_stage1",
+        "stable_diffusion_xl_lora",
+    }
 
 
 def _cleanup_delete_path(path: Path) -> str:

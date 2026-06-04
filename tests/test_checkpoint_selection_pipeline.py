@@ -97,6 +97,43 @@ def test_sd_lora_final_and_step_checkpoint_discovery(tmp_path: Path) -> None:
     assert any("missing Diffusers LoRA checkpoint weights" in item.reason for item in result.excluded)
 
 
+def test_sdxl_lora_model_type_and_checkpoint_discovery(tmp_path: Path) -> None:
+    (tmp_path / "stage1_manifest.json").write_text(
+        json.dumps(
+            {
+                "baseline_mode": "sdxl_ir_lora",
+                "model_family": "sdxl",
+                "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+                "dataset_id": "flir_private_proxy_alignment_v18",
+                "normalization_mode": "uint8_linear",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "pytorch_lora_weights.safetensors").write_bytes(b"final")
+    step = tmp_path / "checkpoint-100"
+    step.mkdir()
+    (step / "pytorch_lora_weights.safetensors").write_bytes(b"step")
+
+    assert pipeline.infer_model_type(tmp_path, None) == "sdxl_lora"
+    resolved = pipeline.resolve_run(
+        {
+            "run_identifier": "sdxl_unit",
+            "run_dir": str(tmp_path),
+            "model_type": None,
+            "sampling_config_path": None,
+        },
+        {},
+    )
+    assert resolved.generation_backend_used == "diffusers_stable_diffusion_xl_lora"
+    result = pipeline.discover_candidate_checkpoints(
+        tmp_path,
+        model_type=resolved.model_type,
+        checkpoint_min_step=50,
+    )
+    assert [candidate.checkpoint_identifier for candidate in result.candidates] == ["final", "step_000100"]
+
+
 def test_stage_seed_partitions_do_not_overlap() -> None:
     seeds = pipeline.make_stage_seeds(
         {
