@@ -79,7 +79,7 @@ output:
   model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip"
   log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip"
   debug_dir: "./artifacts/debug/uncond_latent_bigearthnet_s2_b08_5x5_stride3_sd15_512_hflip"
-  resume: null
+  resume: "latest"
 
 trainer_name: "sd_uncond"
 sampler_name: "sd_uncond"
