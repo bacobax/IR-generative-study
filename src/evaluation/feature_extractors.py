@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Mapping, Sequence
@@ -156,12 +157,16 @@ def extract_features(
     """Extract or load cached features for image paths."""
     cache = Path(cache_path)
     path_strings = [str(Path(path)) for path in paths]
+    paths_hash = hashlib.sha256("\n".join(path_strings).encode("utf-8")).hexdigest()
+    feature_config = dict(extractor.config)
     if cache.is_file() and not force:
         try:
             expected_metadata = {
                 "feature_extractor": extractor.name,
+                "feature_config": feature_config,
                 "normalization_mode": normalization_mode,
                 "num_images": len(path_strings),
+                "paths_hash": paths_hash,
             }
             cached = _load_cached_features(cache, expected_metadata=expected_metadata)
             if cached.shape[0] == len(path_strings):
@@ -189,9 +194,10 @@ def extract_features(
     cache.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "feature_extractor": extractor.name,
-        "feature_config": dict(extractor.config),
+        "feature_config": feature_config,
         "normalization_mode": normalization_mode,
         "num_images": len(path_strings),
+        "paths_hash": paths_hash,
     }
     if metadata:
         payload.update(dict(metadata))

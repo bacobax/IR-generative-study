@@ -1,5 +1,5 @@
 # Publication-style single-run checkpoint selection for uncond_latent_flir_sd15_512_hflip_train_2000.
-# Generates 10,000 selection images and 20,000 final-extra images; final metrics use the 30,000-image manifest.
+# Generates 10,000 selection images per checkpoint and 30,000 fresh final images from the selected checkpoint.
 pipeline_mode: clean_fid_selection_publication
 
 runs:
@@ -20,8 +20,6 @@ selection:
   lower_is_better: true
 
 final:
-  final_extra_images: 20000
-  reuse_selection_images_for_top1: true
   final_total_images: 30000
   real_reference_sources:
     - train
@@ -57,7 +55,7 @@ mmd:
 generation:
   generation_seed: 1234
   selection_seed_offset: 0
-  final_extra_seed_offset: 1000000
+  final_seed_offset: 1000000
   generation_prompt: "thermal image"
   negative_prompt: ""
   num_inference_steps: 50
@@ -66,6 +64,8 @@ generation:
   mixed_precision: fp16
   overwrite_existing_generations: false
   overwrite_existing_metrics: false
+  cleanup_generated_images: true
+  cleanup_dry_run: false
 
 reference_data:
   dataset_id: flir_private_proxy_alignment_v18

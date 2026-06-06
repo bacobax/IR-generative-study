@@ -31,6 +31,7 @@ from src.core.normalization import UINT8_LINEAR, raw_array_to_png_uint8, sd_outp
 
 
 LORA_WEIGHT_FILENAMES = ("pytorch_lora_weights.safetensors", "pytorch_lora_weights.bin")
+GENERATED_IMAGE_EXTENSIONS = {".npy", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 
 
 NATIVE_EPOCH_RE = re.compile(r"^(?P<stem>unet_(?:fm|sd_uncond))_epoch_(?P<epoch>\d+)(?:_ckpt)?\.pt$")
@@ -107,6 +108,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--generation-smoke-test",
         action="store_true",
         help="Generate and validate one sample for one checkpoint per run, then exit before metrics.",
+    )
+    parser.add_argument(
+        "--dry-run-cleanup",
+        action="store_true",
+        help="Verify storage-safe cleanup decisions but do not delete generated evaluation images.",
+    )
+    parser.add_argument(
+        "--keep-generated-images",
+        action="store_true",
+        help="Disable storage-saving deletion of generated publication images after verified metrics.",
     )
     return parser.parse_args(argv)
 
@@ -1257,6 +1268,7 @@ def _features_for_paths(
     cache_path: Path,
     config: Mapping[str, Any],
     normalization_mode: str,
+    metadata: Mapping[str, Any] | None = None,
 ) -> np.ndarray:
     from src.evaluation.feature_extractors import extract_features
 
@@ -1267,7 +1279,7 @@ def _features_for_paths(
         cache_path=cache_path,
         force=bool(config.get("overwrite_existing_metrics", False)),
         normalization_mode=normalization_mode,
-        metadata={"num_images": len(paths)},
+        metadata={"num_images": len(paths), **(dict(metadata) if metadata else {})},
     )
 
 
@@ -1351,6 +1363,348 @@ def _image_paths(images_dir: Path, count: int) -> list[Path]:
     if missing:
         raise RuntimeError(f"Missing {len(missing)} generated images in {images_dir}")
     return paths
+
+
+def _publication_stage_manifest_path(stage_dir: Path, stage_name: str) -> Path:
+    return stage_dir / f"{stage_name}_manifest.json"
+
+
+def _publication_stage_metrics_path(stage_dir: Path, stage_name: str) -> Path:
+    return stage_dir / f"{stage_name}_metrics.json"
+
+
+def _feature_cache_details(
+    path: str | Path,
+    *,
+    expected_rows: int | None = None,
+    expected_feature_extractor: str | None = None,
+    expected_run_identifier: str | None = None,
+    expected_checkpoint_identifier: str | None = None,
+    expected_stage: str | None = None,
+) -> dict[str, Any]:
+    cache_path = Path(path)
+    if not cache_path.is_file() or cache_path.name.endswith(".tmp"):
+        raise ValueError(f"Feature cache is missing or temporary: {cache_path}")
+    with np.load(cache_path, allow_pickle=False) as data:
+        if "features" not in data:
+            raise ValueError(f"Feature cache {cache_path} does not contain features.")
+        features = np.asarray(data["features"])
+        if features.ndim != 2:
+            raise ValueError(f"Feature cache {cache_path} must be 2D, got {features.shape}.")
+        if expected_rows is not None and int(features.shape[0]) != int(expected_rows):
+            raise ValueError(
+                f"Feature cache {cache_path} row mismatch: {features.shape[0]} != {expected_rows}."
+            )
+        if not np.isfinite(features).all():
+            raise ValueError(f"Feature cache {cache_path} contains NaN or Inf.")
+        metadata = json.loads(str(data["metadata"].item())) if "metadata" in data else {}
+        if expected_feature_extractor and metadata.get("feature_extractor") != expected_feature_extractor:
+            raise ValueError(
+                f"Feature cache {cache_path} extractor mismatch: "
+                f"{metadata.get('feature_extractor')!r} != {expected_feature_extractor!r}."
+            )
+        for key, expected in (
+            ("run_identifier", expected_run_identifier),
+            ("checkpoint_identifier", expected_checkpoint_identifier),
+            ("stage", expected_stage),
+        ):
+            if expected is not None and metadata.get(key) != expected:
+                raise ValueError(
+                    f"Feature cache {cache_path} metadata mismatch for {key}: "
+                    f"{metadata.get(key)!r} != {expected!r}."
+                )
+        return {
+            "path": str(cache_path),
+            "num_samples": int(features.shape[0]),
+            "dim": int(features.shape[1]),
+            "metadata": metadata,
+            "valid": True,
+        }
+
+
+def _publication_expected_metric_keys(
+    config: Mapping[str, Any],
+    *,
+    include_clean_fid: bool,
+    include_fd_dinov2: bool,
+    include_kid: bool,
+    include_mmd: bool,
+    include_intra_lpips: bool,
+) -> list[str]:
+    keys: list[str] = []
+    if include_clean_fid:
+        keys.append("clean_fid")
+    if include_fd_dinov2:
+        keys.append("fd_dinov2")
+    if include_kid:
+        keys.append("KID")
+    if include_mmd:
+        keys.append("MMD")
+    if include_intra_lpips:
+        keys.append("Intra-LPIPS")
+    if not keys:
+        raise ValueError("At least one publication metric must be enabled.")
+    return keys
+
+
+def _validate_publication_metric_result(
+    result: Mapping[str, Any],
+    *,
+    expected_metric_keys: Sequence[str],
+) -> dict[str, float]:
+    metric_values = result.get("metric_values")
+    if not isinstance(metric_values, Mapping):
+        raise ValueError("Metric result does not contain a metric_values mapping.")
+    validated: dict[str, float] = {}
+    missing = [key for key in expected_metric_keys if key not in metric_values]
+    if missing:
+        raise ValueError(f"Metric result is missing expected keys: {missing}")
+    for key in expected_metric_keys:
+        value = float(metric_values[key])
+        if not math.isfinite(value):
+            raise ValueError(f"Metric {key} is not finite: {value}")
+        validated[key] = value
+    return validated
+
+
+def _stage_generated_feature_paths(metric_result: Mapping[str, Any]) -> dict[str, Path]:
+    cache_paths = metric_result.get("cache_paths", {})
+    if not isinstance(cache_paths, Mapping):
+        return {}
+    mapping: dict[str, Path] = {}
+    if cache_paths.get("generated_inception_features"):
+        mapping["inception"] = Path(str(cache_paths["generated_inception_features"]))
+    if cache_paths.get("generated_dinov2_features"):
+        mapping["dinov2"] = Path(str(cache_paths["generated_dinov2_features"]))
+    return mapping
+
+
+def _verify_publication_stage_outputs(
+    *,
+    run: RunResolution,
+    checkpoint: CheckpointCandidate,
+    stage_name: str,
+    stage_dir: Path,
+    expected_num_images: int,
+    expected_metric_keys: Sequence[str],
+    metrics_path: Path,
+    metrics_payload: Mapping[str, Any],
+    require_images_present: bool,
+) -> dict[str, Any]:
+    if metrics_payload.get("run_identifier") != run.run_identifier:
+        raise ValueError("Metric payload run_identifier does not match current run.")
+    if metrics_payload.get("checkpoint_identifier") != checkpoint.checkpoint_identifier:
+        raise ValueError("Metric payload checkpoint_identifier does not match current checkpoint.")
+    _validate_publication_metric_result(metrics_payload, expected_metric_keys=expected_metric_keys)
+
+    images_dir = stage_dir / "generated_npy_images"
+    image_paths = expected_generated_paths(images_dir, expected_num_images)
+    image_count = sum(1 for path in image_paths if path.is_file())
+    if require_images_present:
+        missing = [path for path in image_paths if not path.is_file()]
+        if missing:
+            raise ValueError(f"{len(missing)} expected generated images are missing in {images_dir}.")
+
+    features: dict[str, Any] = {}
+    for extractor_name, feature_path in _stage_generated_feature_paths(metrics_payload).items():
+        features[extractor_name] = _feature_cache_details(
+            feature_path,
+            expected_rows=expected_num_images,
+            expected_feature_extractor=extractor_name,
+            expected_run_identifier=run.run_identifier,
+            expected_checkpoint_identifier=checkpoint.checkpoint_identifier,
+            expected_stage=stage_name,
+        )
+
+    expected_feature_names = []
+    if any(key in expected_metric_keys for key in ("clean_fid", "KID", "MMD")):
+        expected_feature_names.append("inception")
+    if "fd_dinov2" in expected_metric_keys:
+        expected_feature_names.append("dinov2")
+    missing_features = [name for name in expected_feature_names if name not in features]
+    if missing_features:
+        raise ValueError(f"Missing generated feature caches for {missing_features}.")
+
+    return {
+        "run_identifier": run.run_identifier,
+        "checkpoint_identifier": checkpoint.checkpoint_identifier,
+        "checkpoint_path": checkpoint.checkpoint_path,
+        "stage": stage_name,
+        "stage_dir": str(stage_dir),
+        "expected_num_images": int(expected_num_images),
+        "image_dir": str(images_dir),
+        "image_count": int(image_count),
+        "features": features,
+        "metrics_files": [str(metrics_path)],
+        "metric_keys": list(expected_metric_keys),
+        "verified": True,
+        "timestamp": utc_timestamp(),
+    }
+
+
+def _safe_delete_explicit_generated_files(
+    *,
+    checkpoint_identifier: str,
+    image_dir: Path,
+    paths: Sequence[Path],
+    dry_run: bool,
+    reason: str,
+) -> dict[str, Any]:
+    image_dir = Path(image_dir)
+    rows = []
+    total_bytes = 0
+    for path in paths:
+        path = Path(path)
+        if path.suffix.lower() not in GENERATED_IMAGE_EXTENSIONS:
+            raise ValueError(f"Refusing to delete unsupported generated file type: {path}")
+        if path.parent.resolve() != image_dir.resolve():
+            raise ValueError(f"Refusing to delete file outside expected image dir: {path}")
+        if not path.is_file():
+            continue
+        size = int(path.stat().st_size)
+        rows.append({"path": str(path), "bytes": size})
+        total_bytes += size
+
+    print(
+        "[checkpoint-selection cleanup] "
+        f"checkpoint={checkpoint_identifier} image_dir={image_dir} files={len(rows)} "
+        f"bytes={total_bytes} dry_run={dry_run} verified_safe=True reason={reason}",
+        flush=True,
+    )
+    if not dry_run:
+        for row in rows:
+            Path(row["path"]).unlink(missing_ok=True)
+    return {
+        "checkpoint_identifier": checkpoint_identifier,
+        "image_dir": str(image_dir),
+        "num_files": len(rows),
+        "bytes": int(total_bytes),
+        "dry_run": bool(dry_run),
+        "deleted": not dry_run,
+        "reason": reason,
+        "files": rows,
+        "timestamp": utc_timestamp(),
+    }
+
+
+def _safe_delete_known_image_dir(
+    *,
+    checkpoint_identifier: str,
+    image_dir: Path,
+    dry_run: bool,
+    reason: str,
+) -> dict[str, Any]:
+    if not image_dir.is_dir():
+        return {
+            "checkpoint_identifier": checkpoint_identifier,
+            "image_dir": str(image_dir),
+            "num_files": 0,
+            "bytes": 0,
+            "dry_run": bool(dry_run),
+            "deleted": False,
+            "reason": f"{reason}: missing directory",
+            "files": [],
+            "timestamp": utc_timestamp(),
+        }
+    paths = [
+        path
+        for path in sorted(image_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in GENERATED_IMAGE_EXTENSIONS
+    ]
+    return _safe_delete_explicit_generated_files(
+        checkpoint_identifier=checkpoint_identifier,
+        image_dir=image_dir,
+        paths=paths,
+        dry_run=dry_run,
+        reason=reason,
+    )
+
+
+def _delete_clean_fid_scratch_dirs(
+    *,
+    checkpoint_identifier: str,
+    metric_result: Mapping[str, Any],
+    dry_run: bool,
+) -> list[dict[str, Any]]:
+    cache_paths = metric_result.get("cache_paths", {})
+    if not isinstance(cache_paths, Mapping) or not cache_paths.get("clean_fid_png_root"):
+        return []
+    root = Path(str(cache_paths["clean_fid_png_root"]))
+    results = []
+    for child_name in ("generated_cleanfid_png", "real_cleanfid_png"):
+        results.append(
+            _safe_delete_known_image_dir(
+                checkpoint_identifier=checkpoint_identifier,
+                image_dir=root / child_name,
+                dry_run=dry_run,
+                reason="verified clean-fid scratch cleanup",
+            )
+        )
+    return results
+
+
+def _load_verified_publication_stage_metrics(
+    *,
+    run: RunResolution,
+    checkpoint: CheckpointCandidate,
+    stage_name: str,
+    stage_dir: Path,
+    expected_num_images: int,
+    expected_metric_keys: Sequence[str],
+) -> dict[str, Any] | None:
+    metrics_path = _publication_stage_metrics_path(stage_dir, stage_name)
+    manifest_path = _publication_stage_manifest_path(stage_dir, stage_name)
+    metrics_payload = load_json_if_valid(metrics_path)
+    manifest = load_json_if_valid(manifest_path)
+    if not isinstance(metrics_payload, Mapping) or not isinstance(manifest, Mapping):
+        return None
+    if not manifest.get("verified") or not manifest.get("images_deleted"):
+        return None
+    try:
+        _verify_publication_stage_outputs(
+            run=run,
+            checkpoint=checkpoint,
+            stage_name=stage_name,
+            stage_dir=stage_dir,
+            expected_num_images=expected_num_images,
+            expected_metric_keys=expected_metric_keys,
+            metrics_path=metrics_path,
+            metrics_payload=metrics_payload,
+            require_images_present=False,
+        )
+    except Exception:
+        return None
+    return dict(metrics_payload)
+
+
+def _final_image_manifest(
+    *,
+    manifest_path: Path,
+    final_paths: Sequence[Path],
+    selected: CheckpointCandidate,
+    run: RunResolution,
+    seeds: Sequence[int],
+) -> dict[str, Any]:
+    rows = [
+        {
+            "index": idx,
+            "phase": "final",
+            "path": str(path),
+            "seed": int(seeds[idx]),
+        }
+        for idx, path in enumerate(final_paths)
+    ]
+    payload = {
+        "run_identifier": run.run_identifier,
+        "selected_checkpoint_identifier": selected.checkpoint_identifier,
+        "selected_checkpoint_path": selected.checkpoint_path,
+        "num_final_images": len(final_paths),
+        "total_images": len(final_paths),
+        "image_paths": rows,
+        "timestamp": utc_timestamp(),
+    }
+    save_json(manifest_path, payload)
+    return payload
 
 
 def run_stage1(
@@ -1800,29 +2154,21 @@ def make_publication_seeds(config: Mapping[str, Any]) -> dict[str, list[int]]:
     generation_cfg = _nested_mapping(config, "generation")
     base = int(generation_cfg.get("generation_seed", config.get("generation_seed", 1234)))
     selection_n = int(selection_cfg.get("selection_num_images", config.get("selection_num_images", 10000)))
-    final_extra_n = int(final_cfg.get("final_extra_images", config.get("final_extra_images", 20000)))
+    final_total_value = final_cfg.get("final_total_images", config.get("final_total_images", 30000))
+    final_n = int(final_total_value)
     selection_offset = int(generation_cfg.get("selection_seed_offset", config.get("selection_seed_offset", 0)))
-    final_offset = int(generation_cfg.get("final_extra_seed_offset", config.get("final_extra_seed_offset", 1000000)))
+    final_offset = int(generation_cfg.get("final_seed_offset", config.get("final_seed_offset", 1000000)))
     if selection_n <= 0:
         raise ValueError("selection_num_images must be > 0.")
-    if final_extra_n < 0:
-        raise ValueError("final_extra_images must be >= 0.")
+    if final_n <= 0:
+        raise ValueError("final_total_images must be > 0.")
     seeds = {
         "selection": [base + selection_offset + idx for idx in range(selection_n)],
-        "final_extra": [base + final_offset + idx for idx in range(final_extra_n)],
+        "final": [base + final_offset + idx for idx in range(final_n)],
     }
     flattened = [seed for values in seeds.values() for seed in values]
     if len(flattened) != len(set(flattened)):
         raise ValueError("Publication generation seeds overlap; adjust seed offsets.")
-    reuse_selection = bool(final_cfg.get("reuse_selection_images_for_top1", True))
-    final_total = final_cfg.get("final_total_images", config.get("final_total_images"))
-    if reuse_selection and final_total not in (None, ""):
-        expected = selection_n + final_extra_n
-        if int(final_total) != expected:
-            raise ValueError(
-                "final_total_images must equal selection_num_images + final_extra_images "
-                f"when reuse_selection_images_for_top1 is true: {final_total} != {expected}."
-            )
     return seeds
 
 
@@ -1960,7 +2306,12 @@ def _build_publication_feature_extractor(feature_name: str, config: Mapping[str,
 
 
 def _publication_feature_cache_root(run_output_dir: Path, reference_source: str) -> Path:
-    return run_output_dir / "features" / sanitize_identifier(reference_source, field_name="reference_source")
+    return (
+        run_output_dir
+        / "features"
+        / "references"
+        / sanitize_identifier(reference_source, field_name="reference_source")
+    )
 
 
 def _compute_publication_metrics_for_source(
@@ -1971,6 +2322,8 @@ def _compute_publication_metrics_for_source(
     generated_paths: Sequence[Path],
     generated_stage_name: str,
     generated_cache_label: str,
+    checkpoint_identifier: str | None = None,
+    generated_features_root: Path | None = None,
     config: Mapping[str, Any],
     device: str,
     include_clean_fid: bool,
@@ -1984,6 +2337,8 @@ def _compute_publication_metrics_for_source(
     real_normalization = str(reference["normalization_mode"])
     generated_normalization = generated_normalization_mode(config, run)
     overwrite_metrics = bool(config.get("overwrite_existing_metrics", False))
+    generated_feature_dir = Path(generated_features_root) if generated_features_root is not None else run_output_dir / "features"
+    generated_checkpoint_identifier = str(checkpoint_identifier or generated_cache_label)
     metric_values: dict[str, float] = {}
     feature_extractors_used: list[dict[str, Any]] = []
     cache_paths: dict[str, str] = {}
@@ -1995,13 +2350,17 @@ def _compute_publication_metrics_for_source(
         extractor = _build_publication_feature_extractor("inception", config, device)
         reference_source = str(reference["reference_source"])
         real_cache = _publication_feature_cache_root(run_output_dir, reference_source) / "real_inception.npz"
-        generated_cache = run_output_dir / "features" / f"{generated_cache_label}_inception.npz"
+        generated_cache = generated_feature_dir / f"{generated_cache_label}_inception.npz"
         inception_features_real = _features_for_paths(
             paths=real_paths,
             extractor=extractor,
             cache_path=real_cache,
             config=config,
             normalization_mode=real_normalization,
+            metadata={
+                "reference_source": reference_source,
+                "reference_root": str(reference["reference_root"]),
+            },
         )
         inception_features_generated = _features_for_paths(
             paths=generated_paths,
@@ -2009,6 +2368,12 @@ def _compute_publication_metrics_for_source(
             cache_path=generated_cache,
             config=config,
             normalization_mode=generated_normalization,
+            metadata={
+                "run_identifier": run.run_identifier,
+                "checkpoint_identifier": generated_checkpoint_identifier,
+                "stage": generated_stage_name,
+                "reference_source": reference_source,
+            },
         )
         feature_extractors_used.append({"name": "inception", "implementation": "torchvision_or_local"})
         cache_paths["real_inception_features"] = str(real_cache)
@@ -2017,13 +2382,15 @@ def _compute_publication_metrics_for_source(
     clean_fid_value = None
     clean_fid_error = None
     if include_clean_fid:
+        clean_fid_png_root = run_output_dir / "features" / "clean_fid_png" / generated_cache_label
+        cache_paths["clean_fid_png_root"] = str(clean_fid_png_root)
         try:
             clean_fid_value = _compute_clean_fid_with_package(
                 real_paths=real_paths,
                 generated_paths=generated_paths,
                 real_normalization_mode=real_normalization,
                 generated_normalization_mode=generated_normalization,
-                cache_root=run_output_dir / "features" / "clean_fid_png" / generated_cache_label,
+                cache_root=clean_fid_png_root,
                 device=device,
                 overwrite=overwrite_metrics,
             )
@@ -2034,6 +2401,11 @@ def _compute_publication_metrics_for_source(
             metric_values["clean_fid"] = float(clean_fid_value)
             feature_extractors_used.append({"name": "inception", "implementation": "clean_fid"})
         else:
+            if not bool(config.get("allow_inception_fid_fallback", False)):
+                raise RuntimeError(
+                    "metrics.compute_clean_fid is enabled, but exact Clean-FID could not be computed. "
+                    "Install/repair cleanfid or explicitly set allow_inception_fid_fallback: true."
+                )
             if inception_features_real is None or inception_features_generated is None:
                 raise RuntimeError("Inception features are required for inception_fid_fallback.")
             from src.evaluation.generative_metrics import compute_fid
@@ -2074,13 +2446,17 @@ def _compute_publication_metrics_for_source(
         extractor = _build_publication_feature_extractor("dinov2", config, device)
         reference_source = str(reference["reference_source"])
         real_cache = _publication_feature_cache_root(run_output_dir, reference_source) / "real_dinov2.npz"
-        generated_cache = run_output_dir / "features" / f"{generated_cache_label}_dinov2.npz"
+        generated_cache = generated_feature_dir / f"{generated_cache_label}_dinov2.npz"
         real_dino = _features_for_paths(
             paths=real_paths,
             extractor=extractor,
             cache_path=real_cache,
             config=config,
             normalization_mode=real_normalization,
+            metadata={
+                "reference_source": reference_source,
+                "reference_root": str(reference["reference_root"]),
+            },
         )
         generated_dino = _features_for_paths(
             paths=generated_paths,
@@ -2088,6 +2464,12 @@ def _compute_publication_metrics_for_source(
             cache_path=generated_cache,
             config=config,
             normalization_mode=generated_normalization,
+            metadata={
+                "run_identifier": run.run_identifier,
+                "checkpoint_identifier": generated_checkpoint_identifier,
+                "stage": generated_stage_name,
+                "reference_source": reference_source,
+            },
         )
         from src.evaluation.generative_metrics import compute_fid
 
@@ -2179,49 +2561,6 @@ def _rank_publication_selection_rows(
     return ranked, effective_metric
 
 
-def _write_final_combined_manifest(
-    *,
-    manifest_path: Path,
-    selection_paths: Sequence[Path],
-    final_extra_paths: Sequence[Path],
-    selected: CheckpointCandidate,
-    run: RunResolution,
-    seeds: Mapping[str, Sequence[int]],
-) -> dict[str, Any]:
-    rows = []
-    for idx, path in enumerate(selection_paths):
-        rows.append(
-            {
-                "index": idx,
-                "phase": "selection",
-                "path": str(path),
-                "seed": int(seeds["selection"][idx]),
-            }
-        )
-    offset = len(rows)
-    for idx, path in enumerate(final_extra_paths):
-        rows.append(
-            {
-                "index": offset + idx,
-                "phase": "final_extra",
-                "path": str(path),
-                "seed": int(seeds["final_extra"][idx]),
-            }
-        )
-    payload = {
-        "run_identifier": run.run_identifier,
-        "selected_checkpoint_identifier": selected.checkpoint_identifier,
-        "selected_checkpoint_path": selected.checkpoint_path,
-        "num_selection_images": len(selection_paths),
-        "num_final_extra_images": len(final_extra_paths),
-        "total_images": len(rows),
-        "image_paths": rows,
-        "timestamp": utc_timestamp(),
-    }
-    save_json(manifest_path, payload)
-    return payload
-
-
 def _publication_summary_text(
     path: Path,
     *,
@@ -2261,8 +2600,7 @@ def _publication_summary_text(
             "",
             f"Selected checkpoint: {selected.checkpoint_identifier}",
             "Final synthetic image count:",
-            f"- reused selection images: {final_summary.get('num_reused_selection_images')}",
-            f"- new final extra images: {final_summary.get('num_final_extra_images')}",
+            f"- fresh final images: {final_summary.get('num_final_images')}",
             f"- total: {final_summary.get('total_synthetic_images')}",
             "",
             "Final metrics by reference source:",
@@ -2280,11 +2618,17 @@ def run_clean_fid_publication_one(
     config: Mapping[str, Any],
     *,
     cleanup_checkpoints: bool = False,
+    cleanup_generated_images: bool = True,
+    cleanup_dry_run: bool = False,
 ) -> dict[str, Any]:
     if cleanup_checkpoints:
         raise ValueError("--cleanup-checkpoints is only supported for the legacy staged pipeline.")
 
     flat_config = _publication_flat_generation_config(config)
+    cleanup_generated_images = bool(cleanup_generated_images) and bool(
+        flat_config.get("cleanup_generated_images", True)
+    )
+    cleanup_dry_run = bool(cleanup_dry_run) or bool(flat_config.get("cleanup_dry_run", False))
     run = resolve_run(run_entry, flat_config)
     run_output_dir = _output_root_from_config(flat_config) / run.run_identifier
     run_output_dir.mkdir(parents=True, exist_ok=True)
@@ -2325,83 +2669,146 @@ def run_clean_fid_publication_one(
     references = discover_reference_sources(flat_config, run, reference_source_names)
     selection_reference = references[selection_source_name]
 
-    selection_metrics_path = run_output_dir / "selection_metrics.json"
-    selection_ranking_path = run_output_dir / "selection_ranking.json"
-    selection_payload = None if bool(flat_config.get("overwrite_existing_metrics", False)) else load_json_if_valid(selection_metrics_path)
-    if selection_payload is not None:
-        selection_rows = list(selection_payload.get("metrics", []))
-        ranking = list(load_json_if_valid(selection_ranking_path).get("ranking", [])) if load_json_if_valid(selection_ranking_path) else list(selection_payload.get("ranking", []))
-        effective_metric = selection_payload.get("effective_selection_metric") or (ranking[0].get("effective_selection_metric") if ranking else requested_metric)
-    else:
-        selection_rows = []
-        for checkpoint in discovery.candidates:
-            stage_dir = _stage_paths(run_output_dir, checkpoint, "selection")
-            images_dir, _cached = ensure_generated_stage(
+    selection_include_clean_fid = _metric_enabled(flat_config, "compute_clean_fid", True)
+    selection_include_fd_dinov2 = _metric_enabled(flat_config, "compute_fd_dinov2", False)
+    selection_include_kid = _metric_enabled(flat_config, "compute_kid", True)
+    selection_include_mmd = _metric_enabled(flat_config, "compute_mmd", True)
+    selection_expected_metric_keys = _publication_expected_metric_keys(
+        flat_config,
+        include_clean_fid=selection_include_clean_fid,
+        include_fd_dinov2=selection_include_fd_dinov2,
+        include_kid=selection_include_kid,
+        include_mmd=selection_include_mmd,
+        include_intra_lpips=False,
+    )
+
+    selection_rows = []
+    for checkpoint in discovery.candidates:
+        stage_dir = _stage_paths(run_output_dir, checkpoint, "selection")
+        cached_row = None
+        if not bool(flat_config.get("overwrite_existing_metrics", False)):
+            cached_row = _load_verified_publication_stage_metrics(
                 run=run,
                 checkpoint=checkpoint,
+                stage_name="selection",
                 stage_dir=stage_dir,
-                seeds=seeds["selection"],
-                config=flat_config,
-                device=device,
+                expected_num_images=len(seeds["selection"]),
+                expected_metric_keys=selection_expected_metric_keys,
             )
-            generated_paths = _image_paths(images_dir, len(seeds["selection"]))
-            result = _compute_publication_metrics_for_source(
-                run=run,
-                run_output_dir=run_output_dir,
-                reference=selection_reference,
-                generated_paths=generated_paths,
-                generated_stage_name="selection",
-                generated_cache_label=f"{checkpoint.checkpoint_identifier}_selection_{selection_source_name}",
-                config=flat_config,
-                device=device,
-                include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
-                include_fd_dinov2=_metric_enabled(flat_config, "compute_fd_dinov2", False),
-                include_kid=_metric_enabled(flat_config, "compute_kid", True),
-                include_mmd=_metric_enabled(flat_config, "compute_mmd", True),
-                include_intra_lpips=False,
-                metric_seed=int(flat_config.get("generation_seed", 1234)),
-            )
-            selection_rows.append(
-                {
-                    "run_identifier": run.run_identifier,
-                    "run_dir": str(run.run_dir),
-                    "checkpoint_identifier": checkpoint.checkpoint_identifier,
-                    "checkpoint_path": checkpoint.checkpoint_path,
-                    "checkpoint_kind": checkpoint.checkpoint_kind,
-                    "epoch": checkpoint.epoch,
-                    "step": checkpoint.step,
-                    "model_type": run.model_type,
-                    "generation_backend_used": run.generation_backend_used,
-                    "generated_image_folder": str(images_dir),
-                    "num_generated_images": len(generated_paths),
-                    **result,
-                }
-            )
-        ranking, effective_metric = _rank_publication_selection_rows(
-            selection_rows,
-            requested_metric=requested_metric,
-            lower_is_better=lower_is_better,
+        if cached_row is not None:
+            selection_rows.append(cached_row)
+            continue
+
+        images_dir, _cached = ensure_generated_stage(
+            run=run,
+            checkpoint=checkpoint,
+            stage_dir=stage_dir,
+            seeds=seeds["selection"],
+            config=flat_config,
+            device=device,
         )
-        selection_payload = {
+        generated_paths = _image_paths(images_dir, len(seeds["selection"]))
+        result = _compute_publication_metrics_for_source(
+            run=run,
+            run_output_dir=run_output_dir,
+            reference=selection_reference,
+            generated_paths=generated_paths,
+            generated_stage_name="selection",
+            generated_cache_label=f"{checkpoint.checkpoint_identifier}_selection_{selection_source_name}",
+            checkpoint_identifier=checkpoint.checkpoint_identifier,
+            generated_features_root=stage_dir / "features",
+            config=flat_config,
+            device=device,
+            include_clean_fid=selection_include_clean_fid,
+            include_fd_dinov2=selection_include_fd_dinov2,
+            include_kid=selection_include_kid,
+            include_mmd=selection_include_mmd,
+            include_intra_lpips=False,
+            metric_seed=int(flat_config.get("generation_seed", 1234)),
+        )
+        row = {
+            "run_identifier": run.run_identifier,
+            "run_dir": str(run.run_dir),
+            "checkpoint_identifier": checkpoint.checkpoint_identifier,
+            "checkpoint_path": checkpoint.checkpoint_path,
+            "checkpoint_kind": checkpoint.checkpoint_kind,
+            "epoch": checkpoint.epoch,
+            "step": checkpoint.step,
+            "model_type": run.model_type,
+            "generation_backend_used": run.generation_backend_used,
+            "generated_image_folder": str(images_dir),
+            "num_generated_images": len(generated_paths),
+            **result,
+        }
+        stage_metrics_path = _publication_stage_metrics_path(stage_dir, "selection")
+        save_json(stage_metrics_path, row)
+        manifest = _verify_publication_stage_outputs(
+            run=run,
+            checkpoint=checkpoint,
+            stage_name="selection",
+            stage_dir=stage_dir,
+            expected_num_images=len(seeds["selection"]),
+            expected_metric_keys=selection_expected_metric_keys,
+            metrics_path=stage_metrics_path,
+            metrics_payload=row,
+            require_images_present=True,
+        )
+        deletion = None
+        scratch_cleanup: list[dict[str, Any]] = []
+        if cleanup_generated_images:
+            deletion = _safe_delete_explicit_generated_files(
+                checkpoint_identifier=checkpoint.checkpoint_identifier,
+                image_dir=images_dir,
+                paths=generated_paths,
+                dry_run=cleanup_dry_run,
+                reason="verified selection metrics/features persisted",
+            )
+            scratch_cleanup = _delete_clean_fid_scratch_dirs(
+                checkpoint_identifier=checkpoint.checkpoint_identifier,
+                metric_result=row,
+                dry_run=cleanup_dry_run,
+            )
+        manifest.update(
+            {
+                "images_generated": True,
+                "metrics_computed": True,
+                "images_deleted": bool(deletion and deletion.get("deleted")),
+                "cleanup_dry_run": bool(cleanup_dry_run),
+                "deletion": deletion,
+                "clean_fid_scratch_cleanup": scratch_cleanup,
+                "generation_seed_list": list(map(int, seeds["selection"])),
+            }
+        )
+        save_json(_publication_stage_manifest_path(stage_dir, "selection"), manifest)
+        selection_rows.append(row)
+
+    ranking, effective_metric = _rank_publication_selection_rows(
+        selection_rows,
+        requested_metric=requested_metric,
+        lower_is_better=lower_is_better,
+    )
+    selection_metrics_path = run_output_dir / "selection_metrics.json"
+    selection_ranking_path = run_output_dir / "selection_ranking.json"
+    selection_payload = {
+        "pipeline_mode": "clean_fid_selection_publication",
+        "requested_selection_metric": requested_metric,
+        "effective_selection_metric": effective_metric,
+        "selection_reference_source": selection_source_name,
+        "metrics": selection_rows,
+        "ranking": ranking,
+        "timestamp": utc_timestamp(),
+    }
+    save_json(selection_metrics_path, selection_payload)
+    save_json(
+        selection_ranking_path,
+        {
             "pipeline_mode": "clean_fid_selection_publication",
             "requested_selection_metric": requested_metric,
             "effective_selection_metric": effective_metric,
-            "selection_reference_source": selection_source_name,
-            "metrics": selection_rows,
             "ranking": ranking,
             "timestamp": utc_timestamp(),
-        }
-        save_json(selection_metrics_path, selection_payload)
-        save_json(
-            selection_ranking_path,
-            {
-                "pipeline_mode": "clean_fid_selection_publication",
-                "requested_selection_metric": requested_metric,
-                "effective_selection_metric": effective_metric,
-                "ranking": ranking,
-                "timestamp": utc_timestamp(),
-            },
-        )
+        },
+    )
 
     if not ranking:
         raise RuntimeError(f"No selection ranking rows were produced for {run.run_identifier}.")
@@ -2409,44 +2816,76 @@ def run_clean_fid_publication_one(
     if selected is None:
         selected = _cached_candidate_from_row(ranking[0], fallback_identifier=str(ranking[0]["checkpoint_identifier"]))
 
-    selection_images_dir = _stage_paths(run_output_dir, selected, "selection") / "generated_npy_images"
-    selection_paths = _image_paths(selection_images_dir, len(seeds["selection"]))
-    final_extra_stage_dir = _stage_paths(run_output_dir, selected, "final_extra")
-    final_extra_images_dir, _cached = ensure_generated_stage(
-        run=run,
-        checkpoint=selected,
-        stage_dir=final_extra_stage_dir,
-        seeds=seeds["final_extra"],
-        config=flat_config,
-        device=device,
-    )
-    final_extra_paths = _image_paths(final_extra_images_dir, len(seeds["final_extra"])) if seeds["final_extra"] else []
-    final_combined_dir = _stage_paths(run_output_dir, selected, "final_combined")
-    manifest = _write_final_combined_manifest(
-        manifest_path=final_combined_dir / "image_manifest.json",
-        selection_paths=selection_paths,
-        final_extra_paths=final_extra_paths,
-        selected=selected,
-        run=run,
-        seeds=seeds,
-    )
-    final_generated_paths = [Path(row["path"]) for row in manifest["image_paths"]]
-
+    final_stage_dir = _stage_paths(run_output_dir, selected, "final")
     final_metrics_path = run_output_dir / "final_metrics_by_reference_source.json"
-    cached_final = None if bool(flat_config.get("overwrite_existing_metrics", False)) else load_json_if_valid(final_metrics_path)
-    if cached_final is not None:
-        final_metrics_by_source = dict(cached_final.get("metrics_by_reference_source", cached_final))
+    final_stage_metrics_path = _publication_stage_metrics_path(final_stage_dir, "final")
+    final_expected_metric_keys = _publication_expected_metric_keys(
+        flat_config,
+        include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
+        include_fd_dinov2=_metric_enabled(flat_config, "compute_fd_dinov2", False),
+        include_kid=_metric_enabled(flat_config, "compute_kid", True),
+        include_mmd=_metric_enabled(flat_config, "compute_mmd", True),
+        include_intra_lpips=_metric_enabled(flat_config, "compute_intra_lpips", False),
+    )
+    cached_final_stage = None
+    if not bool(flat_config.get("overwrite_existing_metrics", False)):
+        cached_final_stage = load_json_if_valid(final_stage_metrics_path)
+        cached_final_manifest = load_json_if_valid(_publication_stage_manifest_path(final_stage_dir, "final"))
+        if (
+            not isinstance(cached_final_stage, Mapping)
+            or not isinstance(cached_final_manifest, Mapping)
+            or not cached_final_manifest.get("verified")
+            or not cached_final_manifest.get("images_deleted")
+        ):
+            cached_final_stage = None
+        else:
+            try:
+                _verify_publication_stage_outputs(
+                    run=run,
+                    checkpoint=selected,
+                    stage_name="final",
+                    stage_dir=final_stage_dir,
+                    expected_num_images=len(seeds["final"]),
+                    expected_metric_keys=final_expected_metric_keys,
+                    metrics_path=final_stage_metrics_path,
+                    metrics_payload=cached_final_stage,
+                    require_images_present=False,
+                )
+            except Exception:
+                cached_final_stage = None
+
+    if cached_final_stage is not None:
+        final_metrics_by_source = dict(cached_final_stage.get("metrics_by_reference_source", {}))
+        final_manifest = dict(cached_final_stage.get("final_image_manifest", {}))
     else:
+        final_images_dir, _cached = ensure_generated_stage(
+            run=run,
+            checkpoint=selected,
+            stage_dir=final_stage_dir,
+            seeds=seeds["final"],
+            config=flat_config,
+            device=device,
+        )
+        final_generated_paths = _image_paths(final_images_dir, len(seeds["final"]))
+        final_manifest = _final_image_manifest(
+            manifest_path=final_stage_dir / "image_manifest.json",
+            final_paths=final_generated_paths,
+            selected=selected,
+            run=run,
+            seeds=seeds["final"],
+        )
         final_metrics_by_source = {}
         final_references = discover_reference_sources(flat_config, run, final_source_names)
         for source_name, reference in final_references.items():
-            final_metrics_by_source[source_name] = _compute_publication_metrics_for_source(
+            result = _compute_publication_metrics_for_source(
                 run=run,
                 run_output_dir=run_output_dir,
                 reference=reference,
                 generated_paths=final_generated_paths,
-                generated_stage_name="final_combined",
-                generated_cache_label=f"{selected.checkpoint_identifier}_final_combined_{source_name}",
+                generated_stage_name="final",
+                generated_cache_label=f"{selected.checkpoint_identifier}_final_{source_name}",
+                checkpoint_identifier=selected.checkpoint_identifier,
+                generated_features_root=final_stage_dir / "features",
                 config=flat_config,
                 device=device,
                 include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
@@ -2456,6 +2895,78 @@ def run_clean_fid_publication_one(
                 include_intra_lpips=_metric_enabled(flat_config, "compute_intra_lpips", False),
                 metric_seed=int(flat_config.get("generation_seed", 1234)) + 29,
             )
+            _validate_publication_metric_result(result, expected_metric_keys=final_expected_metric_keys)
+            final_metrics_by_source[source_name] = result
+        first_source = final_source_names[0] if final_source_names else None
+        final_stage_payload = {
+            "pipeline_mode": "clean_fid_selection_publication",
+            "run_identifier": run.run_identifier,
+            "checkpoint_identifier": selected.checkpoint_identifier,
+            "checkpoint_path": selected.checkpoint_path,
+            "selected_checkpoint_identifier": selected.checkpoint_identifier,
+            "selected_checkpoint_path": selected.checkpoint_path,
+            "num_generated_images": len(final_generated_paths),
+            "final_image_manifest": final_manifest,
+            "metrics_by_reference_source": final_metrics_by_source,
+            "metric_values": final_metrics_by_source[first_source]["metric_values"] if first_source else {},
+            "cache_paths": final_metrics_by_source[first_source].get("cache_paths", {}) if first_source else {},
+            "timestamp": utc_timestamp(),
+        }
+        save_json(final_stage_metrics_path, final_stage_payload)
+        stage_verification = _verify_publication_stage_outputs(
+            run=run,
+            checkpoint=selected,
+            stage_name="final",
+            stage_dir=final_stage_dir,
+            expected_num_images=len(seeds["final"]),
+            expected_metric_keys=final_expected_metric_keys,
+            metrics_path=final_stage_metrics_path,
+            metrics_payload=final_stage_payload,
+            require_images_present=True,
+        )
+        deletion = None
+        scratch_cleanup = []
+        if cleanup_generated_images:
+            deletion = _safe_delete_explicit_generated_files(
+                checkpoint_identifier=selected.checkpoint_identifier,
+                image_dir=final_images_dir,
+                paths=final_generated_paths,
+                dry_run=cleanup_dry_run,
+                reason="verified final metrics/features persisted",
+            )
+            for result in final_metrics_by_source.values():
+                if isinstance(result, Mapping):
+                    scratch_cleanup.extend(
+                        _delete_clean_fid_scratch_dirs(
+                            checkpoint_identifier=selected.checkpoint_identifier,
+                            metric_result=result,
+                            dry_run=cleanup_dry_run,
+                        )
+                    )
+        stage_verification.update(
+            {
+                "images_generated": True,
+                "metrics_computed": True,
+                "images_deleted": bool(deletion and deletion.get("deleted")),
+                "cleanup_dry_run": bool(cleanup_dry_run),
+                "deletion": deletion,
+                "clean_fid_scratch_cleanup": scratch_cleanup,
+                "generation_seed_list": list(map(int, seeds["final"])),
+            }
+        )
+        save_json(_publication_stage_manifest_path(final_stage_dir, "final"), stage_verification)
+        save_json(
+            final_metrics_path,
+            {
+                "pipeline_mode": "clean_fid_selection_publication",
+                "selected_checkpoint_identifier": selected.checkpoint_identifier,
+                "selected_checkpoint_path": selected.checkpoint_path,
+                "metrics_by_reference_source": final_metrics_by_source,
+                "timestamp": utc_timestamp(),
+            },
+        )
+
+    if not final_metrics_path.is_file() or bool(flat_config.get("overwrite_existing_metrics", False)):
         save_json(
             final_metrics_path,
             {
@@ -2487,10 +2998,10 @@ def run_clean_fid_publication_one(
         "requested_selection_metric": requested_metric,
         "effective_selection_metric": effective_metric,
         "selection_reference_source": selection_source_name,
-        "num_reused_selection_images": len(selection_paths),
-        "num_final_extra_images": len(final_extra_paths),
-        "total_synthetic_images": len(final_generated_paths),
-        "final_combined_manifest": str(final_combined_dir / "image_manifest.json"),
+        "num_reused_selection_images": 0,
+        "num_final_images": len(seeds["final"]),
+        "total_synthetic_images": len(seeds["final"]),
+        "final_image_manifest": str(final_stage_dir / "image_manifest.json"),
         "final_reference_sources": final_source_names,
         "metrics_by_reference_source": final_metrics_by_source,
         "analysis_previews": preview_summary,
@@ -3143,8 +3654,8 @@ def preflight_publication_config(config: Mapping[str, Any]) -> dict[str, Any]:
                         for name in final_sources
                     },
                     "planned_num_generated_images_per_checkpoint": len(seeds["selection"]),
-                    "planned_final_extra_images": len(seeds["final_extra"]),
-                    "planned_total_final_synthetic_count": len(seeds["selection"]) + len(seeds["final_extra"]),
+                    "planned_final_images": len(seeds["final"]),
+                    "planned_total_final_synthetic_count": len(seeds["final"]),
                     "feature_extractors_to_use": {
                         "clean_fid_available": _clean_fid_importable(),
                         "inception": bool(
@@ -3368,6 +3879,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                     run_entry,
                     config,
                     cleanup_checkpoints=bool(args.cleanup_checkpoints),
+                    cleanup_generated_images=not bool(args.keep_generated_images),
+                    cleanup_dry_run=bool(args.dry_run_cleanup),
                 )
             )
         else:

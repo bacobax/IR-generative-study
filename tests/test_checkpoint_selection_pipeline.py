@@ -162,34 +162,26 @@ def test_publication_seed_partitions_do_not_overlap() -> None:
     seeds = pipeline.make_publication_seeds(
         {
             "selection": {"selection_num_images": 3},
-            "final": {
-                "final_extra_images": 2,
-                "reuse_selection_images_for_top1": True,
-                "final_total_images": 5,
-            },
+            "final": {"final_total_images": 5},
             "generation": {
                 "generation_seed": 1234,
                 "selection_seed_offset": 0,
-                "final_extra_seed_offset": 1000000,
+                "final_seed_offset": 1000000,
             },
         }
     )
 
     assert seeds["selection"] == [1234, 1235, 1236]
-    assert seeds["final_extra"] == [1001234, 1001235]
-    assert len(seeds["selection"] + seeds["final_extra"]) == len(set(seeds["selection"] + seeds["final_extra"]))
+    assert seeds["final"] == [1001234, 1001235, 1001236, 1001237, 1001238]
+    assert len(seeds["selection"] + seeds["final"]) == len(set(seeds["selection"] + seeds["final"]))
 
 
-def test_publication_seed_validation_rejects_final_total_mismatch() -> None:
+def test_publication_seed_validation_rejects_nonpositive_final_total() -> None:
     try:
         pipeline.make_publication_seeds(
             {
                 "selection": {"selection_num_images": 3},
-                "final": {
-                    "final_extra_images": 2,
-                    "reuse_selection_images_for_top1": True,
-                    "final_total_images": 4,
-                },
+                "final": {"final_total_images": 0},
             }
         )
     except ValueError as exc:
@@ -228,7 +220,7 @@ def test_publication_ranking_uses_inception_fid_fallback_when_clean_fid_missing(
     assert ranked[0]["effective_selection_metric"] == "inception_fid_fallback"
 
 
-def test_final_combined_manifest_contains_selection_then_final_extra(tmp_path: Path) -> None:
+def test_final_manifest_contains_only_fresh_final_images(tmp_path: Path) -> None:
     run = pipeline.RunResolution(
         run_identifier="run",
         run_dir=tmp_path / "run",
@@ -239,22 +231,21 @@ def test_final_combined_manifest_contains_selection_then_final_extra(tmp_path: P
         generation_backend_used="native_flow_matching_sampler",
     )
     checkpoint = pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "ckpt.pt"), "epoch", epoch=1)
-    selection_paths = [tmp_path / "selection" / f"sample_{idx:06d}.npy" for idx in range(2)]
-    final_paths = [tmp_path / "final_extra" / "sample_000000.npy"]
+    final_paths = [tmp_path / "final" / f"sample_{idx:06d}.npy" for idx in range(3)]
 
-    manifest = pipeline._write_final_combined_manifest(
-        manifest_path=tmp_path / "final_combined" / "image_manifest.json",
-        selection_paths=selection_paths,
-        final_extra_paths=final_paths,
+    manifest = pipeline._final_image_manifest(
+        manifest_path=tmp_path / "final" / "image_manifest.json",
+        final_paths=final_paths,
         selected=checkpoint,
         run=run,
-        seeds={"selection": [10, 11], "final_extra": [100]},
+        seeds=[100, 101, 102],
     )
 
     assert manifest["total_images"] == 3
-    assert [row["phase"] for row in manifest["image_paths"]] == ["selection", "selection", "final_extra"]
-    assert [row["seed"] for row in manifest["image_paths"]] == [10, 11, 100]
-    assert (tmp_path / "final_combined" / "image_manifest.json").is_file()
+    assert [row["phase"] for row in manifest["image_paths"]] == ["final", "final", "final"]
+    assert [row["seed"] for row in manifest["image_paths"]] == [100, 101, 102]
+    assert not any("selection" in row["path"] for row in manifest["image_paths"])
+    assert (tmp_path / "final" / "image_manifest.json").is_file()
 
 
 def test_preview_writer_accepts_channel_first_arrays(tmp_path: Path) -> None:
@@ -271,6 +262,226 @@ def test_preview_writer_accepts_channel_first_arrays(tmp_path: Path) -> None:
     )
 
     assert (tmp_path / "preview_grid.png").is_file()
+
+
+def _write_feature_cache(path: Path, *, rows: int, dim: int, run_id: str, checkpoint_id: str, stage: str, finite: bool = True) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    features = pipeline.np.ones((rows, dim), dtype=pipeline.np.float32)
+    if not finite:
+        features[0, 0] = pipeline.np.nan
+    metadata = {
+        "feature_extractor": "inception",
+        "feature_config": {},
+        "normalization_mode": pipeline.UINT8_LINEAR,
+        "num_images": rows,
+        "run_identifier": run_id,
+        "checkpoint_identifier": checkpoint_id,
+        "stage": stage,
+    }
+    pipeline.np.savez_compressed(
+        path,
+        features=features,
+        paths=pipeline.np.asarray([f"sample_{idx:06d}.npy" for idx in range(rows)]),
+        metadata=json.dumps(metadata, sort_keys=True),
+        feature_shape=pipeline.np.asarray(features.shape, dtype=pipeline.np.int64),
+    )
+
+
+def test_verified_publication_stage_allows_generated_image_deletion(tmp_path: Path) -> None:
+    run = _run_resolution(tmp_path / "run", model_type="latent_flow_matching")
+    checkpoint = pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "ckpt.pt"), "epoch", epoch=1)
+    stage_dir = tmp_path / "out" / "epoch_001" / "selection"
+    images_dir = stage_dir / "generated_npy_images"
+    images_dir.mkdir(parents=True)
+    for idx in range(2):
+        pipeline.np.save(images_dir / f"sample_{idx:06d}.npy", pipeline.np.ones((4, 4), dtype=pipeline.np.uint8))
+    feature_path = stage_dir / "features" / "epoch_001_selection_val_inception.npz"
+    _write_feature_cache(feature_path, rows=2, dim=4, run_id=run.run_identifier, checkpoint_id="epoch_001", stage="selection")
+    metrics = {
+        "run_identifier": run.run_identifier,
+        "checkpoint_identifier": "epoch_001",
+        "metric_values": {"clean_fid": 1.0},
+        "cache_paths": {"generated_inception_features": str(feature_path)},
+    }
+    metrics_path = pipeline._publication_stage_metrics_path(stage_dir, "selection")
+    pipeline.save_json(metrics_path, metrics)
+
+    manifest = pipeline._verify_publication_stage_outputs(
+        run=run,
+        checkpoint=checkpoint,
+        stage_name="selection",
+        stage_dir=stage_dir,
+        expected_num_images=2,
+        expected_metric_keys=["clean_fid"],
+        metrics_path=metrics_path,
+        metrics_payload=metrics,
+        require_images_present=True,
+    )
+    deletion = pipeline._safe_delete_explicit_generated_files(
+        checkpoint_identifier="epoch_001",
+        image_dir=images_dir,
+        paths=pipeline.expected_generated_paths(images_dir, 2),
+        dry_run=False,
+        reason="unit test",
+    )
+
+    assert manifest["verified"] is True
+    assert deletion["deleted"] is True
+    assert not list(images_dir.glob("sample_*.npy"))
+    assert feature_path.is_file()
+
+
+def test_publication_stage_verification_blocks_corrupt_features_and_metrics(tmp_path: Path) -> None:
+    run = _run_resolution(tmp_path / "run", model_type="latent_flow_matching")
+    checkpoint = pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "ckpt.pt"), "epoch", epoch=1)
+    stage_dir = tmp_path / "out" / "epoch_001" / "selection"
+    images_dir = stage_dir / "generated_npy_images"
+    images_dir.mkdir(parents=True)
+    pipeline.np.save(images_dir / "sample_000000.npy", pipeline.np.ones((4, 4), dtype=pipeline.np.uint8))
+    feature_path = stage_dir / "features" / "bad_inception.npz"
+    _write_feature_cache(feature_path, rows=1, dim=4, run_id=run.run_identifier, checkpoint_id="epoch_001", stage="selection", finite=False)
+    metrics = {
+        "run_identifier": run.run_identifier,
+        "checkpoint_identifier": "epoch_001",
+        "metric_values": {"clean_fid": float("inf")},
+        "cache_paths": {"generated_inception_features": str(feature_path)},
+    }
+
+    try:
+        pipeline._verify_publication_stage_outputs(
+            run=run,
+            checkpoint=checkpoint,
+            stage_name="selection",
+            stage_dir=stage_dir,
+            expected_num_images=1,
+            expected_metric_keys=["clean_fid"],
+            metrics_path=stage_dir / "selection_metrics.json",
+            metrics_payload=metrics,
+            require_images_present=True,
+        )
+    except ValueError as exc:
+        assert "not finite" in str(exc)
+    else:
+        raise AssertionError("Expected corrupt metric/feature verification to fail.")
+
+
+def test_verified_stage_resume_does_not_require_deleted_images(tmp_path: Path) -> None:
+    run = _run_resolution(tmp_path / "run", model_type="latent_flow_matching")
+    checkpoint = pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "ckpt.pt"), "epoch", epoch=1)
+    stage_dir = tmp_path / "out" / "epoch_001" / "selection"
+    feature_path = stage_dir / "features" / "ok_inception.npz"
+    _write_feature_cache(feature_path, rows=2, dim=4, run_id=run.run_identifier, checkpoint_id="epoch_001", stage="selection")
+    row = {
+        "run_identifier": run.run_identifier,
+        "checkpoint_identifier": "epoch_001",
+        "metric_values": {"clean_fid": 1.0},
+        "cache_paths": {"generated_inception_features": str(feature_path)},
+    }
+    pipeline.save_json(pipeline._publication_stage_metrics_path(stage_dir, "selection"), row)
+    pipeline.save_json(
+        pipeline._publication_stage_manifest_path(stage_dir, "selection"),
+        {"run_identifier": run.run_identifier, "checkpoint_identifier": "epoch_001", "verified": True, "images_deleted": True},
+    )
+
+    cached = pipeline._load_verified_publication_stage_metrics(
+        run=run,
+        checkpoint=checkpoint,
+        stage_name="selection",
+        stage_dir=stage_dir,
+        expected_num_images=2,
+        expected_metric_keys=["clean_fid"],
+    )
+
+    assert cached is not None
+    assert cached["metric_values"]["clean_fid"] == 1.0
+
+
+def _load_recovery_module():
+    script_path = Path("scripts/recover_checkpoint_selection_publication.py").resolve()
+    spec = importlib.util.spec_from_file_location("checkpoint_selection_recovery", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _recovery_config(tmp_path: Path, model_run_dir: Path, output_root: Path) -> dict:
+    return {
+        "pipeline_mode": "clean_fid_selection_publication",
+        "runs": [
+            {
+                "run_identifier": "unit_run",
+                "run_dir": str(model_run_dir),
+                "model_type": "latent_flow_matching",
+                "sampling_config_path": None,
+            }
+        ],
+        "checkpoint_min_epoch": 0,
+        "selection": {"selection_num_images": 1, "selection_reference_source": "val"},
+        "final": {"final_total_images": 1, "real_reference_sources": ["val"]},
+        "generation": {"generation_seed": 1, "device": "cpu"},
+        "metrics": {"compute_clean_fid": True, "compute_fd_dinov2": False, "compute_kid": False, "compute_mmd": False},
+        "reference_data": {"dataset_id": "unused"},
+        "output": {"output_root": str(output_root)},
+    }
+
+
+def test_recovery_dry_run_reports_invalid_without_deleting(tmp_path: Path) -> None:
+    recovery = _load_recovery_module()
+    model_run = tmp_path / "model_run"
+    unet_dir = model_run / "UNET"
+    unet_dir.mkdir(parents=True)
+    (model_run / "artifact_manifest.json").write_text(json.dumps({"model_family": "flow_matching"}), encoding="utf-8")
+    (unet_dir / "unet_fm_best.pt").write_bytes(b"best")
+    output_root = tmp_path / "out"
+    images_dir = output_root / "unit_run" / "best" / "selection" / "generated_npy_images"
+    images_dir.mkdir(parents=True)
+    pipeline.np.save(images_dir / "sample_000000.npy", pipeline.np.ones((4, 4), dtype=pipeline.np.uint8))
+
+    args = SimpleNamespace(
+        config="unit.yaml",
+        only_run=None,
+        only_checkpoint=None,
+        execute=False,
+        delete_invalid_analysis=True,
+        allow_heavy_metrics=False,
+        log_file=None,
+    )
+    report = recovery.recover(_recovery_config(tmp_path, model_run, output_root), output_root, args)
+
+    checkpoint_report = report["runs"][0]["checkpoints"][0]
+    assert checkpoint_report["action"] == "delete_invalid_analysis"
+    assert checkpoint_report["deletion"]["executed"] is False
+    assert (output_root / "unit_run" / "best").is_dir()
+
+
+def test_recovery_execute_deletes_invalid_analysis_when_checkpoint_exists(tmp_path: Path) -> None:
+    recovery = _load_recovery_module()
+    model_run = tmp_path / "model_run"
+    unet_dir = model_run / "UNET"
+    unet_dir.mkdir(parents=True)
+    (model_run / "artifact_manifest.json").write_text(json.dumps({"model_family": "flow_matching"}), encoding="utf-8")
+    (unet_dir / "unet_fm_best.pt").write_bytes(b"best")
+    output_root = tmp_path / "out"
+    images_dir = output_root / "unit_run" / "best" / "selection" / "generated_npy_images"
+    images_dir.mkdir(parents=True)
+    pipeline.np.save(images_dir / "sample_000000.npy", pipeline.np.ones((4, 4), dtype=pipeline.np.uint8))
+
+    args = SimpleNamespace(
+        config="unit.yaml",
+        only_run=None,
+        only_checkpoint=None,
+        execute=True,
+        delete_invalid_analysis=True,
+        allow_heavy_metrics=False,
+        log_file=None,
+    )
+    report = recovery.recover(_recovery_config(tmp_path, model_run, output_root), output_root, args)
+
+    checkpoint_report = report["runs"][0]["checkpoints"][0]
+    assert checkpoint_report["deletion"]["executed"] is True
+    assert not (output_root / "unit_run" / "best").exists()
 
 
 def test_ensure_generated_stage_writes_analysis_preview_for_cached_stage(tmp_path: Path) -> None:
@@ -896,7 +1107,7 @@ def test_publication_preflight_reports_reference_counts_and_paths(
             ],
             "checkpoint_min_epoch": 50,
             "selection": {"selection_num_images": 2, "selection_reference_source": "val"},
-            "final": {"final_extra_images": 1, "final_total_images": 3},
+            "final": {"final_total_images": 3},
             "generation": {"device": "cpu"},
             "reference_data": {"dataset_id": "unit_preflight_refs"},
             "output": {"output_root": str(tmp_path / "out")},
@@ -908,7 +1119,7 @@ def test_publication_preflight_reports_reference_counts_and_paths(
     assert run_payload["selection_num_real_images"] == 1
     assert run_payload["final_reference_sources"]["train_val_test"]["num_real_images"] == 3
     assert run_payload["planned_num_generated_images_per_checkpoint"] == 2
-    assert run_payload["planned_final_extra_images"] == 1
+    assert run_payload["planned_final_images"] == 3
     assert run_payload["expected_output_paths"]["selection_metrics"].endswith("selection_metrics.json")
 
 
