@@ -1,0 +1,36 @@
+extends: uncond_latent_flir_sd15_512.yaml
+
+# Unconditional latent diffusion on FLIR with a from-scratch DiT-B/4 backbone.
+# Launcher:
+#   python train_latent_diffusion.py --config configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_dit_b4_bs128.yaml
+
+data:
+  batch_size: 128
+
+model:
+  architecture: "dit"
+  unet_config: null
+  pretrained_unet_path: null
+  dit_config: "configs/models/dit/dit_b4_latent.json"
+  pretrained_dit_path: null
+
+training:
+  epochs: 400
+  save_every_n_epochs: 50
+  eval_every: 4
+
+ema:
+  decay: 0.9999
+  start_step: 1000
+
+sampling:
+  sample_every: 20
+  save_debug_images: false
+
+output:
+  model_dir: "./artifacts/checkpoints/stable_diffusion/uncond_runs/uncond_latent_flir_sd15_512_dit_b4_bs128"
+  log_dir: "./artifacts/runs/main/stable_diffusion/uncond_latent_flir_sd15_512_dit_b4_bs128"
+  debug_dir: "./artifacts/debug/uncond_latent_flir_sd15_512_dit_b4_bs128"
+  resume: null
+
+device: "cuda:0"

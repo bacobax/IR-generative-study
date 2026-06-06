@@ -802,6 +802,28 @@ def _write_tiny_model_configs(ctx: DoctorContext) -> dict[str, Path]:
             "up_block_types": ["AttnUpBlock2D", "UpBlock2D"],
             "norm_num_groups": 8,
         },
+        "latent_dit": {
+            "architecture": "dit",
+            "variant": "tiny-doctor-dit",
+            "sample_size": 16,
+            "patch_size": 2,
+            "in_channels": 4,
+            "out_channels": 4,
+            "num_layers": 1,
+            "hidden_size": 16,
+            "num_attention_heads": 2,
+            "attention_head_dim": 8,
+            "dropout": 0.0,
+            "norm_num_groups": 4,
+            "attention_bias": True,
+            "activation_fn": "gelu-approximate",
+            "num_embeds_ada_norm": 1000,
+            "upcast_attention": False,
+            "norm_type": "ada_norm_zero",
+            "norm_elementwise_affine": False,
+            "norm_eps": 1.0e-5,
+            "unconditional_class_label": 0,
+        },
         "pixel_unet": {
             "sample_size": 32,
             "in_channels": 1,
@@ -946,10 +968,17 @@ def _full_sd_uncond_overrides(
     ctx: DoctorContext,
     name: str,
     model_paths: dict[str, Path],
+    *,
+    architecture: str = "unet",
 ) -> dict[str, Any]:
     updates = _full_base_overrides(ctx, name, model_paths)
     updates["trainer_name"] = "sd_uncond"
     updates["sampler_name"] = "sd_uncond"
+    updates.setdefault("model", {})
+    updates["model"]["architecture"] = architecture
+    if architecture == "dit":
+        updates["model"]["dit_config"] = str(model_paths["latent_dit"])
+        updates["diffusion"] = {"num_train_timesteps": 16}
     return updates
 
 
@@ -1365,6 +1394,23 @@ def run_full_model_runs(ctx: DoctorContext) -> None:
                     "sd_uncond_actual",
                     REPO / "configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512.yaml",
                     _full_sd_uncond_overrides(ctx, "sd_uncond_actual", model_paths),
+                ),
+            ),
+        ),
+        (
+            "full actual unconditional SD DiT training",
+            lambda: _actual_sd_uncond_training(
+                ctx,
+                _write_full_config(
+                    ctx,
+                    "sd_uncond_dit_actual",
+                    REPO / "configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_dit_b4.yaml",
+                    _full_sd_uncond_overrides(
+                        ctx,
+                        "sd_uncond_dit_actual",
+                        model_paths,
+                        architecture="dit",
+                    ),
                 ),
             ),
         ),

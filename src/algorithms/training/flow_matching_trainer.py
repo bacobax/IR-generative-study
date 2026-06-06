@@ -337,6 +337,15 @@ class FlowMatchingTrainer:
                 + "; ".join(details)
             )
 
+        checkpoint_architecture = checkpoint.get("backbone_architecture")
+        trainer_architecture = getattr(self, "backbone_architecture", None)
+        if checkpoint_architecture is not None and trainer_architecture is not None:
+            if str(checkpoint_architecture) != str(trainer_architecture):
+                raise ValueError(
+                    f"{self._progress_label()} resume checkpoint backbone mismatch for {path!r}: "
+                    f"expected {trainer_architecture!r}, got {checkpoint_architecture!r}."
+                )
+
     def _best_weights_path(self) -> str:
         return os.path.join(self._unet_dir(), f"{self._checkpoint_stem()}_best.pt")
 

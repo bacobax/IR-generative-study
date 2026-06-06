@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 import torch.nn.functional as F
 from diffusers import UNet2DModel
@@ -21,6 +22,7 @@ from src.core.configs.sd_uncond_config import (
     _FLAT_TO_NESTED,
     build_parser,
 )
+from src.models.dit import build_dit_from_config
 
 
 class _FakeLatentVAE(torch.nn.Module):
@@ -51,6 +53,31 @@ def _tiny_unet(sample_size: int = 8) -> UNet2DModel:
         attention_head_dim=8,
         norm_num_groups=8,
     )
+
+
+def _tiny_dit_config(sample_size: int = 8, num_train_timesteps: int = 16) -> dict:
+    return {
+        "architecture": "dit",
+        "variant": "tiny-test-dit",
+        "sample_size": sample_size,
+        "patch_size": 2,
+        "in_channels": 4,
+        "out_channels": 4,
+        "num_layers": 1,
+        "hidden_size": 16,
+        "num_attention_heads": 2,
+        "attention_head_dim": 8,
+        "dropout": 0.0,
+        "norm_num_groups": 4,
+        "attention_bias": True,
+        "activation_fn": "gelu-approximate",
+        "num_embeds_ada_norm": num_train_timesteps,
+        "upcast_attention": False,
+        "norm_type": "ada_norm_zero",
+        "norm_elementwise_affine": False,
+        "norm_eps": 1e-5,
+        "unconditional_class_label": 0,
+    }
 
 
 def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
@@ -98,6 +125,47 @@ def test_sd_uncond_config_yaml_and_cli_override(tmp_path: Path) -> None:
     assert cfg.training.eval_every == 1
     assert cfg.training.gradient_accumulation_steps == 2
     assert cfg.diffusion.prediction_type == "v_prediction"
+
+
+def test_sd_uncond_config_accepts_dit_architecture(tmp_path: Path) -> None:
+    dit_path = tmp_path / "tiny_dit.json"
+    config_path = tmp_path / "sd_uncond_dit.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "model:",
+                "  architecture: dit",
+                f"  dit_config: {dit_path}",
+                "diffusion:",
+                "  num_train_timesteps: 16",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parser = build_parser()
+    args = parser.parse_args(["--config", str(config_path)])
+    cfg = merge_config_and_cli(
+        SDUncondTrainConfig,
+        str(config_path),
+        parser,
+        args,
+        flat_to_nested=_FLAT_TO_NESTED,
+    )
+
+    assert cfg.model.architecture == "dit"
+    assert cfg.model.dit_config == str(dit_path)
+    assert cfg.diffusion.num_train_timesteps == 16
+
+
+def test_dit_builder_forward_returns_matching_latent_shape() -> None:
+    model = build_dit_from_config(_tiny_dit_config(), device="cpu")
+    latents = torch.randn(2, 4, 8, 8)
+    timesteps = torch.randint(0, 16, (2,), dtype=torch.long)
+
+    output = model(latents, timesteps)
+
+    assert output.sample.shape == latents.shape
 
 
 def test_sd_uncond_trainer_from_config_resolves_latent_sample_size(monkeypatch, tmp_path: Path) -> None:
@@ -155,6 +223,102 @@ def test_sd_uncond_trainer_from_config_resolves_latent_sample_size(monkeypatch, 
     assert trainer.unet.config.sample_size == 64
     assert trainer.unet.config.in_channels == 4
     assert trainer.noise_scheduler.config.prediction_type == "epsilon"
+
+
+def test_sd_uncond_trainer_from_config_builds_dit(monkeypatch, tmp_path: Path) -> None:
+    dit_config_path = tmp_path / "tiny_dit.json"
+    dit_config_path.write_text(json.dumps(_tiny_dit_config(sample_size=128)), encoding="utf-8")
+
+    fake_vae_cfg = {
+        "_backend": "diffusers_autoencoder_kl",
+        "latent_channels": 4,
+        "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+        "down_block_types": [
+            "DownEncoderBlock2D",
+            "DownEncoderBlock2D",
+            "DownEncoderBlock2D",
+            "DownEncoderBlock2D",
+        ],
+    }
+    monkeypatch.setattr(
+        "src.models.vae.resolve_vae_config_from_model_config",
+        lambda model_cfg: dict(fake_vae_cfg),
+    )
+    monkeypatch.setattr(
+        "src.models.vae.build_vae_from_config",
+        lambda cfg, device=None: _FakeLatentVAE(),
+    )
+
+    cfg = SDUncondTrainConfig(
+        output=SDUncondOutputConfig(model_dir=str(tmp_path / "sd_uncond_dit_run")),
+        device="cpu",
+    )
+    cfg.data.image_size = 64
+    cfg.model.architecture = "dit"
+    cfg.model.dit_config = str(dit_config_path)
+    cfg.model.vae_config = None
+    cfg.model.vae_weights = None
+    cfg.model.vae_pretrained_model_name_or_path = "runwayml/stable-diffusion-v1-5"
+    cfg.diffusion.num_train_timesteps = 16
+
+    trainer = UnconditionalStableDiffusionTrainer.from_config(cfg)
+
+    assert trainer.backbone_architecture == "dit"
+    assert trainer.unet.config.sample_size == 8
+    assert trainer.unet.config.patch_size == 2
+    assert trainer.unet.config.in_channels == 4
+    assert trainer.unet.config.out_channels == 4
+    assert trainer.unet.config.num_embeds_ada_norm == 16
+
+
+def test_sd_uncond_dit_diffusion_step_computes_finite_loss() -> None:
+    diffusion_cfg = SimpleNamespace(
+        num_train_timesteps=16,
+        beta_schedule="scaled_linear",
+        beta_start=0.00085,
+        beta_end=0.012,
+        prediction_type="epsilon",
+        noise_offset=0.0,
+        snr_gamma=None,
+    )
+    trainer = UnconditionalStableDiffusionTrainer(
+        build_dit_from_config(_tiny_dit_config(), device="cpu"),
+        noise_scheduler=UnconditionalStableDiffusionTrainer.build_noise_scheduler(diffusion_cfg),
+        diffusion_config=diffusion_cfg,
+        device="cpu",
+        model_dir="/tmp/sd_uncond_dit",
+        vae=_FakeLatentVAE(),
+        backbone_architecture="dit",
+    )
+
+    loss = trainer.diffusion_step(torch.randn(2, 4, 8, 8))
+
+    assert torch.isfinite(loss)
+    assert float(loss.item()) > 0.0
+
+
+def test_sd_uncond_dit_rejects_regiondiff_layout(monkeypatch, tmp_path: Path) -> None:
+    dit_config_path = tmp_path / "tiny_dit.json"
+    dit_config_path.write_text(json.dumps(_tiny_dit_config()), encoding="utf-8")
+
+    fake_vae_cfg = {
+        "latent_channels": 4,
+        "num_channels": [8, 16, 32, 64],
+    }
+    monkeypatch.setattr(
+        "src.models.vae.resolve_vae_config_from_model_config",
+        lambda model_cfg: dict(fake_vae_cfg),
+    )
+
+    cfg = SDUncondTrainConfig(device="cpu")
+    cfg.data.image_size = 64
+    cfg.model.architecture = "dit"
+    cfg.model.dit_config = str(dit_config_path)
+    cfg.layout_conditioning.enabled = True
+    cfg.layout_conditioning.variant = "regiondiff_v1"
+
+    with pytest.raises(ValueError, match="unconditioned latent diffusion"):
+        UnconditionalStableDiffusionTrainer.from_config(cfg)
 
 
 def test_sd_uncond_diffusion_step_supports_epsilon_and_v_prediction() -> None:
@@ -280,6 +444,7 @@ def test_sd_uncond_preset_uses_shared_unet_and_sd15_vae() -> None:
 
     assert cfg.data.dataset_id == "flir_private_proxy_alignment_v18"
     assert cfg.data.image_size == 512
+    assert cfg.model.architecture == "unet"
     assert cfg.model.unet_config == "configs/models/fm/stable_unet_x4_512.json"
     assert cfg.model.vae_config is None
     assert cfg.model.vae_weights is None
@@ -289,6 +454,28 @@ def test_sd_uncond_preset_uses_shared_unet_and_sd15_vae() -> None:
     assert cfg.sampling.sample_steps == 40
     assert cfg.device is None
     assert cfg.output.model_dir.endswith("uncond_latent_flir_sd15_512")
+
+
+def test_sd_uncond_dit_b4_preset_extends_unet_preset() -> None:
+    preset_path = Path("configs/sd_uncond/train/presets/uncond_latent_flir_sd15_512_dit_b4.yaml")
+    parser = build_parser()
+    args = parser.parse_args(["--config", str(preset_path)])
+    cfg = merge_config_and_cli(
+        SDUncondTrainConfig,
+        str(preset_path),
+        parser,
+        args,
+        flat_to_nested=_FLAT_TO_NESTED,
+    )
+
+    assert cfg.data.dataset_id == "flir_private_proxy_alignment_v18"
+    assert cfg.data.image_size == 512
+    assert cfg.model.architecture == "dit"
+    assert cfg.model.unet_config == "configs/models/fm/stable_unet_x4_512.json"
+    assert cfg.model.dit_config == "configs/models/dit/dit_b4_latent.json"
+    assert cfg.model.vae_pretrained_model_name_or_path == "runwayml/stable-diffusion-v1-5"
+    assert cfg.diffusion.num_train_timesteps == 1000
+    assert cfg.output.model_dir.endswith("uncond_latent_flir_sd15_512_dit_b4")
 
 
 def test_sd_uncond_train_from_config_skips_vae_weights_for_pretrained_vae(tmp_path: Path) -> None:

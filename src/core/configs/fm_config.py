@@ -92,7 +92,9 @@ class DataConfig:
 class ModelConfig:
     """Paths to model architecture configs and pretrained weights."""
 
+    architecture: str = "unet"
     unet_config: str = "configs/models/fm/stable_unet_config.json"
+    dit_config: str = "configs/models/dit/dit_b4_latent.json"
     vae_config: Optional[str] = "configs/models/fm/vae_config.json"
     vae_weights: Optional[str] = "./vae_best.pt"
     vae_pretrained_model_name_or_path: Optional[str] = None

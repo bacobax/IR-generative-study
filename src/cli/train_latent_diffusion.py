@@ -28,6 +28,7 @@ from src.core.data.transforms import ScheduledHorizontalFlip, save_transform_exa
 
 # Ensure default components are registered.
 import src.models.fm_unet  # noqa: F401
+import src.models.dit  # noqa: F401
 import src.algorithms.training.unconditional_sd_trainer  # noqa: F401
 import src.algorithms.inference.unconditional_sd_sampler  # noqa: F401
 

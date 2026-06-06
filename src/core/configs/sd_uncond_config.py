@@ -154,8 +154,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--subset_manifest", type=str, default=None,
                         help="Optional manifest selecting the training split subset.")
 
+    parser.add_argument("--model_architecture", type=str, default="unet",
+                        choices=["unet", "dit"],
+                        help="Latent denoising backbone architecture.")
     parser.add_argument("--unet_config", type=str, default="configs/models/fm/stable_unet_config.json",
                         help="UNet config JSON")
+    parser.add_argument("--dit_config", type=str, default="configs/models/dit/dit_b4_latent.json",
+                        help="DiT config JSON")
     parser.add_argument("--vae_config", type=str, default="configs/models/fm/vae_config.json",
                         help="VAE config JSON")
     parser.add_argument("--vae_weights", type=str, default="./vae_best.pt",
@@ -282,7 +287,9 @@ _FLAT_TO_NESTED = {
     "max_val_samples": "data.max_val_samples",
     "subset_strategy": "data.subset_strategy",
     "subset_manifest": "data.subset_manifest",
+    "model_architecture": "model.architecture",
     "unet_config": "model.unet_config",
+    "dit_config": "model.dit_config",
     "vae_config": "model.vae_config",
     "vae_weights": "model.vae_weights",
     "vae_pretrained_model_name_or_path": "model.vae_pretrained_model_name_or_path",

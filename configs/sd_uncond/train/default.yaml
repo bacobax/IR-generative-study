@@ -19,7 +19,9 @@ data:
   subset_manifest: null
 
 model:
+  architecture: "unet"
   unet_config: "configs/models/fm/stable_unet_config.json"
+  dit_config: "configs/models/dit/dit_b4_latent.json"
   vae_config: "configs/models/fm/vae_config.json"
   vae_weights: "./vae_best.pt"
   vae_pretrained_model_name_or_path: null

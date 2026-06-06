@@ -17,6 +17,7 @@ from src.algorithms.inference.sampler_utils import (
     resolve_preferred_or_latest_checkpoint,
 )
 from src.core.diffusers_compat import import_diffusers_attr
+from src.models.dit import build_dit_from_config, load_dit_config
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
 from src.models.vae import (
     build_vae_from_config,
@@ -90,13 +91,23 @@ class UnconditionalStableDiffusionSampler:
         vae_dir = os.path.join(pipeline_dir, "VAE")
         scheduler_dir = os.path.join(pipeline_dir, "SCHEDULER")
 
-        unet_cfg = load_unet_config(os.path.join(unet_dir, "config.json"))
-        unet = build_fm_unet_from_config(unet_cfg, device=device)
-        unet = _maybe_wrap_regiondiff_unet(
-            unet,
-            pipeline_dir=pipeline_dir,
-            backbone_kind="sd_uncond_unet2d",
-        )
+        config_path = os.path.join(unet_dir, "config.json")
+        unet_cfg = load_unet_config(config_path)
+        architecture = str(unet_cfg.get("architecture", "unet") or "unet").lower()
+        if architecture == "dit":
+            unet = build_dit_from_config(load_dit_config(config_path), device=device)
+        elif architecture == "unet":
+            unet = build_fm_unet_from_config(unet_cfg, device=device)
+            unet = _maybe_wrap_regiondiff_unet(
+                unet,
+                pipeline_dir=pipeline_dir,
+                backbone_kind="sd_uncond_unet2d",
+            )
+        else:
+            raise ValueError(
+                f"Unsupported unconditional latent SD backbone architecture {architecture!r} "
+                f"in {config_path}."
+            )
         unet = torch.nn.Module.to(unet, device)
         unet_w = resolve_preferred_or_latest_checkpoint(
             unet_dir,
@@ -104,7 +115,7 @@ class UnconditionalStableDiffusionSampler:
             "unet_sd_uncond_epoch_",
         )
         if unet_w is None or not os.path.isfile(unet_w):
-            raise FileNotFoundError(f"No unconditional SD UNet weights found in {unet_dir}")
+            raise FileNotFoundError(f"No unconditional SD backbone weights found in {unet_dir}")
         state = load_checkpoint_state(unet_w, map_location=device)
         unet.load_state_dict(state)
         unet.eval()

@@ -15,6 +15,11 @@ from src.algorithms.training.flow_matching_trainer import (
 )
 from src.core.diffusers_compat import import_diffusers_attr
 from src.core.training_utils import compute_snr
+from src.models.dit import (
+    build_dit_from_config,
+    load_dit_config,
+    resolve_dit_config_for_latent_diffusion,
+)
 from src.models.fm_unet import build_fm_unet_from_config, load_unet_config
 from src.models.regiondiffusion_factory import (
     build_regiondiff_wrapper,
@@ -43,6 +48,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         vae_config: Optional[Dict[str, Any]] = None,
         layout_config=None,
         regiondiff_trainability_info: Optional[Dict[str, Any]] = None,
+        backbone_architecture: str = "unet",
     ) -> None:
         super().__init__(
             unet,
@@ -60,6 +66,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         )
         self.noise_scheduler = noise_scheduler
         self.diffusion_config = diffusion_config
+        self.backbone_architecture = str(backbone_architecture or "unet")
 
     def _metric_prefix(self) -> str:
         return "sd_uncond"
@@ -85,6 +92,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
 
     def _checkpoint_metadata(self) -> Dict[str, Any]:
         return {
+            "backbone_architecture": self.backbone_architecture,
             "num_train_timesteps": int(self.noise_scheduler.config.num_train_timesteps),
             "prediction_type": str(self.noise_scheduler.config.prediction_type),
             "beta_schedule": str(self.noise_scheduler.config.beta_schedule),
@@ -106,22 +114,43 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
         if vae_cfg is None:
             raise ValueError("Unconditional latent SD requires a VAE config or pretrained VAE.")
 
-        unet_cfg = dict(load_unet_config(config.model.unet_config))
-        unet_cfg["sample_size"] = _resolve_unet_sample_size(config, vae_cfg)
-        latent_channels = int(vae_cfg.get("latent_channels", unet_cfg.get("in_channels", 4)))
-        unet_cfg["in_channels"] = latent_channels
-        unet_cfg["out_channels"] = latent_channels
-
-        unet = build_fm_unet_from_config(unet_cfg, device=device)
-        vae = build_vae_from_config(vae_cfg, device=device)
-        noise_scheduler = cls.build_noise_scheduler(config.diffusion)
         layout_config = getattr(config, "layout_conditioning", None)
-        regiondiff_trainability_info = None
-        if (
+        architecture = str(getattr(config.model, "architecture", "unet") or "unet").lower()
+        if architecture not in {"unet", "dit"}:
+            raise ValueError("model.architecture must be 'unet' or 'dit', got " f"{architecture!r}.")
+        layout_enabled = (
             layout_config is not None
             and bool(getattr(layout_config, "enabled", False))
             and str(getattr(layout_config, "variant", "")) == "regiondiff_v1"
-        ):
+        )
+        if architecture == "dit" and layout_enabled:
+            raise ValueError(
+                "model.architecture='dit' is only supported for unconditioned latent diffusion; "
+                "disable layout_conditioning for this pass."
+            )
+
+        sample_size = _resolve_unet_sample_size(config, vae_cfg)
+        latent_channels = int(vae_cfg.get("latent_channels", 4))
+        if architecture == "dit":
+            unet_cfg = resolve_dit_config_for_latent_diffusion(
+                load_dit_config(config.model.dit_config),
+                sample_size=sample_size,
+                latent_channels=latent_channels,
+                num_train_timesteps=int(config.diffusion.num_train_timesteps),
+            )
+            unet = build_dit_from_config(unet_cfg, device=device)
+        else:
+            unet_cfg = dict(load_unet_config(config.model.unet_config))
+            unet_cfg["sample_size"] = sample_size
+            latent_channels = int(vae_cfg.get("latent_channels", unet_cfg.get("in_channels", 4)))
+            unet_cfg["in_channels"] = latent_channels
+            unet_cfg["out_channels"] = latent_channels
+            unet = build_fm_unet_from_config(unet_cfg, device=device)
+
+        vae = build_vae_from_config(vae_cfg, device=device)
+        noise_scheduler = cls.build_noise_scheduler(config.diffusion)
+        regiondiff_trainability_info = None
+        if layout_enabled:
             unet = build_regiondiff_wrapper(
                 base_model=unet,
                 region_config=layout_config,
@@ -149,6 +178,7 @@ class UnconditionalStableDiffusionTrainer(FlowMatchingTrainer):
             vae_config=vae_cfg,
             layout_config=layout_config,
             regiondiff_trainability_info=regiondiff_trainability_info,
+            backbone_architecture=architecture,
         )
 
     @staticmethod
