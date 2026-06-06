@@ -67,4 +67,6 @@ sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publi
 sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_sd_uncond_hflip_train_5000_publication_kl.slurm
 
 # FLIR SDXL LoRA
+sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_sdxl_lora_stage1_r8_publication_kl.slurm
 sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_sdxl_lora_stage1_r8_train_2000_publication_kl.slurm
+sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_sdxl_lora_stage1_r8_train_5000_publication_kl.slurm

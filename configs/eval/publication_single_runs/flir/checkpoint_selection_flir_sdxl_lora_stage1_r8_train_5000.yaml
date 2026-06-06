@@ -1,0 +1,91 @@
+# Publication-style single-run checkpoint selection for flir_sdxl_lora_stage1_r8_train_5000.
+# Generates 10,000 selection images per checkpoint and 30,000 fresh final images from the selected checkpoint.
+pipeline_mode: clean_fid_selection_publication
+
+runs:
+  - run_identifier: "flir_sdxl_lora_stage1_r8_train_5000"
+    run_dir: "artifacts/checkpoints/stable_diffusion_xl/lora_runs/flir_sdxl_lora_stage1_r8_train_5000"
+    model_type: "sdxl_lora"
+    sampler_name: null
+    sampling_config_path: "configs/datasets/flir/sdxl_adaptation/flir_sdxl_lora_stage1_r8_train_5000.yaml"
+    generation_entrypoint: null
+
+checkpoint_min_epoch: 50
+checkpoint_min_step: null
+
+selection:
+  selection_metric: clean_fid
+  selection_num_images: 10000
+  selection_reference_source: val
+  lower_is_better: true
+
+final:
+  final_total_images: 30000
+  real_reference_sources:
+    - train
+    - val
+    - test
+    - train_val_test
+
+metrics:
+  compute_clean_fid: true
+  compute_fd_dinov2: true
+  compute_kid: true
+  compute_mmd: true
+  compute_intra_lpips: false
+
+feature_extractors:
+  clean_fid:
+    name: inception
+    implementation: clean_fid
+  dinov2:
+    enabled: true
+    model_name: facebook/dinov2-base
+    feature_layer: cls
+    channel_handling: replicate_grayscale_to_rgb
+
+kid:
+  subsets: 100
+  subset_size: 1000
+
+mmd:
+  kernel: rbf
+  bandwidths: [0.1, 1.0, 10.0]
+
+generation:
+  generation_seed: 1234
+  selection_seed_offset: 0
+  final_seed_offset: 1000000
+  generation_prompt: "thermal image"
+  negative_prompt: ""
+  num_inference_steps: 50
+  generation_batch_size: 8
+  device: cuda
+  mixed_precision: fp16
+  overwrite_existing_generations: false
+  overwrite_existing_metrics: false
+  cleanup_generated_images: true
+  cleanup_dry_run: false
+
+reference_data:
+  dataset_id: flir_private_proxy_alignment_v18
+  real_reference_splits:
+    train: train
+    val: val
+    test: test
+  real_reference_num_samples:
+    train: null
+    val: null
+    test: null
+    train_val_test: null
+
+output:
+  output_root: "/scratch/bacobax2/flir_checkpoint_selection_publication_single_runs"
+  analysis_output_root: null
+  save_analysis_previews: true
+  analysis_preview_num_images: 16
+  analysis_preview_columns: 4
+  analysis_preview_tile_size: 512
+
+save_generated_format: npy
+generated_min_std: 1.0
