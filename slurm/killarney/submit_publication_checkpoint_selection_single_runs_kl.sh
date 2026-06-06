@@ -47,7 +47,7 @@ sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/bigearthnet_s2_b08_5x5_stride3/
 sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/bigearthnet_s2_b08_5x5_stride3/checkpoint_selection_publication/select_ben_sd_uncond_hflip_train_5100_publication_kl.slurm
 
 # BigEarthNet SDXL LoRA
-sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/bigearthnet_s  2_b08_5x5_stride3/checkpoint_selection_publication/select_ben_sdxl_lora_stage1_r8_train_2040_publication_kl.slurm
+sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/bigearthnet_s2_b08_5x5_stride3/checkpoint_selection_publication/select_ben_sdxl_lora_stage1_r8_train_2040_publication_kl.slurm
 
 # # FLIR flow matching
 sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_fm_ot_publication_kl.slurm
