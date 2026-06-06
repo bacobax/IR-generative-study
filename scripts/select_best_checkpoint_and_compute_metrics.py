@@ -32,6 +32,8 @@ from src.core.normalization import UINT8_LINEAR, raw_array_to_png_uint8, sd_outp
 
 LORA_WEIGHT_FILENAMES = ("pytorch_lora_weights.safetensors", "pytorch_lora_weights.bin")
 GENERATED_IMAGE_EXTENSIONS = {".npy", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+PROTECTED_PREVIEW_FILENAMES = {"preview_grid.png"}
+PROTECTED_PREVIEW_DIRNAMES = {"previews"}
 
 
 NATIVE_EPOCH_RE = re.compile(r"^(?P<stem>unet_(?:fm|sd_uncond))_epoch_(?P<epoch>\d+)(?:_ckpt)?\.pt$")
@@ -1555,6 +1557,8 @@ def _safe_delete_explicit_generated_files(
     total_bytes = 0
     for path in paths:
         path = Path(path)
+        if _is_protected_analysis_preview_path(path):
+            raise ValueError(f"Refusing to delete analysis preview image: {path}")
         if path.suffix.lower() not in GENERATED_IMAGE_EXTENSIONS:
             raise ValueError(f"Refusing to delete unsupported generated file type: {path}")
         if path.parent.resolve() != image_dir.resolve():
@@ -1585,6 +1589,13 @@ def _safe_delete_explicit_generated_files(
         "files": rows,
         "timestamp": utc_timestamp(),
     }
+
+
+def _is_protected_analysis_preview_path(path: str | Path) -> bool:
+    path = Path(path)
+    return path.name in PROTECTED_PREVIEW_FILENAMES or any(
+        part in PROTECTED_PREVIEW_DIRNAMES for part in path.parts
+    )
 
 
 def _safe_delete_known_image_dir(

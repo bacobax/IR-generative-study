@@ -331,6 +331,28 @@ def test_verified_publication_stage_allows_generated_image_deletion(tmp_path: Pa
     assert feature_path.is_file()
 
 
+def test_cleanup_refuses_to_delete_analysis_preview_pngs(tmp_path: Path) -> None:
+    preview_dir = tmp_path / "out" / "epoch_001" / "selection" / "previews"
+    preview_dir.mkdir(parents=True)
+    preview_path = preview_dir / "sample_000000.png"
+    preview_path.write_bytes(b"preview")
+
+    try:
+        pipeline._safe_delete_explicit_generated_files(
+            checkpoint_identifier="epoch_001",
+            image_dir=preview_dir,
+            paths=[preview_path],
+            dry_run=False,
+            reason="unit test",
+        )
+    except ValueError as exc:
+        assert "preview" in str(exc)
+    else:
+        raise AssertionError("Expected preview deletion to be refused.")
+
+    assert preview_path.is_file()
+
+
 def test_publication_stage_verification_blocks_corrupt_features_and_metrics(tmp_path: Path) -> None:
     run = _run_resolution(tmp_path / "run", model_type="latent_flow_matching")
     checkpoint = pipeline.CheckpointCandidate("epoch_001", str(tmp_path / "ckpt.pt"), "epoch", epoch=1)

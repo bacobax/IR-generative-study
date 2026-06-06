@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,6 +113,7 @@ def _image_files_under(path: Path) -> list[Path]:
         file
         for file in sorted(path.rglob("*"))
         if file.is_file() and file.suffix.lower() in pipeline.GENERATED_IMAGE_EXTENSIONS
+        and not pipeline._is_protected_analysis_preview_path(file)
     ]
 
 
@@ -171,16 +171,40 @@ def _validate_stage(
 
 
 def _delete_invalid_analysis_dir(path: Path, *, execute: bool) -> dict[str, Any]:
-    files = [file for file in path.rglob("*") if file.is_file()] if path.is_dir() else []
+    files = [
+        file
+        for file in path.rglob("*")
+        if file.is_file() and not pipeline._is_protected_analysis_preview_path(file)
+    ] if path.is_dir() else []
+    protected_files = [
+        file
+        for file in path.rglob("*")
+        if file.is_file() and pipeline._is_protected_analysis_preview_path(file)
+    ] if path.is_dir() else []
     total_bytes = sum(int(file.stat().st_size) for file in files if file.exists())
     if execute and path.is_dir():
-        shutil.rmtree(path)
+        for file in files:
+            file.unlink(missing_ok=True)
+        for directory in sorted(
+            [item for item in path.rglob("*") if item.is_dir()],
+            key=lambda item: len(item.parts),
+            reverse=True,
+        ):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+        try:
+            path.rmdir()
+        except OSError:
+            pass
     return {
         "path": str(path),
         "files_deleted": len(files) if execute else 0,
         "bytes_freed": int(total_bytes) if execute else 0,
         "planned_files": len(files),
         "planned_bytes": int(total_bytes),
+        "protected_preview_files": [str(file) for file in protected_files],
         "executed": bool(execute),
     }
 
