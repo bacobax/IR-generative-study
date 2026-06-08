@@ -1428,6 +1428,7 @@ def _publication_expected_metric_keys(
     config: Mapping[str, Any],
     *,
     include_clean_fid: bool,
+    include_inception_fid: bool,
     include_fd_dinov2: bool,
     include_kid: bool,
     include_mmd: bool,
@@ -1436,6 +1437,8 @@ def _publication_expected_metric_keys(
     keys: list[str] = []
     if include_clean_fid:
         keys.append("clean_fid")
+    if include_inception_fid:
+        keys.append("FID")
     if include_fd_dinov2:
         keys.append("fd_dinov2")
     if include_kid:
@@ -2217,8 +2220,49 @@ def _publication_feature_config(config: Mapping[str, Any], feature_name: str) ->
     return {}
 
 
+def _clean_fid_diagnostic() -> dict[str, Any]:
+    if importlib.util.find_spec("cleanfid") is None:
+        return {
+            "available": False,
+            "error_type": "ModuleNotFoundError",
+            "error": "The 'cleanfid' Python package is not importable.",
+        }
+    try:
+        from cleanfid import fid as _clean_fid  # noqa: F401
+    except Exception as exc:
+        return {
+            "available": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
+    return {"available": True, "error_type": None, "error": None}
+
+
 def _clean_fid_importable() -> bool:
-    return importlib.util.find_spec("cleanfid") is not None
+    return bool(_clean_fid_diagnostic()["available"])
+
+
+def _allow_inception_fid_fallback(config: Mapping[str, Any]) -> bool:
+    metrics_cfg = _publication_metrics_config(config)
+    if "allow_inception_fid_fallback" in metrics_cfg:
+        return bool(metrics_cfg["allow_inception_fid_fallback"])
+    return bool(config.get("allow_inception_fid_fallback", False))
+
+
+def _validate_publication_metric_dependencies(config: Mapping[str, Any]) -> None:
+    if not _metric_enabled(config, "compute_clean_fid", True):
+        return
+    if _allow_inception_fid_fallback(config):
+        return
+    clean_fid_status = _clean_fid_diagnostic()
+    if not clean_fid_status["available"]:
+        raise RuntimeError(
+            "Publication config enables metrics.compute_clean_fid with exact Clean-FID required, "
+            "but cleanfid.fid cannot be imported in this environment. "
+            f"Import error: {clean_fid_status['error_type']}: {clean_fid_status['error']}. "
+            "Install/repair clean-fid and its compiled dependencies in the Slurm environment. "
+            "The pipeline refuses to start generation because fallback FID is disabled."
+        )
 
 
 def _load_paths_as_clean_fid_png_dir(
@@ -2269,12 +2313,10 @@ def _compute_clean_fid_with_package(
     device: str,
     overwrite: bool,
 ) -> float | None:
-    if not _clean_fid_importable():
-        return None
     try:
         from cleanfid import fid as clean_fid
-    except Exception:
-        return None
+    except Exception as exc:
+        raise RuntimeError(f"Failed to import cleanfid.fid: {exc}") from exc
 
     real_dir = _load_paths_as_clean_fid_png_dir(
         real_paths,
@@ -2338,6 +2380,7 @@ def _compute_publication_metrics_for_source(
     config: Mapping[str, Any],
     device: str,
     include_clean_fid: bool,
+    include_inception_fid: bool,
     include_fd_dinov2: bool,
     include_kid: bool,
     include_mmd: bool,
@@ -2356,7 +2399,7 @@ def _compute_publication_metrics_for_source(
 
     inception_features_real = None
     inception_features_generated = None
-    needs_inception = include_kid or include_mmd or include_clean_fid
+    needs_inception = include_inception_fid or include_kid or include_mmd or include_clean_fid
     if needs_inception:
         extractor = _build_publication_feature_extractor("inception", config, device)
         reference_source = str(reference["reference_source"])
@@ -2392,9 +2435,9 @@ def _compute_publication_metrics_for_source(
 
     clean_fid_value = None
     clean_fid_error = None
+    clean_fid_png_root = run_output_dir / "features" / "clean_fid_png" / generated_cache_label
+    cache_paths["clean_fid_png_root"] = str(clean_fid_png_root)
     if include_clean_fid:
-        clean_fid_png_root = run_output_dir / "features" / "clean_fid_png" / generated_cache_label
-        cache_paths["clean_fid_png_root"] = str(clean_fid_png_root)
         try:
             clean_fid_value = _compute_clean_fid_with_package(
                 real_paths=real_paths,
@@ -2412,10 +2455,12 @@ def _compute_publication_metrics_for_source(
             metric_values["clean_fid"] = float(clean_fid_value)
             feature_extractors_used.append({"name": "inception", "implementation": "clean_fid"})
         else:
-            if not bool(config.get("allow_inception_fid_fallback", False)):
+            if not _allow_inception_fid_fallback(config):
+                detail = f" Underlying error: {clean_fid_error}." if clean_fid_error else ""
                 raise RuntimeError(
                     "metrics.compute_clean_fid is enabled, but exact Clean-FID could not be computed. "
                     "Install/repair cleanfid or explicitly set allow_inception_fid_fallback: true."
+                    f"{detail}"
                 )
             if inception_features_real is None or inception_features_generated is None:
                 raise RuntimeError("Inception features are required for inception_fid_fallback.")
@@ -2425,6 +2470,16 @@ def _compute_publication_metrics_for_source(
                 inception_features_real,
                 inception_features_generated,
             )
+
+    if include_inception_fid:
+        if inception_features_real is None or inception_features_generated is None:
+            raise RuntimeError("Inception features are required for FID.")
+        from src.evaluation.generative_metrics import compute_fid
+
+        metric_values["FID"] = compute_fid(
+            inception_features_real,
+            inception_features_generated,
+        )
 
     if include_kid:
         if inception_features_real is None or inception_features_generated is None:
@@ -2522,10 +2577,10 @@ def _compute_publication_metrics_for_source(
         "cache_paths": cache_paths,
         "metric_values": metric_values,
         "clean_fid_status": {
-            "available": _clean_fid_importable(),
+            "import_status": _clean_fid_diagnostic(),
             "used": clean_fid_value is not None,
             "fallback_metric": "inception_fid_fallback" if include_clean_fid and clean_fid_value is None else None,
-            "error": clean_fid_error,
+            "compute_error": clean_fid_error,
         },
         "lpips_diagnostics": lpips_result.to_dict() if lpips_result is not None else None,
         "timestamp": utc_timestamp(),
@@ -2667,7 +2722,7 @@ def run_clean_fid_publication_one(
     device = get_device(flat_config)
     selection_cfg = _nested_mapping(flat_config, "selection")
     final_cfg = _nested_mapping(flat_config, "final")
-    requested_metric = str(selection_cfg.get("selection_metric", "clean_fid"))
+    requested_metric = str(selection_cfg.get("selection_metric", "FID"))
     lower_is_better = bool(selection_cfg.get("lower_is_better", True))
     selection_source_name = str(selection_cfg.get("selection_reference_source", "val"))
     if selection_source_name not in SUPPORTED_REFERENCE_SOURCES:
@@ -2681,12 +2736,14 @@ def run_clean_fid_publication_one(
     selection_reference = references[selection_source_name]
 
     selection_include_clean_fid = _metric_enabled(flat_config, "compute_clean_fid", True)
+    selection_include_inception_fid = _metric_enabled(flat_config, "compute_inception_fid", False)
     selection_include_fd_dinov2 = _metric_enabled(flat_config, "compute_fd_dinov2", False)
     selection_include_kid = _metric_enabled(flat_config, "compute_kid", True)
     selection_include_mmd = _metric_enabled(flat_config, "compute_mmd", True)
     selection_expected_metric_keys = _publication_expected_metric_keys(
         flat_config,
         include_clean_fid=selection_include_clean_fid,
+        include_inception_fid=selection_include_inception_fid,
         include_fd_dinov2=selection_include_fd_dinov2,
         include_kid=selection_include_kid,
         include_mmd=selection_include_mmd,
@@ -2731,6 +2788,7 @@ def run_clean_fid_publication_one(
             config=flat_config,
             device=device,
             include_clean_fid=selection_include_clean_fid,
+            include_inception_fid=selection_include_inception_fid,
             include_fd_dinov2=selection_include_fd_dinov2,
             include_kid=selection_include_kid,
             include_mmd=selection_include_mmd,
@@ -2833,6 +2891,7 @@ def run_clean_fid_publication_one(
     final_expected_metric_keys = _publication_expected_metric_keys(
         flat_config,
         include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
+        include_inception_fid=_metric_enabled(flat_config, "compute_inception_fid", False),
         include_fd_dinov2=_metric_enabled(flat_config, "compute_fd_dinov2", False),
         include_kid=_metric_enabled(flat_config, "compute_kid", True),
         include_mmd=_metric_enabled(flat_config, "compute_mmd", True),
@@ -2900,6 +2959,7 @@ def run_clean_fid_publication_one(
                 config=flat_config,
                 device=device,
                 include_clean_fid=_metric_enabled(flat_config, "compute_clean_fid", True),
+                include_inception_fid=_metric_enabled(flat_config, "compute_inception_fid", False),
                 include_fd_dinov2=_metric_enabled(flat_config, "compute_fd_dinov2", False),
                 include_kid=_metric_enabled(flat_config, "compute_kid", True),
                 include_mmd=_metric_enabled(flat_config, "compute_mmd", True),
@@ -3668,9 +3728,15 @@ def preflight_publication_config(config: Mapping[str, Any]) -> dict[str, Any]:
                     "planned_final_images": len(seeds["final"]),
                     "planned_total_final_synthetic_count": len(seeds["final"]),
                     "feature_extractors_to_use": {
-                        "clean_fid_available": _clean_fid_importable(),
+                        "clean_fid_status": _clean_fid_diagnostic(),
+                        "exact_clean_fid_required": (
+                            _metric_enabled(flat_config, "compute_clean_fid", True)
+                            and not _allow_inception_fid_fallback(flat_config)
+                        ),
+                        "allow_inception_fid_fallback": _allow_inception_fid_fallback(flat_config),
                         "inception": bool(
                             _metric_enabled(flat_config, "compute_clean_fid", True)
+                            or _metric_enabled(flat_config, "compute_inception_fid", False)
                             or _metric_enabled(flat_config, "compute_kid", True)
                             or _metric_enabled(flat_config, "compute_mmd", True)
                         ),
@@ -3882,6 +3948,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     mode = pipeline_mode(config)
     if mode not in {"legacy_staged_kid_fid", "clean_fid_selection_publication"}:
         raise ValueError(f"Unsupported pipeline_mode={mode!r}.")
+    if mode == "clean_fid_selection_publication":
+        _validate_publication_metric_dependencies(config)
     summaries = []
     for run_entry in runs:
         if mode == "clean_fid_selection_publication":

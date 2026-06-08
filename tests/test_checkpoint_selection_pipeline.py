@@ -220,6 +220,20 @@ def test_publication_ranking_uses_inception_fid_fallback_when_clean_fid_missing(
     assert ranked[0]["effective_selection_metric"] == "inception_fid_fallback"
 
 
+def test_publication_expected_metric_keys_include_standard_fid() -> None:
+    keys = pipeline._publication_expected_metric_keys(
+        {},
+        include_clean_fid=False,
+        include_inception_fid=True,
+        include_fd_dinov2=True,
+        include_kid=True,
+        include_mmd=True,
+        include_intra_lpips=False,
+    )
+
+    assert keys == ["FID", "fd_dinov2", "KID", "MMD"]
+
+
 def test_final_manifest_contains_only_fresh_final_images(tmp_path: Path) -> None:
     run = pipeline.RunResolution(
         run_identifier="run",
@@ -443,7 +457,13 @@ def _recovery_config(tmp_path: Path, model_run_dir: Path, output_root: Path) -> 
         "selection": {"selection_num_images": 1, "selection_reference_source": "val"},
         "final": {"final_total_images": 1, "real_reference_sources": ["val"]},
         "generation": {"generation_seed": 1, "device": "cpu"},
-        "metrics": {"compute_clean_fid": True, "compute_fd_dinov2": False, "compute_kid": False, "compute_mmd": False},
+        "metrics": {
+            "compute_clean_fid": False,
+            "compute_inception_fid": True,
+            "compute_fd_dinov2": False,
+            "compute_kid": False,
+            "compute_mmd": False,
+        },
         "reference_data": {"dataset_id": "unused"},
         "output": {"output_root": str(output_root)},
     }
@@ -1143,6 +1163,40 @@ def test_publication_preflight_reports_reference_counts_and_paths(
     assert run_payload["planned_num_generated_images_per_checkpoint"] == 2
     assert run_payload["planned_final_images"] == 3
     assert run_payload["expected_output_paths"]["selection_metrics"].endswith("selection_metrics.json")
+
+
+def test_publication_exact_clean_fid_dependency_checked_before_generation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline,
+        "_clean_fid_diagnostic",
+        lambda: {
+            "available": False,
+            "error_type": "ImportError",
+            "error": "libcpupower.so.0: cannot open shared object file",
+        },
+    )
+    config = {
+        "pipeline_mode": "clean_fid_selection_publication",
+        "metrics": {"compute_clean_fid": True},
+    }
+
+    try:
+        pipeline._validate_publication_metric_dependencies(config)
+    except RuntimeError as exc:
+        assert "cleanfid" in str(exc)
+        assert "libcpupower.so.0" in str(exc)
+        assert "refuses to start generation" in str(exc)
+    else:
+        raise AssertionError("Expected missing exact Clean-FID dependency to fail early.")
+
+    fallback_config = {
+        "pipeline_mode": "clean_fid_selection_publication",
+        "metrics": {
+            "compute_clean_fid": True,
+            "allow_inception_fid_fallback": True,
+        },
+    }
+    pipeline._validate_publication_metric_dependencies(fallback_config)
 
 
 def test_validate_generation_dir_rejects_wrong_resolution_and_black_cache(tmp_path: Path) -> None:

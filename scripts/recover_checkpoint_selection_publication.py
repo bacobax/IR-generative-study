@@ -133,6 +133,7 @@ def _stage_expected_keys(config: Mapping[str, Any], *, stage_name: str) -> list[
     return pipeline._publication_expected_metric_keys(
         config,
         include_clean_fid=pipeline._metric_enabled(config, "compute_clean_fid", True),
+        include_inception_fid=pipeline._metric_enabled(config, "compute_inception_fid", False),
         include_fd_dinov2=pipeline._metric_enabled(config, "compute_fd_dinov2", False),
         include_kid=pipeline._metric_enabled(config, "compute_kid", True),
         include_mmd=pipeline._metric_enabled(config, "compute_mmd", True),

@@ -67,7 +67,7 @@ fi
 echo "Configured run:"
 grep -n "run_identifier:" "${CONFIG}" || true
 echo "Configured publication sizes and metrics:"
-grep -nE "selection_num_images:|final_total_images:|cleanup_generated_images:|cleanup_dry_run:|compute_clean_fid:|compute_fd_dinov2:|compute_kid:|compute_mmd:|num_inference_steps:|generation_batch_size:|output_root:" "${CONFIG}" || true
+grep -nE "selection_num_images:|final_total_images:|cleanup_generated_images:|cleanup_dry_run:|compute_clean_fid:|compute_inception_fid:|compute_fd_dinov2:|compute_kid:|compute_mmd:|num_inference_steps:|generation_batch_size:|output_root:" "${CONFIG}" || true
 
 EXTRA_ARGS=()
 if [ "${PREFLIGHT}" = "1" ] || [ "${PREFLIGHT}" = "true" ]; then

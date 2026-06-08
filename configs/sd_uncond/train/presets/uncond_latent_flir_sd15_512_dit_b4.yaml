@@ -20,8 +20,8 @@ training:
   eval_every: 4
 
 ema:
-  decay: 0.9999
-  start_step: 1000
+  decay: 0.999
+  start_step: 0
 
 sampling:
   sample_every: 20
