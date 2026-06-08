@@ -26,12 +26,6 @@ if [[ "${CLUSTER}" != "fir" && "${CLUSTER}" != "killarney" ]]; then
   exit 1
 fi
 
-if [[ "${CLUSTER}" == "killarney" && "${PROJECT_ROOT}" == /home/* ]]; then
-  echo "ERROR: Killarney does not allow sbatch submissions from /home." >&2
-  echo "Set PROJECT_ROOT to the project path under /project or /scratch and rerun." >&2
-  exit 1
-fi
-
 cd "${PROJECT_ROOT}"
 mkdir -p logs
 
