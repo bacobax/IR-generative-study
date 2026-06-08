@@ -14,8 +14,8 @@ lr_warmup_steps: 0
 rank: 8
 lora_alpha_scale: 1.0
 validation_prompt: "thermal image"
-checkpointing_epochs: 100
+checkpointing_epochs: 1
 checkpoints_total_limit: 1
-save_optimizer_state: false
+save_optimizer_state: true
 output_dir: ./artifacts/checkpoints/stable_diffusion_xl/lora_runs/flir_sdxl_lora_stage1_r8
 seed: 42

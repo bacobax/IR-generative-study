@@ -81,7 +81,7 @@ reference_data:
     train_val_test: null
 
 output:
-  output_root: "/scratch/bacobax2/flir_checkpoint_selection_publication_single_runs"
+  output_root: "artifacts/generated/flir_checkpoint_selection_publication_single_runs"
   analysis_output_root: null
   save_analysis_previews: true
   analysis_preview_num_images: 16

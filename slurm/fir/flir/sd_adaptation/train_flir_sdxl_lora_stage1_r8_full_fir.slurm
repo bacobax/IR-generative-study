@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=flir-sdxl-r8-full
 #SBATCH --account=def-mpederso
-#SBATCH --time=48:00:00
+#SBATCH --time=96:00:00
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=80G
 #SBATCH --gpus=h100:1
@@ -15,6 +15,7 @@ ENV_NAME="${ENV_NAME:-diffusers-dev}"
 CONFIG_REL="configs/datasets/flir/sdxl_adaptation/flir_sdxl_lora_stage1_r8.yaml"
 OUTPUT_REL="artifacts/checkpoints/stable_diffusion_xl/lora_runs/flir_sdxl_lora_stage1_r8"
 RUN_LABEL="full"
+RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 CONFIG="${PROJECT_ROOT}/${CONFIG_REL}"
 OUTPUT_DIR="${PROJECT_ROOT}/${OUTPUT_REL}"
 
@@ -47,6 +48,7 @@ echo "Conda env: ${ENV_NAME}"
 echo "Run label: ${RUN_LABEL}"
 echo "Training config: ${CONFIG}"
 echo "Output dir: ${OUTPUT_DIR}"
+echo "Resume checkpoint: ${RESUME_FROM_CHECKPOINT:-<disabled>}"
 which python
 python --version
 nvidia-smi || true
@@ -58,16 +60,13 @@ fi
 
 grep -nE "^(extends|dataset_id|subset_manifest|resolution|train_batch_size|gradient_accumulation_steps|num_train_epochs|checkpointing_epochs|checkpoints_total_limit|save_optimizer_state|output_dir):" "${CONFIG}" || true
 
-/usr/bin/time -v accelerate launch --mixed_precision=fp16 \
-  -m src.cli.train_sdxl --config "${CONFIG}"
+RESUME_ARGS=()
+if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+  RESUME_ARGS=(--resume_from_checkpoint "${RESUME_FROM_CHECKPOINT}")
+fi
 
-echo "Cleaning non-inference checkpoint state under ${OUTPUT_DIR}"
-find "${OUTPUT_DIR}" -path "*/checkpoint-*" -type f \( \
-  -name "optimizer*" -o \
-  -name "scheduler*" -o \
-  -name "random_states_*.pkl" -o \
-  -name "scaler.pt" \
-\) -print -delete || true
+/usr/bin/time -v accelerate launch --mixed_precision=fp16 \
+  -m src.cli.train_sdxl --config "${CONFIG}" "${RESUME_ARGS[@]}"
 
 mkdir -p "${OUTPUT_DIR}/last" "${OUTPUT_DIR}/best"
 for artifact_name in pytorch_lora_weights.safetensors pytorch_lora_weights.bin stage1_manifest.json artifact_manifest.json; do
@@ -85,4 +84,3 @@ find "${OUTPUT_DIR}" -maxdepth 2 -type f \( \
 \) -print | sort
 
 echo "End time: $(date)"
-

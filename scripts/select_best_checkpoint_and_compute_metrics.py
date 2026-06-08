@@ -121,6 +121,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Disable storage-saving deletion of generated publication images after verified metrics.",
     )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Override the evaluation/generation device from the config, for example 'cpu', 'cuda', or 'cuda:0'.",
+    )
     return parser.parse_args(argv)
 
 
@@ -690,7 +695,8 @@ def generated_normalization_mode(config: Mapping[str, Any], run: RunResolution) 
 
 
 def get_device(config: Mapping[str, Any]) -> str:
-    requested = config.get("device")
+    generation_cfg = _nested_mapping(config, "generation")
+    requested = config.get("device", generation_cfg.get("device"))
     if requested:
         return str(requested)
     return "cuda" if torch.cuda.is_available() else "cpu"
@@ -2038,6 +2044,17 @@ def _publication_flat_generation_config(config: Mapping[str, Any]) -> dict[str, 
     if "dataset_id" in reference_cfg:
         flattened["dataset_id"] = reference_cfg["dataset_id"]
     return flattened
+
+
+def _apply_device_override(config: dict[str, Any], device: str | None) -> dict[str, Any]:
+    if device is None or str(device).strip() == "":
+        return config
+    updated = dict(config)
+    generation_cfg = dict(_nested_mapping(updated, "generation"))
+    generation_cfg["device"] = str(device)
+    updated["generation"] = generation_cfg
+    updated["device"] = str(device)
+    return updated
 
 
 def _reference_cfg(config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -3932,6 +3949,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         config = yaml.safe_load(handle) or {}
     if not isinstance(config, dict):
         raise ValueError(f"Expected a mapping in config: {config_path}")
+    config = _apply_device_override(config, args.device)
     if str(config.get("save_generated_format", "npy")).lower() != "npy":
         raise ValueError("Only save_generated_format='npy' is supported by this pipeline.")
     runs = config.get("runs") or []

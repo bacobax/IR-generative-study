@@ -158,6 +158,18 @@ def test_pipeline_mode_defaults_to_legacy() -> None:
     assert pipeline.pipeline_mode({"pipeline_mode": "clean_fid_selection_publication"}) == "clean_fid_selection_publication"
 
 
+def test_device_override_updates_nested_and_flat_config() -> None:
+    config = {"generation": {"device": "cuda", "generation_seed": 1234}}
+
+    updated = pipeline._apply_device_override(config, "cpu")
+
+    assert updated["device"] == "cpu"
+    assert updated["generation"]["device"] == "cpu"
+    assert updated["generation"]["generation_seed"] == 1234
+    assert pipeline.get_device(updated) == "cpu"
+    assert pipeline.get_device({"generation": {"device": "cuda:0"}}) == "cuda:0"
+
+
 def test_publication_seed_partitions_do_not_overlap() -> None:
     seeds = pipeline.make_publication_seeds(
         {
