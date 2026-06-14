@@ -52,7 +52,8 @@ sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/bigearthnet_s2_b08_5x5_stride3/
 # sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/bigearthnet_s2_b08_5x5_stride3/checkpoint_selection_publication/select_ben_sdxl_lora_stage1_r8_train_5100_publication_kl.slurm
 
 # # FLIR flow matching
-sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_fm_ot_publication_kl.slurm
+# FLIR FM full checkpoint (uncond_latent_flir_sd15_512_hflip_ot) was never trained — skip.
+# sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_fm_ot_publication_kl.slurm
 sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_fm_ot_train_2000_publication_kl.slurm
 sbatch --chdir="${PROJECT_ROOT}" slurm/killarney/flir/checkpoint_selection_publication/select_flir_fm_ot_train_5000_publication_kl.slurm
 
