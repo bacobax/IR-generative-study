@@ -1,0 +1,6 @@
+# FLUX.1-dev QLoRA r8 on the 2040-sample BigEarthNet tile-balanced subset.
+extends: bigearthnet_s2_b08_5x5_stride3_flux_lora_stage1_r8.yaml
+
+subset_manifest: "train_2040_tile_balanced.json"
+output_dir: ./artifacts/checkpoints/flux/lora_runs/bigearthnet_s2_b08_5x5_stride3_flux_lora_stage1_r8_train_2040
+resume_from_checkpoint: latest

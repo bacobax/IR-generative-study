@@ -1,0 +1,5 @@
+# FLUX.1-dev QLoRA r8 on the full FLIR proxy training split.
+extends: ../../../flux/train/presets/flir_lora_stage1_r8.yaml
+
+subset_manifest: null
+output_dir: ./artifacts/checkpoints/flux/lora_runs/flir_flux_lora_stage1_r8

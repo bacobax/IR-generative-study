@@ -1,0 +1,59 @@
+# FLUX.1-dev QLoRA fine-tuning — default configuration.
+#
+# Source of truth:
+#   python -m src.cli.train_flux --config configs/flux/train/default.yaml
+#
+# IMPORTANT — model access:
+#   FLUX.1-dev is gated on Hugging Face.  Before any real training run:
+#     1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.1-dev
+#     2. Set the HF_TOKEN environment variable (or run `huggingface-cli login`).
+#   Alternatively, replace pretrained_model_name_or_path with the path to a
+#   local snapshot (e.g. /path/to/flux-dev) to work on offline compute nodes.
+
+pretrained_model_name_or_path: "black-forest-labs/FLUX.1-dev"
+
+dataset_id: "flir_private_proxy_alignment_v18"
+train_split: "train"
+subset_manifest: null
+prompt_text: "thermal image"
+
+use_ir_preprocessing: true
+resolution: 512
+image_interpolation_mode: "lanczos"
+
+train_batch_size: 1
+num_train_epochs: 100
+gradient_accumulation_steps: 4
+gradient_checkpointing: true
+learning_rate: 1.0e-4
+lr_scheduler: "constant"
+lr_warmup_steps: 0
+
+# QLoRA: load the transformer in 4-bit NF4 then add LoRA adapters on top.
+quantize_4bit: true
+bnb_4bit_quant_type: "nf4"
+cache_latents: true
+
+rank: 8
+lora_alpha_scale: 1.0
+lora_target_modules:
+  - "to_k"
+  - "to_q"
+  - "to_v"
+  - "to_out.0"
+
+guidance_scale: 1.0
+weighting_scheme: "none"
+max_sequence_length: 512
+
+use_8bit_adam: true
+adam_weight_decay: 1.0e-4
+
+logging_dir: "logs"
+report_to: "tensorboard"
+validation_num_inference_steps: 28
+checkpointing_epochs: 1
+checkpoints_total_limit: 1
+save_optimizer_state: true
+output_dir: "./artifacts/checkpoints/flux/lora_runs/flir_flux_lora_r8"
+seed: 42

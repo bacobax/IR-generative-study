@@ -14,6 +14,7 @@ Start here, then load only the smallest useful docs under `docs/agent_docs/`. Lo
 | from-scratch training | `docs/agent_docs/training_regime/from_scratch.md` | SD15/SDXL fine-tuning docs |
 | SD15 adaptation | `docs/agent_docs/high_level_training_types/sd15_adaptation.md` | SDXL/STAY docs |
 | SDXL adaptation | `docs/agent_docs/high_level_training_types/sdxl_adaptation.md` | SD15/STAY docs |
+| FLUX QLoRA adaptation | `docs/agent_docs/high_level_training_types/flux_adaptation.md` | SDXL/SD15/STAY docs |
 | STAY flow matching | `docs/agent_docs/high_level_training_types/stay_cond_flow_matching.md` | `region_diff.md` |
 | RegionDiff | `docs/agent_docs/high_level_training_types/region_diff.md` | STAY docs |
 

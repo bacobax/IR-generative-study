@@ -35,6 +35,7 @@ tensorboard/
 # Local configs/secrets
 .env
 .env.*
+/env
 
 # Large data/artifacts
 *.npy
