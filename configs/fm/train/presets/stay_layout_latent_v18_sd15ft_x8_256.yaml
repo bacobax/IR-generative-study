@@ -1,6 +1,8 @@
 # STAY-style latent FM on v18 using the finetuned SD1.5 VAE artifact.
 # This preset rebuilds the diffusers-backed VAE from the saved artifact config
 # and then loads the finetuned checkpoint weights from the same run.
+# Horizontal flip augmentation mirrors the FLIR b64 preset; crop/rotation are
+# disabled because layout bboxes don't survive arbitrary crops at this stage.
 #
 # Launcher:
 #   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256.yaml
@@ -18,21 +20,34 @@ model:
   vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_best.pt"
   pretrained_unet_path: null
 
+augment:
+  warmup_frac: 0.10
+  ramp_frac: 0.30
+  p_crop_warmup: 0.0
+  p_crop_max: 0.0
+  p_crop_final: 0.0
+  p_rot_warmup: 0.0
+  p_rot_max: 0.0
+  p_rot_final: 0.0
+  p_hflip_warmup: 0.0
+  p_hflip_max: 0.6
+  p_hflip_final: 0.3
+
 training:
-  epochs: 300
+  epochs: 400
   lr: 0.0001
   t_scale: 1000.0
   train_target: "v"
   save_every_n_epochs: 30
   eval_every: 3
-  patience: null
-  min_delta: 0.0
+  patience: 50
+  min_delta: 0.0001
   strict_load: true
   max_grad_norm: 1.0
 
 optimizer:
   name: "adamw"
-  weight_decay: 0.01
+  weight_decay: 0.05
   beta1: 0.9
   beta2: 0.999
 

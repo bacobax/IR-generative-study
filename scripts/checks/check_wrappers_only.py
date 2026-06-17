@@ -39,6 +39,7 @@ WRAPPER_MAP = {
     "train_vae.py":         ("src.cli.train_vae",        "src/cli/train_vae.py"),
     "train_controlnet.py":  ("src.cli.train_controlnet", "src/cli/train_controlnet.py"),
     "generate_datasets.py": ("src.cli.generate",         "src/cli/generate.py"),
+    "train_flux.py":        ("src.cli.train_flux",        "src/cli/train_flux.py"),
 }
 
 STANDALONE_WRAPPER_MAP = {

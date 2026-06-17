@@ -1,0 +1,5 @@
+# FLUX.1-dev QLoRA r8 on the full BigEarthNet Sentinel-2 B08 training split.
+extends: ../../../flux/train/presets/bigearthnet_s2_b08_5x5_stride3_lora_stage1_r8.yaml
+
+subset_manifest: null
+output_dir: ./artifacts/checkpoints/flux/lora_runs/bigearthnet_s2_b08_5x5_stride3_flux_lora_stage1_r8

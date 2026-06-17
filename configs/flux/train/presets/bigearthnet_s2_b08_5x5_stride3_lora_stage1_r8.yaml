@@ -1,0 +1,27 @@
+# FLUX.1-dev QLoRA r8 on the full BigEarthNet Sentinel-2 B08 training split.
+pretrained_model_name_or_path: "black-forest-labs/FLUX.1-dev"
+dataset_id: "bigearthnet_s2_b08_5x5_stride3"
+train_split: "train"
+subset_manifest: null
+prompt_text: "satellite image"
+resolution: 512
+train_batch_size: 1
+num_train_epochs: 100
+gradient_accumulation_steps: 4
+gradient_checkpointing: true
+learning_rate: 1.0e-4
+lr_warmup_steps: 0
+quantize_4bit: true
+bnb_4bit_quant_type: "nf4"
+cache_latents: true
+rank: 8
+lora_alpha_scale: 1.0
+guidance_scale: 1.0
+weighting_scheme: "none"
+use_8bit_adam: true
+validation_prompt: "satellite image"
+checkpointing_epochs: 1
+checkpoints_total_limit: 1
+save_optimizer_state: true
+output_dir: ./artifacts/checkpoints/flux/lora_runs/bigearthnet_s2_b08_5x5_stride3_flux_lora_stage1_r8
+seed: 42

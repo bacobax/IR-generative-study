@@ -1,0 +1,6 @@
+# FLUX.1-dev QLoRA r8 on the 2k FLIR stratified subset.
+extends: flir_flux_lora_stage1_r8.yaml
+
+subset_manifest: "train_2000_bbox_stratified.json"
+output_dir: ./artifacts/checkpoints/flux/lora_runs/flir_flux_lora_stage1_r8_train_2000
+resume_from_checkpoint: latest
