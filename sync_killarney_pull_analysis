@@ -1,0 +1,11 @@
+rsync -avh --progress \
+    --exclude='*.png' \
+    --exclude='*.npy' \
+    --exclude='*.npz' \
+    killarney:/scratch/bacobax2/ \
+    ./killarney_scratch/ && rsync -avh --progress \
+    --include='*/' \
+    --include='sample_000000.png' \
+    --exclude='*' \
+    killarney:/scratch/bacobax2/ \
+    ./killarney_scratch/

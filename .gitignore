@@ -112,3 +112,6 @@ data/raw/BigEarthNet*
 **/*smoked*/
 artifacts_old/evaluations
 artifacts_old/flir_private_proxy_alignment_v18.zip
+
+# Cluster scratch sync
+killarney_scratch/

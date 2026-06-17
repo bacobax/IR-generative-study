@@ -4,5 +4,21 @@ rsync -av \
   --exclude "*.pth" \
   --exclude "*.bin" \
   --exclude "sync_*" \
-  bacobax2@killarney.alliancecan.ca:/project/6109890/bacobax2/ir-generative-study/ .
-
+  --exclude "*.tar" \
+  --exclude "*.gz" \
+  --exclude "data" \
+  --exclude "frontend" \
+  --exclude "src" \
+  --exclude "tests" \
+  --exclude "configs" \
+  --exclude "scripts" \
+  --exclude "slurm" \
+  --exclude "docs" \
+  --exclude "archive" \
+  --exclude "ControlNet" \
+  --exclude "*.py" \
+  --exclude "*.sh" \
+  --exclude "pyproject.toml" \
+  --exclude "README*" \
+  --exclude "AGENTS.md" \
+  killarney:/project/6109890/bacobax2/ir-generative-study/ .
