@@ -93,19 +93,40 @@
     {
       "id": "Xref",
       "code_hash": "cf953b1c519a25f58dd2d42b4c862789",
-      "outputs": [],
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
       "console": []
     },
     {
       "id": "SFPL",
       "code_hash": "672a4b5222b1cf5499a3f3d52747cb52",
-      "outputs": [],
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"resolved-run-configuration\">Resolved run configuration</h2></span><span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Cache key: <code>66f2dd3c59791540905b89bf</code></span></span><marimo-ui-element object-id='SFPL-0' random-id='8f223fc7-27b6-aa70-ed4c-f597f385e37e'><marimo-table data-initial-value='[]' data-label='null' data-data='&quot;[{&#92;&quot;_marimo_row_id&#92;&quot;:0,&#92;&quot;label&#92;&quot;:&#92;&quot;sd15_vae&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;runwayml/stable-diffusion-v1-5&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;baseline&#92;&quot;,&#92;&quot;exists&#92;&quot;:false,&#92;&quot;mtime&#92;&quot;:NaN,&#92;&quot;size&#92;&quot;:NaN},{&#92;&quot;_marimo_row_id&#92;&quot;:1,&#92;&quot;label&#92;&quot;:&#92;&quot;epoch_10&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_10.pt&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;finetuned&#92;&quot;,&#92;&quot;exists&#92;&quot;:true,&#92;&quot;mtime&#92;&quot;:1781719846.4412487,&#92;&quot;size&#92;&quot;:334696133.0},{&#92;&quot;_marimo_row_id&#92;&quot;:2,&#92;&quot;label&#92;&quot;:&#92;&quot;epoch_20&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_20.pt&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;finetuned&#92;&quot;,&#92;&quot;exists&#92;&quot;:true,&#92;&quot;mtime&#92;&quot;:1781725582.7656512,&#92;&quot;size&#92;&quot;:334696133.0},{&#92;&quot;_marimo_row_id&#92;&quot;:3,&#92;&quot;label&#92;&quot;:&#92;&quot;epoch_50&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_50.pt&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;finetuned&#92;&quot;,&#92;&quot;exists&#92;&quot;:true,&#92;&quot;mtime&#92;&quot;:1781742824.7050056,&#92;&quot;size&#92;&quot;:334696133.0},{&#92;&quot;_marimo_row_id&#92;&quot;:4,&#92;&quot;label&#92;&quot;:&#92;&quot;epoch_100&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_100.pt&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;finetuned&#92;&quot;,&#92;&quot;exists&#92;&quot;:true,&#92;&quot;mtime&#92;&quot;:1781771548.0083213,&#92;&quot;size&#92;&quot;:334696387.0},{&#92;&quot;_marimo_row_id&#92;&quot;:5,&#92;&quot;label&#92;&quot;:&#92;&quot;epoch_150&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_150.pt&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;finetuned&#92;&quot;,&#92;&quot;exists&#92;&quot;:true,&#92;&quot;mtime&#92;&quot;:1781800236.8485491,&#92;&quot;size&#92;&quot;:334696387.0},{&#92;&quot;_marimo_row_id&#92;&quot;:6,&#92;&quot;label&#92;&quot;:&#92;&quot;best&#92;&quot;,&#92;&quot;path&#92;&quot;:&#92;&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_best.pt&#92;&quot;,&#92;&quot;role&#92;&quot;:&#92;&quot;finetuned&#92;&quot;,&#92;&quot;exists&#92;&quot;:true,&#92;&quot;mtime&#92;&quot;:1781804452.0828357,&#92;&quot;size&#92;&quot;:334695117.0}]&quot;' data-total-rows='7' data-total-columns='6' data-max-columns='50' data-banner-text='&quot;&quot;' data-pagination='false' data-page-size='10' data-field-types='[[&quot;label&quot;,[&quot;string&quot;,&quot;object&quot;]],[&quot;path&quot;,[&quot;string&quot;,&quot;object&quot;]],[&quot;role&quot;,[&quot;string&quot;,&quot;object&quot;]],[&quot;exists&quot;,[&quot;boolean&quot;,&quot;bool&quot;]],[&quot;mtime&quot;,[&quot;number&quot;,&quot;float64&quot;]],[&quot;size&quot;,[&quot;number&quot;,&quot;float64&quot;]]]' data-selection='&quot;multi&quot;' data-show-filters='true' data-show-download='true' data-show-column-summaries='false' data-show-data-types='true' data-show-page-size-selector='true' data-show-column-explorer='true' data-show-chart-builder='true' data-row-headers='[]' data-hidden-columns='[]' data-has-stable-row-id='true' data-lazy='false' data-preload='false'></marimo-table></marimo-ui-element><span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Missing finetuned checkpoint paths will be reported as errors during analysis. The baseline row is a HuggingFace model id/path and does not need to exist locally.</span></span></div>"
+          }
+        }
+      ],
       "console": []
     },
     {
       "id": "BYtC",
-      "code_hash": "1ca3275ff9f0f18fcf857c97a38f419b",
-      "outputs": [],
+      "code_hash": "0620d7ddc1f3107ad1d2b7094674becf",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Press 'Run posterior analysis' to compute statistics.</span></span>"
+          }
+        }
+      ],
       "console": []
     },
     {
