@@ -260,7 +260,7 @@ def _(
     image_size_ui = mo.ui.slider(64, 1024, value=256, step=32, label="Image resolution")
     batch_size_ui = mo.ui.slider(1, 64, value=4, step=1, label="Batch size")
     max_images_ui = mo.ui.slider(1, 5000, value=256, step=1, label="Max images")
-    num_workers_ui = mo.ui.slider(0, 16, value=2, step=1, label="DataLoader workers")
+    num_workers_ui = mo.ui.slider(0, 0, value=0, step=1, label="DataLoader workers")
 
     original_model_ui = mo.ui.text(
         value="runwayml/stable-diffusion-v1-5",
@@ -338,7 +338,6 @@ def _(
         latent_vector_cap_ui,
         max_images_ui,
         normalization_ui,
-        num_workers_ui,
         original_model_ui,
         original_subfolder_ui,
         output_root_ui,
@@ -1231,7 +1230,6 @@ def _(
     latent_vector_cap_ui,
     max_images_ui,
     normalization_ui,
-    num_workers_ui,
     original_model_ui,
     original_subfolder_ui,
     output_root_ui,
@@ -1254,7 +1252,7 @@ def _(
         "image_size": int(image_size_ui.value),
         "batch_size": int(batch_size_ui.value),
         "max_images": int(max_images_ui.value),
-        "num_workers": int(num_workers_ui.value),
+        "num_workers": 0,
         "original_model": original_model_ui.value,
         "original_subfolder": original_subfolder_ui.value,
         "finetuned_config": str(Path(finetuned_config_ui.value).expanduser()),
@@ -1350,7 +1348,7 @@ def _(
                 dataset,
                 batch_size=analysis_config["batch_size"],
                 shuffle=False,
-                num_workers=analysis_config["num_workers"],
+                num_workers=0,
                 pin_memory=device.type == "cuda",
             )
             results = {}
