@@ -1,0 +1,166 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.23.9",
+    "script_metadata_hash": null
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "281660a30c90e8823122442ab7f3613f",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"sd15-vae-posterior-analysis\">SD1.5 VAE Posterior Analysis</h1>\n<span class=\"paragraph\">This notebook compares the original Stable Diffusion 1.5 VAE posterior\nagainst finetuned VAE checkpoints. It focuses on whether the latent\nposterior remains suitable for downstream latent Flow Matching training:\nposterior drift, variance collapse, Gaussianity, covariance structure,\nreconstruction quality, random prior decoding, and interpolation\nsmoothness.</span>\n<span class=\"paragraph\">The defaults target the <code>v18_sd15_vae_x8_256_minmax</code> run. All paths and\nanalysis limits are editable below.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "2e32a72cf156261a1d604a3cd31ade30",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<pre class='text-xs'>&lt;torch._C.Generator object at 0x7fdb648bc4f0&gt;</pre>"
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stderr",
+          "text": "/export/livia/home/vision/Fbassignana/miniconda3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.\n  @torch.cuda.amp.autocast(enabled=False)\n/export/livia/home/vision/Fbassignana/miniconda3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.\n  @torch.cuda.amp.autocast(enabled=False)\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "56e0a13091490eca3e2d0a31667f855e",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"runtime-dependencies\">Runtime dependencies</h2></span><marimo-ui-element object-id='bkHC-0' random-id='062b4758-6181-4617-796d-586a626941e9'><marimo-table data-initial-value='[]' data-label='null' data-data='&quot;[{&#92;&quot;_marimo_row_id&#92;&quot;:0,&#92;&quot;package&#92;&quot;:&#92;&quot;marimo&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;required to open this notebook&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:1,&#92;&quot;package&#92;&quot;:&#92;&quot;torch&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;2.7.1+cu118&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:2,&#92;&quot;package&#92;&quot;:&#92;&quot;pandas&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;2.3.3&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:3,&#92;&quot;package&#92;&quot;:&#92;&quot;Pillow&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;11.3.0&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:4,&#92;&quot;package&#92;&quot;:&#92;&quot;diffusers&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;required for AutoencoderKL&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:5,&#92;&quot;package&#92;&quot;:&#92;&quot;plotly&#92;&quot;,&#92;&quot;available&#92;&quot;:false,&#92;&quot;notes&#92;&quot;:&#92;&quot;ModuleNotFoundError: No module named &#x27;plotly&#x27;&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:6,&#92;&quot;package&#92;&quot;:&#92;&quot;scipy&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;Gaussianity tests&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:7,&#92;&quot;package&#92;&quot;:&#92;&quot;scikit-learn&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;PCA and scaling&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:8,&#92;&quot;package&#92;&quot;:&#92;&quot;umap-learn&#92;&quot;,&#92;&quot;available&#92;&quot;:false,&#92;&quot;notes&#92;&quot;:&#92;&quot;ModuleNotFoundError: No module named &#x27;umap&#x27;&#92;&quot;},{&#92;&quot;_marimo_row_id&#92;&quot;:9,&#92;&quot;package&#92;&quot;:&#92;&quot;lpips&#92;&quot;,&#92;&quot;available&#92;&quot;:true,&#92;&quot;notes&#92;&quot;:&#92;&quot;optional LPIPS&#92;&quot;}]&quot;' data-total-rows='10' data-total-columns='3' data-max-columns='50' data-banner-text='&quot;&quot;' data-pagination='false' data-page-size='10' data-field-types='[[&quot;package&quot;,[&quot;string&quot;,&quot;object&quot;]],[&quot;available&quot;,[&quot;boolean&quot;,&quot;bool&quot;]],[&quot;notes&quot;,[&quot;string&quot;,&quot;object&quot;]]]' data-selection='&quot;multi&quot;' data-show-filters='true' data-show-download='true' data-show-column-summaries='false' data-show-data-types='true' data-show-page-size-selector='true' data-show-column-explorer='true' data-show-chart-builder='true' data-row-headers='[]' data-hidden-columns='[]' data-has-stable-row-id='true' data-lazy='false' data-preload='false'></marimo-table></marimo-ui-element><span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Missing packages: plotly, umap-learn</span>\n<span class=\"paragraph\">Install in the active environment with:</span>\n<span class=\"paragraph\"><code>python -m pip install marimo plotly diffusers scikit-learn umap-learn torchvision lpips scipy pillow pandas tqdm</code></span></span></div>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "feb21434e29af1a13cc65131ee807d02",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"inputs\">Inputs</h2></span><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-0' random-id='d98ef8b5-0515-7d73-4bd1-05f90400856f'><marimo-text data-initial-value='&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/data/raw/v18/val&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eDataset root&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='true' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element><marimo-ui-element object-id='lEQa-1' random-id='f39df0dc-981b-c90a-9969-03afe2f01c6d'><marimo-dropdown data-initial-value='[&quot;per_image_minmax&quot;]' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eNormalization&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-options='[&quot;per_image_minmax&quot;,&quot;raw_uint16_percentile&quot;,&quot;uint8_linear&quot;,&quot;sentinel2_reflectance&quot;]' data-allow-select-none='false' data-searchable='false' data-full-width='false' data-disabled='false'></marimo-dropdown></marimo-ui-element></div><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-2' random-id='021f5eb0-e0c5-5f4e-fbe2-bc8f1afdb78e'><marimo-slider data-initial-value='256' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eImage resolution&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='64' data-stop='1024' data-step='32' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-3' random-id='c3a3692c-f1f0-f318-94d9-4a4d8368835c'><marimo-slider data-initial-value='4' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eBatch size&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='1' data-stop='64' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-4' random-id='57216a00-2760-acc8-9fa5-549b2c70554c'><marimo-slider data-initial-value='256' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eMax images&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='1' data-stop='5000' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-5' random-id='9f37a944-dac9-2791-8053-e550c7e045e2'><marimo-slider data-initial-value='2' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eDataLoader workers&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='0' data-stop='16' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element></div><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"vae-checkpoints\">VAE checkpoints</h2></span><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-6' random-id='d2701533-f4d9-e4f0-677b-40e673ad7f2f'><marimo-text data-initial-value='&quot;runwayml/stable-diffusion-v1-5&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eOriginal SD1.5 model/path&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='true' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element><marimo-ui-element object-id='lEQa-7' random-id='78b8ab1a-06db-b3f8-ff08-69083e9598a5'><marimo-text data-initial-value='&quot;vae&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eOriginal VAE subfolder&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='false' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element></div><marimo-ui-element object-id='lEQa-8' random-id='32220bb3-2f7d-c977-b078-8dbbf8f49d65'><marimo-text data-initial-value='&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/config.json&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eFinetuned VAE config.json&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='true' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element><marimo-ui-element object-id='lEQa-9' random-id='82b7da38-f1de-3928-a1d8-2a56d0213908'><marimo-text-area data-initial-value='&quot;epoch_10, /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_10.pt&#92;nepoch_20, /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_20.pt&#92;nepoch_50, /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_50.pt&#92;nepoch_100, /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_100.pt&#92;nepoch_150, /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_150.pt&#92;nbest, /projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_best.pt&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eFinetuned checkpoints: one &#x27;label, path&#x27; per line&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-disabled='false' data-debounce='true' data-full-width='true'></marimo-text-area></marimo-ui-element><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"runtime\">Runtime</h2></span><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-10' random-id='90758235-af0e-f9a1-7b26-f3ac2e475e20'><marimo-text data-initial-value='&quot;auto&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eDevice: auto, cpu, cuda, cuda:0, ...&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='false' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element><marimo-ui-element object-id='lEQa-11' random-id='7d4dd7ab-c94a-f9b5-9b61-e121c02a6310'><marimo-dropdown data-initial-value='[&quot;auto&quot;]' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003ePrecision&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-options='[&quot;auto&quot;,&quot;fp32&quot;,&quot;fp16&quot;,&quot;bf16&quot;]' data-allow-select-none='false' data-searchable='false' data-full-width='false' data-disabled='false'></marimo-dropdown></marimo-ui-element><marimo-ui-element object-id='lEQa-14' random-id='9a10ea0a-5f17-ba89-2eba-ace7bc057034'><marimo-checkbox data-initial-value='true' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eUse cache&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-disabled='false'></marimo-checkbox></marimo-ui-element><marimo-ui-element object-id='lEQa-15' random-id='4f6674ea-c4b6-fed1-efdc-b029357c8499'><marimo-checkbox data-initial-value='false' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eForce recompute&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-disabled='false'></marimo-checkbox></marimo-ui-element></div><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-12' random-id='f8005724-ff5f-f0ea-8aa7-7d7e9e3a4924'><marimo-text data-initial-value='&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/data/cache/vae_posterior_analysis&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eCache root&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='true' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element><marimo-ui-element object-id='lEQa-13' random-id='bc03016b-52f9-75e5-fc8e-4e33fe191cd9'><marimo-text data-initial-value='&quot;/projets/Fbassignana/diffusers_try/flow_matching_trial/artifacts/analysis/vae_posterior_analysis&quot;' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eOutput root&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-placeholder='&quot;&quot;' data-kind='&quot;text&quot;' data-full-width='true' data-disabled='false' data-debounce='true'></marimo-text></marimo-ui-element></div><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"analysis-limits\">Analysis limits</h2></span><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-16' random-id='7a03acc4-6df3-9d64-0590-d7fa7ea50252'><marimo-slider data-initial-value='250000' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eFlat value sample cap&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='1000' data-stop='2000000' data-step='1000' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-17' random-id='bf3fb4e7-f131-dd88-62d9-ef1e24e15e73'><marimo-slider data-initial-value='512' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eLatent vector cap&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='16' data-stop='5000' data-step='16' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-18' random-id='49a9abef-a250-bb26-8449-11a6bd464954'><marimo-slider data-initial-value='768' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eCovariance feature cap&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='64' data-stop='4096' data-step='64' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-19' random-id='44980085-0066-45e9-cbc6-0c631b31acad'><marimo-slider data-initial-value='2000' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eShapiro sample cap&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='100' data-stop='5000' data-step='100' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element></div><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-20' random-id='c3793450-f129-c736-fcb4-55b28303999e'><marimo-slider data-initial-value='8' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eRandom decode images&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='0' data-stop='32' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-21' random-id='d368cdc1-5905-a4fc-66c0-32a3167b588b'><marimo-slider data-initial-value='2' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eInterpolation pairs&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='0' data-stop='8' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element><marimo-ui-element object-id='lEQa-22' random-id='53c9597b-efdd-2e67-d2bd-132e0ad24c3c'><marimo-slider data-initial-value='7' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eInterpolation steps&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='3' data-stop='12' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element></div><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-23' random-id='5106564c-20be-ea1e-98df-a416211d6cf8'><marimo-checkbox data-initial-value='false' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eCompute LPIPS if available&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-disabled='false'></marimo-checkbox></marimo-ui-element><marimo-ui-element object-id='lEQa-24' random-id='98fd4920-ea3b-2d08-2cd9-531f040c0223'><marimo-checkbox data-initial-value='true' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eCompute UMAP if available&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-disabled='false'></marimo-checkbox></marimo-ui-element><marimo-ui-element object-id='lEQa-25' random-id='3d8f07bd-e559-18ac-c3eb-094f94e1338c'><marimo-checkbox data-initial-value='true' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eSave reconstruction, interpolation, and random grids&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-disabled='false'></marimo-checkbox></marimo-ui-element></div><div style='display: flex;flex: 1;flex-direction: row;justify-content: space-between;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-26' random-id='54166995-8f03-6d54-3b32-88851f01f4b2'><marimo-button data-initial-value='0' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eRun posterior analysis&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element><marimo-ui-element object-id='lEQa-27' random-id='61347e8a-f57b-dc4d-2961-30fb648ffd56'><marimo-button data-initial-value='0' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eExport summary/report&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element></div></div>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "971c849d82b4a61a5068333d2a120673",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Xref",
+      "code_hash": "cf953b1c519a25f58dd2d42b4c862789",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "672a4b5222b1cf5499a3f3d52747cb52",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "1ca3275ff9f0f18fcf857c97a38f419b",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "40af2276c6ea1c4eab70c802821fdc38",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "20ce95983d7f8429ae57092b5bc1ef69",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "ec8746b46b541118cbf8b0f1341f2f6f",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Hstk",
+      "code_hash": "733a63c5143024fa44ced39040c08f68",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "nWHF",
+      "code_hash": "5cd08619b29f0746f2e3e13904e082f7",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "iLit",
+      "code_hash": "13d614f5f65bd121600b1d58605d73e3",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "ZHCJ",
+      "code_hash": "dd5dd3b79ea13d625978fa2923bb3fde",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "ROlb",
+      "code_hash": "535b872ef658c114ebf301e6b96564df",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "qnkX",
+      "code_hash": "cf1af86ba4f9f8a75aebfd613e5138ad",
+      "outputs": [],
+      "console": []
+    }
+  ]
+}
