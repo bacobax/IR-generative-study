@@ -13,6 +13,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 from typing import Optional
 
@@ -23,6 +24,7 @@ from src.core.configs.text_fm_config import TextFMTrainConfig
 from src.core.configs.fm_config import FMTrainConfig
 from src.core.configs.config_loader import load_yaml, merge_config_and_cli
 from src.core.normalization import norm_to_display as from_norm_to_display
+from src.core.normalization import denorm_for_display
 from src.core.data.annotation_dataset import AnnotationFMDataset
 from src.core.data import DatasetBuildRequest, collate_layout_batch
 from src.core.data.datasets import AnnotationLayoutDataset
@@ -34,6 +36,7 @@ from src.core.data.training_data import (
     resolve_training_data,
 )
 from src.core.data.transforms import ScheduledAugment256, ScheduledHorizontalFlip, save_transform_examples
+from src.core.data.latent_cache import build_latent_cache_dataset
 from src.core.diffusers_compat import disable_diffusers_optional_scipy
 from src.core.registry import REGISTRIES
 
@@ -580,7 +583,9 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
             )
 
         train_horizontal_flip = None
-        if max(
+        # With latent caching, augmentation is materialised into the cached pool,
+        # so the base dataset must stay deterministic (no probabilistic flip).
+        if not cfg.latent_cache.enabled and max(
             float(getattr(cfg.augment, "p_hflip_warmup", 0.0)),
             float(getattr(cfg.augment, "p_hflip_max", 0.0)),
             float(getattr(cfg.augment, "p_hflip_final", 0.0)),
@@ -617,6 +622,39 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
             cfg.trainer_name = "layout_fm"
         elif cfg.trainer_name is None:
             cfg.trainer_name = "default_fm"
+
+        if cfg.latent_cache.enabled:
+            cache_device = cfg.resolved_device()
+            train_base_dataset = build_latent_cache_dataset(
+                base_dataset=train_base_dataset,
+                model_cfg=cfg.model,
+                dataset_id=cfg.data.dataset_id,
+                train_dir=resolved_data.train_dir,
+                val_dir=resolved_data.val_dir,
+                split="train",
+                image_size=cfg.data.image_size,
+                subset_manifest=resolved_data.train_subset_manifest,
+                normalization_mode=resolved_data.normalization_mode,
+                augment_config=cfg.augment,
+                latent_cache_cfg=cfg.latent_cache,
+                device=cache_device,
+                strict_load=cfg.training.strict_load,
+            )
+            eval_base_dataset = build_latent_cache_dataset(
+                base_dataset=eval_base_dataset,
+                model_cfg=cfg.model,
+                dataset_id=cfg.data.dataset_id,
+                train_dir=resolved_data.train_dir,
+                val_dir=resolved_data.val_dir,
+                split="val",
+                image_size=cfg.data.image_size,
+                subset_manifest=None,
+                normalization_mode=resolved_data.normalization_mode,
+                augment_config=None,  # eval is never augmented
+                latent_cache_cfg=cfg.latent_cache,
+                device=cache_device,
+                strict_load=cfg.training.strict_load,
+            )
 
         train_dataset = _apply_subset(
             train_base_dataset,
@@ -667,12 +705,20 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
         eval_loader = non_layout.eval_loader
         use_annotation_ds = non_layout.use_annotation_ds
 
+    # ── Normalization-aware display for TensorBoard images ──
+    # Percentile: reverse-normalize to raw sensor domain before plotting.
+    # Per-image min/max: plot directly ([-1,1]->[0,1]); not revertible.
+    display_fn = functools.partial(
+        denorm_for_display,
+        normalization_mode=resolved_data.normalization_mode,
+    )
+
     # ── Resolve trainer class through registry ──
     if architecture_mode == "adapter_v1":
         trainer = _build_adapter_v1_trainer(cfg)
     else:
         TrainerCls = REGISTRIES.trainer.get(cfg.trainer_name)
-        trainer = TrainerCls.from_config(cfg, from_norm_to_display=from_norm_to_display)
+        trainer = TrainerCls.from_config(cfg, from_norm_to_display=display_fn)
 
     # ── Save transform examples for fresh runs ──
     if cfg.output.resume is None and not use_annotation_ds:

@@ -20,6 +20,13 @@ model:
   vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_best.pt"
   pretrained_unet_path: null
 
+# Disk latent cache: encode (real + hflipped) images once through the finetuned
+# VAE, keyed by <VAE, dataset, augmentation, normalization>, and reuse across all
+# epochs. Materialises the hflip schedule below into a fixed 2x latent pool.
+latent_cache:
+  enabled: true
+  store_dtype: fp16
+
 augment:
   warmup_frac: 0.10
   ramp_frac: 0.30

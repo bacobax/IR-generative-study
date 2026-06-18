@@ -10,6 +10,7 @@ Do not load `region_diff.md` unless the user explicitly mentions RegionDiff or r
 - `src/conditioning/`
 - `src/core/data/layout_batching.py`
 - `src/core/data/annotation_dataset.py`
+- `src/core/data/latent_cache.py`
 - `src/algorithms/training/layout_flow_matching_trainer.py`
 - `src/algorithms/inference/layout_flow_matching_sampler.py`
 - `src/models/layout_conditioned_unet.py`
@@ -35,6 +36,9 @@ Do not load `region_diff.md` unless the user explicitly mentions RegionDiff or r
 
 ## Decision/routing notes
 Use `rg -n "STAY|stay|layout|condition|layout_conditioning|collate_layout|stay_layout" src configs scripts tests docs` first. For target/label extraction, add the relevant dataset doc. For objective changes, combine with `training_objectives/flow_matching.md`. Keep RegionDiff out unless explicitly requested.
+
+## Latent caching
+STAY/layout latent FM supports a disk latent cache (`latent_cache:` block, see `training_objectives/flow_matching.md`). When enabled, `src/cli/train_flow_matching.py` builds the base `AnnotationLayoutDataset` without the probabilistic flip, materialises hflip into a fixed pool, encodes once via `src/core/data/latent_cache.py`, and wraps with `LatentCacheDataset`. `collate_layout_batch` carries `latent_mu`/`latent_sigma` through; the trainer samples from them in `fm_input_from_batch` and skips the VAE encode. Enabled in `configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256.yaml`.
 
 ## Modification guidance
 Put layout/STAY data collation in `src/core/data/`, conditioning contracts in `src/conditioning/`, STAY/layout trainers in `src/algorithms/training/layout_flow_matching_trainer.py`, samplers in `src/algorithms/inference/layout_flow_matching_sampler.py`, and model changes in `src/models/layout_conditioned_unet.py` or `src/models/stay_layout_conditioned_unet.py`. Configs belong under `configs/fm/train/presets/` or `configs/data/presets/`. Keep wrappers thin.

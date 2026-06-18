@@ -32,6 +32,7 @@ from src.core.constants import (
 RAW_UINT16_PERCENTILE = "raw_uint16_percentile"
 UINT8_LINEAR = "uint8_linear"
 SENTINEL2_REFLECTANCE = "sentinel2_reflectance"
+PER_IMAGE_MINMAX = "per_image_minmax"
 
 
 # ── Percentile-based normalization ────────────────────────────────────────────
@@ -136,10 +137,14 @@ def normalize_image_tensor(
         return uint8_to_norm(x)
     if normalization_mode == SENTINEL2_REFLECTANCE:
         return sentinel2_reflectance_to_norm(x)
+    if normalization_mode == PER_IMAGE_MINMAX:
+        # Single-image (C, H, W): treat the whole frame as one image.
+        # Non-revertible without the per-image source min/max.
+        return per_image_minmax(x.unsqueeze(0)).squeeze(0)
     raise ValueError(
         f"Unknown normalization_mode={normalization_mode!r}. "
         f"Expected one of: {RAW_UINT16_PERCENTILE!r}, "
-        f"{UINT8_LINEAR!r}, {SENTINEL2_REFLECTANCE!r}"
+        f"{UINT8_LINEAR!r}, {SENTINEL2_REFLECTANCE!r}, {PER_IMAGE_MINMAX!r}"
     )
 
 
@@ -181,6 +186,75 @@ def resize_and_normalize_256(x: torch.Tensor) -> torch.Tensor:
         image_size=DEFAULT_IMAGE_SIZE,
         normalization_mode=RAW_UINT16_PERCENTILE,
     )
+
+
+# ── Display / visualization helpers ──────────────────────────────────────────
+
+
+def _per_image_percentile_stretch(
+    x: torch.Tensor,
+    *,
+    low: float = 1.0,
+    high: float = 99.0,
+    eps: float = 1e-6,
+) -> torch.Tensor:
+    """Per-image low/high percentile stretch of a tensor to [0, 1].
+
+    Operates on a batched ``(B, C, H, W)`` tensor and stretches each image
+    independently using its own ``[low, high]`` percentiles, mirroring the numpy
+    :func:`uint16_to_png_uint8` behaviour but returning a float tensor in [0, 1].
+    """
+    B = x.shape[0]
+    flat = x.reshape(B, -1).float()
+    lo = torch.quantile(flat, low / 100.0, dim=1, keepdim=True)
+    hi = torch.quantile(flat, high / 100.0, dim=1, keepdim=True)
+    lo = lo.view(B, 1, 1, 1)
+    hi = hi.view(B, 1, 1, 1)
+    return ((x - lo) / (hi - lo + eps)).clamp(0.0, 1.0)
+
+
+def denorm_for_display(
+    x: torch.Tensor,
+    *,
+    normalization_mode: str = RAW_UINT16_PERCENTILE,
+) -> torch.Tensor:
+    """Map a decoded/generated [-1, 1] tensor to a [0, 1] display tensor.
+
+    The conversion depends on the normalization used during training, because the
+    inverse mapping back to a meaningful intensity domain differs per family:
+
+    - ``raw_uint16_percentile``: apply the reverse normalization formula
+      (:func:`norm_to_uint16`) to return to the raw uint16 sensor domain, then a
+      per-image p1-p99 stretch so logged images reflect true sensor intensities.
+    - ``per_image_minmax`` (and any other mode): plot directly with
+      :func:`norm_to_display` (``(x + 1) / 2``). Per-image min/max is not
+      revertible without the original frame's stored min/max, so the relative
+      [-1, 1] -> [0, 1] mapping is the only faithful display.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        ``(B, C, H, W)`` or ``(C, H, W)`` tensor in [-1, 1].
+    normalization_mode : str
+        Normalization family applied to the model inputs during training.
+
+    Returns
+    -------
+    torch.Tensor
+        Same shape as ``x``, values in [0, 1].
+    """
+    squeeze_back = False
+    if x.dim() == 3:
+        x = x.unsqueeze(0)
+        squeeze_back = True
+
+    if normalization_mode == RAW_UINT16_PERCENTILE:
+        raw = norm_to_uint16(x.clamp(-1.0, 1.0))
+        out = _per_image_percentile_stretch(raw)
+    else:
+        out = norm_to_display(x).clamp(0.0, 1.0)
+
+    return out.squeeze(0) if squeeze_back else out
 
 
 # ── Output conversion helpers ────────────────────────────────────────────────

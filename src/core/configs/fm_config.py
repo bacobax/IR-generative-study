@@ -76,6 +76,10 @@ class DataConfig:
     train_dir: str = "./data/raw/v18/train/"
     val_dir: str = "./data/raw/v18/val/"
     annotations_path: Optional[str] = None
+    # Optional override for the input normalization. When set it wins over the
+    # dataset_id default — required when the FM input must match a VAE finetuned
+    # under a different normalization (e.g. per_image_minmax).
+    normalization_mode: Optional[str] = None
     image_size: int = 256
     batch_size: int = 8
     num_workers: int = 4
@@ -121,6 +125,22 @@ class AugmentConfig:
     p_hflip_warmup: float = 0.0
     p_hflip_max: float = 0.0
     p_hflip_final: float = 0.0
+
+
+@dataclass
+class LatentCacheConfig:
+    """Disk latent-cache settings shared across VAE-encoder trainings.
+
+    When ``enabled``, images (+ materialised augmentation variants) are encoded
+    once through the VAE and cached on disk, keyed by
+    ``<VAE, dataset, augmentation, normalization>``. Later runs with the same
+    tuple reuse the cache and skip the VAE encode entirely.
+    """
+
+    enabled: bool = False
+    cache_root: Optional[str] = None          # default: data/cache/latents
+    store_dtype: str = "fp16"                  # "fp16" | "fp32"
+    rebuild: bool = False                      # force re-encode even if warm
 
 
 @dataclass
@@ -396,6 +416,7 @@ class FMTrainConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     count_filter: CountFilterConfig = field(default_factory=CountFilterConfig)
+    latent_cache: LatentCacheConfig = field(default_factory=LatentCacheConfig)
     architecture_mode: str = "legacy"
     # Registry component names (None → use default)
     trainer_name: Optional[str] = None

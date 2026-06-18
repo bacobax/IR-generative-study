@@ -900,12 +900,11 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             last_cond_kw: Optional[Dict[str, torch.Tensor]] = None
 
             for batch in tqdm(dataloader, desc=f"LayoutFM Epoch {epoch + 1}/{epochs}"):
-                pixel_values = batch["pixel_values"].to(self.device)
                 cond_kw = self.prepare_conditioning_kwargs(batch)
                 last_batch = batch
                 last_cond_kw = cond_kw
                 with torch.no_grad():
-                    x_fm = self.encode_fm_input(pixel_values)
+                    x_fm = self.fm_input_from_batch(batch)
 
                 optimizer.zero_grad(set_to_none=True)
                 with autocast_context(precision):
@@ -1085,12 +1084,11 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 with ema_context:
                     with torch.no_grad():
                         for batch in tqdm(eval_dataloader, desc=f"LayoutFM Eval {epoch + 1}/{epochs}"):
-                            pixel_values = batch["pixel_values"].to(self.device)
                             cond_kw = self.prepare_conditioning_kwargs(batch)
-                            x_fm = self.encode_fm_input(pixel_values)
+                            x_fm = self.fm_input_from_batch(batch)
                             with autocast_context(precision):
                                 loss = self.flow_matching_step(x_fm, cond_kw)
-                            batch_size = int(pixel_values.shape[0])
+                            batch_size = int(x_fm.shape[0])
                             eval_loss += float(loss.item()) * batch_size
                             n_eval += batch_size
 

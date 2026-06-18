@@ -70,7 +70,7 @@ def collate_layout_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         normalized[:, [1, 3]] /= height_scale
         boxes_xyxy_norm[batch_idx, :num_objects] = normalized.clamp(0.0, 1.0)
 
-    return {
+    out: Dict[str, Any] = {
         "pixel_values": pixel_values,
         "boxes_xyxy": boxes_xyxy,
         "boxes_xyxy_norm": boxes_xyxy_norm,
@@ -81,3 +81,11 @@ def collate_layout_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         "image_id": image_ids,
         "label_names": label_names,
     }
+
+    # Carry cached VAE latents through when present (disk latent cache). Training
+    # samples z = mu + sigma*noise from these and skips the VAE encode.
+    if "latent_mu" in batch[0]:
+        out["latent_mu"] = torch.stack([s["latent_mu"] for s in batch], dim=0)
+        out["latent_sigma"] = torch.stack([s["latent_sigma"] for s in batch], dim=0)
+
+    return out

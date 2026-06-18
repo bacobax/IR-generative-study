@@ -694,6 +694,29 @@ class FlowMatchingTrainer:
             z_mu, z_sigma = self.vae.encode(x)
             return self.vae.sampling(z_mu, z_sigma)
 
+    @staticmethod
+    def batch_has_cached_latents(batch) -> bool:
+        return isinstance(batch, dict) and "latent_mu" in batch
+
+    def fm_input_from_batch(self, batch) -> torch.Tensor:
+        """FM input latent for a batch, reusing cached posterior when present.
+
+        With a warm latent cache the batch carries the scaled posterior
+        ``(latent_mu, latent_sigma)`` instead of ``pixel_values``; we sample
+        ``z = mu + sigma * noise`` (matching :meth:`encode_fm_input`'s sampling)
+        and never touch the VAE. Otherwise we encode the pixel batch as usual.
+        """
+        if self.batch_has_cached_latents(batch):
+            mu = batch["latent_mu"].to(self.device)
+            sigma = batch["latent_sigma"].to(self.device)
+            return mu + torch.randn_like(mu) * sigma
+        if isinstance(batch, dict):
+            pixel_values = batch["pixel_values"].to(self.device)
+        else:
+            pixel_values = batch.to(self.device)
+        with torch.no_grad():
+            return self.encode_fm_input(pixel_values)
+
     def _prepare_batch(self, batch) -> tuple[torch.Tensor, Dict[str, Any]]:
         if torch.is_tensor(batch):
             return batch.to(self.device), {}

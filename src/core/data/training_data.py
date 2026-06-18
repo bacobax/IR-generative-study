@@ -67,6 +67,12 @@ def resolve_training_data(data_config: Any) -> ResolvedTrainingData:
             train_annotations_path = str(target.annotations_path("train"))
             val_annotations_path = str(target.annotations_path("val"))
 
+    # Explicit config override wins over the dataset_id default. Needed when the
+    # FM input must match a VAE finetuned under a different normalization.
+    override = getattr(data_config, "normalization_mode", None)
+    if override:
+        normalization_mode = override
+
     return ResolvedTrainingData(
         train_dir=train_dir,
         val_dir=val_dir,
