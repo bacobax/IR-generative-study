@@ -387,6 +387,7 @@ class AnnotationLayoutDataset(Dataset):
         normalization_mode: str = RAW_UINT16_PERCENTILE,
         include_label_names: bool = True,
         horizontal_flip_schedule=None,
+        augment_schedule=None,
         subset_manifest: Optional[str] = None,
     ):
         self.root_dir = root_dir
@@ -394,6 +395,10 @@ class AnnotationLayoutDataset(Dataset):
         self.normalization_mode = normalization_mode
         self.include_label_names = include_label_names
         self.horizontal_flip_schedule = horizontal_flip_schedule
+        # Bbox-aware multi-op augmentation (hflip/rot90/crop/photometric).
+        # Supersedes ``horizontal_flip_schedule`` when set; applied on the
+        # resized+normalized image with boxes in image_size pixel coords.
+        self.augment_schedule = augment_schedule
 
         files = sorted(
             f for f in os.listdir(root_dir) if f.endswith(".npy")
@@ -423,6 +428,8 @@ class AnnotationLayoutDataset(Dataset):
     def set_epoch(self, epoch: int) -> None:
         if self.horizontal_flip_schedule is not None and hasattr(self.horizontal_flip_schedule, "set_epoch"):
             self.horizontal_flip_schedule.set_epoch(epoch)
+        if self.augment_schedule is not None and hasattr(self.augment_schedule, "set_epoch"):
+            self.augment_schedule.set_epoch(epoch)
 
     @staticmethod
     def _scale_boxes_xyxy(
@@ -462,7 +469,13 @@ class AnnotationLayoutDataset(Dataset):
         raw_tensor = torch.from_numpy(arr.copy()).float()
 
         horizontal_flipped = False
-        if self.horizontal_flip_schedule is not None and self.horizontal_flip_schedule.should_flip():
+        # Legacy single-op hflip is skipped when the richer augment_schedule is
+        # active (the latter handles hflip jointly with the other ops below).
+        if (
+            self.augment_schedule is None
+            and self.horizontal_flip_schedule is not None
+            and self.horizontal_flip_schedule.should_flip()
+        ):
             raw_tensor = horizontal_flip(raw_tensor)
             horizontal_flipped = True
 
@@ -502,9 +515,18 @@ class AnnotationLayoutDataset(Dataset):
                 boxes_xyxy,
                 image_width=self.image_size,
             )
+
         labels_tensor = torch.tensor(labels, dtype=torch.long)
         if labels_tensor.numel() == 0:
             labels_tensor = labels_tensor.reshape(0)
+
+        # Bbox-aware augmentation (hflip/rot90/crop/photometric) jointly on the
+        # resized image and scaled boxes. Crop may drop out-of-view boxes; labels
+        # are filtered alongside boxes by the augment.
+        if self.augment_schedule is not None:
+            pixel_values, boxes_xyxy, labels_tensor = self.augment_schedule(
+                pixel_values, boxes_xyxy, labels_tensor
+            )
 
         sample = {
             "pixel_values": pixel_values,

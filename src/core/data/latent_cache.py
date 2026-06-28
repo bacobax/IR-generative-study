@@ -258,10 +258,13 @@ def precompute_latents(
     rebuild: bool = False,
     key_payload: Optional[dict] = None,
     desc: str = "latents",
+    batch_size: int = 32,
 ) -> Path:
     """Encode every (base sample × variant) once and write latents to ``cache_dir``.
 
-    Idempotent and resumable: existing per-entry files are skipped unless
+    The VAE encode runs on batches of up to ``batch_size`` images so the cache
+    build scales with the configured batch size instead of encoding one image at
+    a time. Idempotent and resumable: existing per-entry files are skipped unless
     ``rebuild`` is set. Writes ``manifest.json`` (ordered entry list) and
     ``meta.json`` (completion marker + human-readable key) on success.
     """
@@ -275,8 +278,27 @@ def precompute_latents(
         return cache_dir
 
     dtype = torch.float16 if store_dtype == "fp16" else torch.float32
+    batch_size = max(1, int(batch_size))
     vae.eval()
     entries: list[str] = []
+
+    # Pending (entry_path, payload, pixel_values) tuples awaiting a batched encode.
+    pending: list[tuple[Path, dict, torch.Tensor]] = []
+
+    def _flush() -> None:
+        if not pending:
+            return
+        x = torch.stack([pv for _, _, pv in pending]).to(device)
+        mu, sigma = vae.encode(x)
+        for i, (entry_path, payload, pixel_values) in enumerate(pending):
+            # Keep pixel_values (cheap vs the GPU encode we skip) so visualization,
+            # ground-truth display and the existing collate work unchanged.
+            payload["pixel_values"] = pixel_values.to(dtype)
+            payload["latent_mu"] = mu[i].to("cpu", dtype)
+            payload["latent_sigma"] = sigma[i].to("cpu", dtype)
+            _atomic_save(payload, entry_path)
+        pending.clear()
+
     for base_idx in tqdm(range(n_base), desc=f"Caching {desc}"):
         sample = base_dataset[base_idx]
         for var_idx, variant in enumerate(variants):
@@ -289,18 +311,14 @@ def precompute_latents(
 
             v_sample = apply_variant(sample, variant, image_size=image_size)
             pixel_values = v_sample["pixel_values"]
-            x = pixel_values.unsqueeze(0).to(device)
-            mu, sigma = vae.encode(x)
-
             payload = dict(v_sample)
-            # Keep pixel_values (cheap vs the GPU encode we skip) so visualization,
-            # ground-truth display and the existing collate work unchanged.
-            payload["pixel_values"] = pixel_values.to(dtype)
-            payload["latent_mu"] = mu.squeeze(0).to("cpu", dtype)
-            payload["latent_sigma"] = sigma.squeeze(0).to("cpu", dtype)
             payload["image_size"] = int(image_size)
             payload["variant"] = variant.name
-            _atomic_save(payload, entry_path)
+            pending.append((entry_path, payload, pixel_values))
+            if len(pending) >= batch_size:
+                _flush()
+
+    _flush()
 
     _atomic_write_json(
         {
@@ -432,6 +450,7 @@ def build_latent_cache_dataset(
     latent_cache_cfg: Any,
     device: Any,
     strict_load: bool = True,
+    batch_size: int = 32,
 ) -> LatentCacheDataset:
     """Build (or reuse) the disk latent cache and return a cache-backed dataset.
 
@@ -457,7 +476,8 @@ def build_latent_cache_dataset(
     if rebuild or not _cache_complete(cache_dir, expected_entries):
         print(
             f"[latent_cache] building cache for split={split} "
-            f"({len(base_dataset)} base × {len(variants)} variants) -> {cache_dir}"
+            f"({len(base_dataset)} base × {len(variants)} variants, "
+            f"encode batch={batch_size}) -> {cache_dir}"
         )
         vae = _build_frozen_vae(model_cfg, device, strict_load)
         try:
@@ -472,6 +492,7 @@ def build_latent_cache_dataset(
                 rebuild=rebuild,
                 key_payload=key_payload,
                 desc=f"{split} latents",
+                batch_size=batch_size,
             )
         finally:
             del vae
