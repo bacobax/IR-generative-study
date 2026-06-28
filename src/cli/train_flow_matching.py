@@ -35,7 +35,7 @@ from src.core.data.training_data import (
     build_non_layout_dataloaders,
     resolve_training_data,
 )
-from src.core.data.transforms import ScheduledAugment256, ScheduledHorizontalFlip, save_transform_examples
+from src.core.data.transforms import ScheduledAugment256, ScheduledHorizontalFlip, LayoutScheduledAugment, save_transform_examples
 from src.core.data.latent_cache import build_latent_cache_dataset
 from src.core.diffusers_compat import disable_diffusers_optional_scipy
 from src.core.registry import REGISTRIES
@@ -583,21 +583,59 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
             )
 
         train_horizontal_flip = None
+        train_augment_schedule = None
         # With latent caching, augmentation is materialised into the cached pool,
-        # so the base dataset must stay deterministic (no probabilistic flip).
-        if not cfg.latent_cache.enabled and max(
-            float(getattr(cfg.augment, "p_hflip_warmup", 0.0)),
-            float(getattr(cfg.augment, "p_hflip_max", 0.0)),
-            float(getattr(cfg.augment, "p_hflip_final", 0.0)),
-        ) > 0.0:
-            train_horizontal_flip = ScheduledHorizontalFlip(
-                total_epochs=total_epochs,
-                warmup_frac=cfg.augment.warmup_frac,
-                ramp_frac=cfg.augment.ramp_frac,
-                p_hflip_warmup=cfg.augment.p_hflip_warmup,
-                p_hflip_max=cfg.augment.p_hflip_max,
-                p_hflip_final=cfg.augment.p_hflip_final,
-            )
+        # so the base dataset must stay deterministic (no probabilistic transform).
+        if not cfg.latent_cache.enabled:
+            ac = cfg.augment
+            geom_or_photo = max(
+                float(getattr(ac, "p_crop_max", 0.0)),
+                float(getattr(ac, "p_crop_final", 0.0)),
+                float(getattr(ac, "p_rot_max", 0.0)),
+                float(getattr(ac, "p_rot_final", 0.0)),
+                float(getattr(ac, "p_photometric_max", 0.0)),
+                float(getattr(ac, "p_photometric_final", 0.0)),
+            ) > 0.0
+            hflip_on = max(
+                float(getattr(ac, "p_hflip_warmup", 0.0)),
+                float(getattr(ac, "p_hflip_max", 0.0)),
+                float(getattr(ac, "p_hflip_final", 0.0)),
+            ) > 0.0
+            if geom_or_photo:
+                # Full bbox-aware augmentation (supersedes the hflip-only path).
+                train_augment_schedule = LayoutScheduledAugment(
+                    total_epochs=total_epochs,
+                    warmup_frac=ac.warmup_frac,
+                    ramp_frac=ac.ramp_frac,
+                    p_hflip_warmup=ac.p_hflip_warmup,
+                    p_hflip_max=ac.p_hflip_max,
+                    p_hflip_final=ac.p_hflip_final,
+                    p_crop_warmup=ac.p_crop_warmup,
+                    p_crop_max=ac.p_crop_max,
+                    p_crop_final=ac.p_crop_final,
+                    p_rot_warmup=ac.p_rot_warmup,
+                    p_rot_max=ac.p_rot_max,
+                    p_rot_final=ac.p_rot_final,
+                    p_photometric_warmup=ac.p_photometric_warmup,
+                    p_photometric_max=ac.p_photometric_max,
+                    p_photometric_final=ac.p_photometric_final,
+                    photometric_brightness=ac.photometric_brightness,
+                    photometric_contrast=ac.photometric_contrast,
+                    photometric_gamma=ac.photometric_gamma,
+                    photometric_noise_std=ac.photometric_noise_std,
+                    crop_min_scale=ac.crop_min_scale,
+                    crop_min_visibility=ac.crop_min_visibility,
+                    rot_allow_90=ac.rot_allow_90,
+                )
+            elif hflip_on:
+                train_horizontal_flip = ScheduledHorizontalFlip(
+                    total_epochs=total_epochs,
+                    warmup_frac=ac.warmup_frac,
+                    ramp_frac=ac.ramp_frac,
+                    p_hflip_warmup=ac.p_hflip_warmup,
+                    p_hflip_max=ac.p_hflip_max,
+                    p_hflip_final=ac.p_hflip_final,
+                )
 
         train_base_dataset = AnnotationLayoutDataset(
             root_dir=resolved_data.train_dir,
@@ -606,6 +644,7 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
             normalization_mode=resolved_data.normalization_mode,
             include_label_names=True,
             horizontal_flip_schedule=train_horizontal_flip,
+            augment_schedule=train_augment_schedule,
             subset_manifest=resolved_data.train_subset_manifest,
         )
         eval_base_dataset = AnnotationLayoutDataset(
@@ -639,6 +678,7 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
                 latent_cache_cfg=cfg.latent_cache,
                 device=cache_device,
                 strict_load=cfg.training.strict_load,
+                batch_size=cfg.latent_cache.encode_batch_size,
             )
             eval_base_dataset = build_latent_cache_dataset(
                 base_dataset=eval_base_dataset,
@@ -654,6 +694,7 @@ def _run_general_fm_training(cfg: FMTrainConfig) -> None:
                 latent_cache_cfg=cfg.latent_cache,
                 device=cache_device,
                 strict_load=cfg.training.strict_load,
+                batch_size=cfg.latent_cache.encode_batch_size,
             )
 
         train_dataset = _apply_subset(

@@ -10,7 +10,7 @@
 data:
   dataset_id: "v18"
   image_size: 256
-  batch_size: 4
+  batch_size: 64
   num_workers: 4
   subset_manifest: null
 
@@ -26,6 +26,9 @@ model:
 latent_cache:
   enabled: true
   store_dtype: fp16
+  # VAE encode batch during the one-time cache build. Independent of
+  # data.batch_size (training batch); tune to VAE encoder memory.
+  encode_batch_size: 512
 
 augment:
   warmup_frac: 0.10

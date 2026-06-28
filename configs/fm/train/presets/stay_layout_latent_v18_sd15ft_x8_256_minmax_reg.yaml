@@ -1,0 +1,26 @@
+# Scale-up regularization run: full 640M UNet (x4-256) + dropout + full bbox-aware
+# augmentation (hflip/rot90/crop/photometric), latent cache DISABLED (live aug),
+# parallel per-checkpoint generation-quality evaluation (KID/MMD/FID + YOLO adherence).
+# No early stopping — run all epochs and pick best checkpoint via checkpoint_eval metrics.
+# Everything else inherited from the 3L_reg preset (same aug recipe, schedule, eval config).
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg.yaml
+
+model:
+  unet_config: "configs/models/fm/stable_unet_x4_256_reg.json"   # full 640M, dropout: 0.1
+
+training:
+  patience: null              # no early stopping — quality lags FM-loss; pick via ckpt eval
+  save_every_n_epochs: 30    # fewer saves (large model); sufficient for quality curve
+  epochs: 600                # extended to capture full quality plateau (3L peaked ep150-180/400)
+
+checkpoint_eval:
+  n_test_images: 200          # more samples per eval (13 evals vs 26 — better FID/KID estimates)
+  n_unseen_images: 200
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg"
+  log_dir:   "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg"

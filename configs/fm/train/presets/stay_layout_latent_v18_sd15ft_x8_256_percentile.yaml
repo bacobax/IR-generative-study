@@ -10,11 +10,17 @@ extends: stay_layout_latent_v18_sd15ft_x8_256.yaml
 data:
   normalization_mode: raw_uint16_percentile
 
+
 model:
   vae_config: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/config.json"
-  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_best.pt"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_epoch_10.pt"
+
+training:
+  patience: null
 
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_percentile"
   log_dir: "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_percentile"
   debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_percentile"
+
+device: "cuda:1"

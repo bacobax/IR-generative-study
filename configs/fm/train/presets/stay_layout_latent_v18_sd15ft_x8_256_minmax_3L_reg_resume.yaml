@@ -1,0 +1,13 @@
+# Resume 3L_reg run from ep183 with early stopping disabled.
+# Original run stopped at ep183/400 (patience=30, best eval ep93).
+# Same output dirs → metrics_epoch.csv appends from ep183.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg_resume.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg.yaml
+
+training:
+  patience: null    # disabled — let run complete to ep400; pick best checkpoint via ckpt eval
+
+output:
+  resume: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg/UNET/unet_last_ckpt.pt"

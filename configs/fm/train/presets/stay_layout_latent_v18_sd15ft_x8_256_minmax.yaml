@@ -15,7 +15,10 @@ data:
 
 model:
   vae_config: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/config.json"
-  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_best.pt"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_10.pt"
+
+training:
+  patience: null
 
 output:
   model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax"

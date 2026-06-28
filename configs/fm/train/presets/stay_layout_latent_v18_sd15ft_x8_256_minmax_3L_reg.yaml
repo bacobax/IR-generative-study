@@ -1,0 +1,68 @@
+# Regularization experiment: 3-level small UNet (59M) + dropout + full bbox-aware
+# augmentation (hflip/rot90/crop/photometric), latent cache DISABLED (live aug),
+# plus parallel per-checkpoint generation-quality evaluation (KID/MMD/FID + YOLO
+# adherence). Everything else inherited from the minmax 3L preset.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256_minmax_3L.yaml
+
+# Live augmentation requires the cache off (cache cannot materialise crop/rot).
+latent_cache:
+  enabled: false
+
+model:
+  unet_config: "configs/models/fm/stable_unet_3L_small_v18_256_reg.json"   # adds dropout: 0.1
+
+# Schedule reaches max aug by ~ep80 (overfit onset) and stays there (no decay):
+# final == max for every op.
+augment:
+  warmup_frac: 0.05
+  ramp_frac: 0.15
+
+  p_hflip_warmup: 0.0
+  p_hflip_max: 0.5
+  p_hflip_final: 0.5
+
+  p_crop_warmup: 0.0
+  p_crop_max: 0.3
+  p_crop_final: 0.3
+
+  p_rot_warmup: 0.0
+  p_rot_max: 0.2
+  p_rot_final: 0.2
+
+  p_photometric_warmup: 0.0
+  p_photometric_max: 0.5
+  p_photometric_final: 0.5
+
+  photometric_brightness: 0.2
+  photometric_contrast: 0.2
+  photometric_gamma: 0.2
+  photometric_noise_std: 0.03
+  
+  crop_min_scale: 0.8
+  crop_min_visibility: 0.3
+  rot_allow_90: true
+
+training:
+  patience: 30                 # re-enable early stopping; best checkpoint is what we want
+  save_every_n_epochs: 15      # denser cadence for the loss-vs-quality curve
+
+checkpoint_eval:
+  enabled: true
+  device: "cuda:1"             # GPU for the parallel eval subprocess (configurable)
+  conda_env: "diffusers-dev"
+  n_test_images: 100
+  n_unseen_images: 100
+  sample_steps: 40
+  feature_extractor: "dinov2"
+  dinov2_model_name: "facebook/dinov2-base"
+  yolo_weights: "./artifacts/checkpoints/yolo/exp_v18_scratch_yolo11n/default_aug/best.pt"
+  adherence_iou: 0.5
+  yolo_conf: 0.25
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg"
+  log_dir:   "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L_reg"
