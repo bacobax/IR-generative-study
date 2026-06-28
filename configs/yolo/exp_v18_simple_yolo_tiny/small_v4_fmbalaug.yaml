@@ -1,0 +1,61 @@
+# Tiny simple_torch YOLO trained on real v18 full_train + FM-generated synthetic
+# images whose layouts are SLICE-BALANCED (not copied from real images).
+#
+# Pipeline (action=run_exp_b, mode=fm_balanced_aug):
+#   1. Build NEW multi-box layouts that over-represent rare 27-slices
+#      (1 class x 3 size bins x 9 position bins): each synthetic box is a real box
+#      bootstrapped from a deficit slice (jittered in its 3x3 cell) and recombined
+#      into novel layouts, bringing every slice up to the max real slice count.
+#   2. FM generation (minmax 640M, ep570) on those balanced layouts.
+#   3. YOLO-adherence filter: keep a GT box only if the trained YOLOn detects it at
+#      IoU >= adherence_iou; drop undetected boxes; discard empty images.
+#   4. Merge real + filtered synthetic -> train tiny YOLO -> eval on v18 test.
+#
+# Launcher:
+#   CUDA_VISIBLE_DEVICES=0 python -m src.cli.train_yolo --action run_exp_b \
+#     --device cuda:0 --epochs 150 \
+#     --config configs/yolo/exp_v18_simple_yolo_tiny/small_v4_fmbalaug.yaml
+extends: _base_v4.yaml
+
+data:
+  # Experiment B is full-train only: dataset_yaml must equal full_train_dataset_yaml.
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  full_train_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+experiment_b:
+  mode: fm_balanced_aug
+  invalid_instance_ratio_threshold: 1.0   # box-level filter applied; never drop images by ratio
+  generated_dataset_dir: artifacts/generated/yolo/exp_b/generated_candidates
+  augmented_yolo_root: artifacts/generated/yolo/exp_b/augmented_yolo
+  fm:
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/UNET/unet_fm_epoch_570.pt
+    preset_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/effective_config.yaml
+    steps: 50
+    batch_size: 8
+  balanced:
+    target: max            # bring every slice up to the largest real slice count
+    n_objects_source: real # sample boxes-per-image from the real distribution
+    jitter_frac: 0.15      # center jitter within the 3x3 cell (fraction of cell width)
+    max_pair_iou: 0.5      # reject overlapping boxes within a layout above this IoU
+    placement_tries: 8
+    seed: 7
+  filter:
+    kind: yolo
+    enabled: true
+    yolo_weights: artifacts/checkpoints/yolo/exp_v18_scratch_yolo11n/default_aug/best.pt
+    adherence_iou: 0.5
+    yolo_conf: 0.25
+    batch_size: 16
+    discard_empty_images: true
+
+# Same ultralytics-style augmentation as the other runs for a fair comparison.
+augment:
+  enabled: true
+  fliplr: 0.5
+  scale: 0.5
+  translate: 0.1
+  brightness: 0.4
+  contrast: 0.0
+
+output:
+  experiment_name: small_v4_fmbalaug

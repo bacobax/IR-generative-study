@@ -1,0 +1,6 @@
+extends: _base_v4.yaml
+
+# No augmentation. Establishes the speed-optimised baseline and clean no-aug reference.
+
+output:
+  experiment_name: small_v4_fast

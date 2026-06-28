@@ -1,0 +1,53 @@
+# Tiny simple_torch YOLO trained on real v18 full_train + FM-generated synthetic
+# images (one per real image, conditioned on the real GT layout).
+#
+# Pipeline (action=experiment_b):
+#   1. FM generation: 1 layout-conditioned image per real image (minmax 640M, ep570).
+#   2. YOLO-adherence filter: run the trained YOLOn detector on each synthetic image;
+#      keep a GT box only if a prediction matches it at IoU >= adherence_iou.
+#      Boxes with no detection are dropped; images left with zero boxes are discarded.
+#   3. Merge real + filtered synthetic → train tiny YOLO → eval on v18 test.
+#
+# Launcher:
+#   python -m src.cli.train_yolo --action experiment_b \
+#     --config configs/yolo/exp_v18_simple_yolo_tiny/small_v4_fmaug.yaml
+extends: _base_v4.yaml
+
+data:
+  # Experiment B is full-train only: dataset_yaml must equal full_train_dataset_yaml.
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  full_train_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+experiment_b:
+  mode: fm_aug
+  invalid_instance_ratio_threshold: 1.0   # box-level filter applied; never drop images by ratio
+  generated_dataset_dir: artifacts/generated/yolo/exp_b/generated_candidates
+  augmented_yolo_root: artifacts/generated/yolo/exp_b/augmented_yolo
+  fm:
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/UNET/unet_fm_epoch_570.pt
+    # Fully-resolved config written at FM train start: load_sampler_from_pipeline reads
+    # the preset with a plain (non-extends) YAML loader, so it needs the resolved file
+    # (model.vae_weights, training.t_scale/train_target), not the extends-based preset.
+    preset_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/effective_config.yaml
+    steps: 50
+    batch_size: 8
+  filter:
+    kind: yolo
+    enabled: true
+    yolo_weights: artifacts/checkpoints/yolo/exp_v18_scratch_yolo11n/default_aug/best.pt
+    adherence_iou: 0.5
+    yolo_conf: 0.25
+    batch_size: 16
+    discard_empty_images: true
+
+# Same ultralytics-style augmentation as the baseline for a fair comparison.
+augment:
+  enabled: true
+  fliplr: 0.5
+  scale: 0.5
+  translate: 0.1
+  brightness: 0.4
+  contrast: 0.0
+
+output:
+  experiment_name: small_v4_fmaug

@@ -22,7 +22,10 @@ from src.algorithms.inference.rare_layout_dataset_tools import (
     load_filter_from_run_or_checkpoint,
     load_sampler_from_pipeline,
     sample_layout_batch,
+    write_csv,
+    write_jsonl,
 )
+from src.algorithms.inference.yolo_adherence_filter import audit_generated_candidates_yolo
 from src.algorithms.stable_diffusion.layout_data import build_layout_prompt
 from src.core.configs.yolo_experiment_config import YOLOExperimentConfig
 from src.core.data.layout_batching import collate_layout_batch
@@ -187,8 +190,10 @@ def validate_experiment_b_config(cfg: YOLOExperimentConfig) -> None:
     """Fail loudly on invalid Experiment B combinations."""
 
     mode = str(cfg.experiment_b.mode)
-    if mode not in {"plain", "fm_aug", "sd_aug", "precomputed_aug"}:
-        raise ValueError("experiment_b.mode must be one of: plain, fm_aug, sd_aug, precomputed_aug.")
+    if mode not in {"plain", "fm_aug", "fm_balanced_aug", "sd_aug", "precomputed_aug"}:
+        raise ValueError(
+            "experiment_b.mode must be one of: plain, fm_aug, fm_balanced_aug, sd_aug, precomputed_aug."
+        )
     threshold = float(cfg.experiment_b.invalid_instance_ratio_threshold)
     if not 0.0 <= threshold <= 1.0:
         raise ValueError("experiment_b.invalid_instance_ratio_threshold must be in [0, 1].")
@@ -207,8 +212,8 @@ def validate_experiment_b_config(cfg: YOLOExperimentConfig) -> None:
     has_precomputed = bool(cfg.experiment_b.precomputed_dataset_dir)
     if mode == "plain" and (has_fm or has_sd_stage1 or has_sd_lora or has_precomputed):
         raise ValueError("experiment_b.mode=plain must not configure generation sources.")
-    if mode == "fm_aug" and not has_fm:
-        raise ValueError("experiment_b.mode=fm_aug requires experiment_b.fm.checkpoint_path.")
+    if mode in {"fm_aug", "fm_balanced_aug"} and not has_fm:
+        raise ValueError(f"experiment_b.mode={mode} requires experiment_b.fm.checkpoint_path.")
     if mode == "sd_aug" and int(has_sd_stage1) + int(has_sd_lora) != 1:
         raise ValueError("experiment_b.mode=sd_aug requires exactly one of experiment_b.sd.stage1_dir or sd.lora_dir.")
     if mode == "precomputed_aug" and not has_precomputed:
@@ -217,8 +222,22 @@ def validate_experiment_b_config(cfg: YOLOExperimentConfig) -> None:
         raise ValueError("precomputed_dataset_dir is only valid when experiment_b.mode=precomputed_aug.")
     if mode != "sd_aug" and (has_sd_stage1 or has_sd_lora):
         raise ValueError("SD source paths are only valid when experiment_b.mode=sd_aug.")
-    if mode != "fm_aug" and has_fm:
-        raise ValueError("FM checkpoint paths are only valid when experiment_b.mode=fm_aug.")
+    if mode not in {"fm_aug", "fm_balanced_aug"} and has_fm:
+        raise ValueError("FM checkpoint paths are only valid when experiment_b.mode is fm_aug or fm_balanced_aug.")
+    filter_kind = str(cfg.experiment_b.filter.kind)
+    if filter_kind not in {"fgbg", "yolo"}:
+        raise ValueError("experiment_b.filter.kind must be one of: fgbg, yolo.")
+    if filter_kind == "yolo" and bool(cfg.experiment_b.filter.enabled):
+        yolo_weights = _repo_path(cfg.experiment_b.filter.yolo_weights)
+        if yolo_weights is None or not yolo_weights.is_file():
+            raise FileNotFoundError(
+                f"experiment_b.filter.kind=yolo requires a valid yolo_weights file: "
+                f"{cfg.experiment_b.filter.yolo_weights}"
+            )
+        if not 0.0 <= float(cfg.experiment_b.filter.adherence_iou) <= 1.0:
+            raise ValueError("experiment_b.filter.adherence_iou must be in [0, 1].")
+        if not 0.0 <= float(cfg.experiment_b.filter.yolo_conf) <= 1.0:
+            raise ValueError("experiment_b.filter.yolo_conf must be in [0, 1].")
     if int(cfg.experiment_b.filter.batch_size) <= 0:
         raise ValueError("experiment_b.filter.batch_size must be positive.")
     if int(cfg.experiment_b.fm.batch_size) <= 0:
@@ -394,15 +413,16 @@ def _make_layout_batch_samples(
     return batch_samples
 
 
-def generate_fm_candidates(
+def _fm_generate_for_samples(
     *,
     cfg: YOLOExperimentConfig,
     samples: Sequence[YOLOTrainSample],
     dataset_payload: dict[str, Any],
     output_dir: Path,
     device: str,
+    generator_kind: str,
 ) -> Path:
-    """Generate one layout-conditioned FM candidate for every source image."""
+    """Run the FM sampler over a list of layout samples and write a COCO dataset."""
 
     checkpoint_path = _repo_path(cfg.experiment_b.fm.checkpoint_path)
     preset_path = _repo_path(cfg.experiment_b.fm.preset_path)
@@ -440,16 +460,88 @@ def generate_fm_candidates(
             torch.cuda.empty_cache()
 
     if len(generated_arrays) != len(samples):
-        raise RuntimeError(f"FM generated {len(generated_arrays)} images for {len(samples)} source images.")
+        raise RuntimeError(f"FM generated {len(generated_arrays)} images for {len(samples)} layouts.")
     _write_generated_coco(
         output_dir=output_dir,
         samples=samples,
         generated_arrays=generated_arrays,
         dataset_payload=dataset_payload,
         cfg=cfg,
-        generator_kind="fm_aug",
+        generator_kind=generator_kind,
     )
     return output_dir
+
+
+def generate_fm_candidates(
+    *,
+    cfg: YOLOExperimentConfig,
+    samples: Sequence[YOLOTrainSample],
+    dataset_payload: dict[str, Any],
+    output_dir: Path,
+    device: str,
+) -> Path:
+    """Generate one layout-conditioned FM candidate for every source image."""
+
+    return _fm_generate_for_samples(
+        cfg=cfg,
+        samples=samples,
+        dataset_payload=dataset_payload,
+        output_dir=output_dir,
+        device=device,
+        generator_kind="fm_aug",
+    )
+
+
+def generate_fm_balanced_candidates(
+    *,
+    cfg: YOLOExperimentConfig,
+    dataset_payload: dict[str, Any],
+    output_dir: Path,
+    device: str,
+) -> Path:
+    """Generate FM candidates for slice-balanced synthetic layouts.
+
+    New multi-box layouts are constructed to over-represent rare 27-slices
+    (1 class x 3 size x 9 position), bringing every slice up to the target count.
+    """
+
+    from src.algorithms.inference.balanced_layout_generator import (
+        build_balanced_layouts,
+        compute_slice_pool,
+    )
+
+    bal = cfg.experiment_b.balanced
+    instance_df, counts, _thresholds = compute_slice_pool(cfg.data.dataset_yaml)
+
+    # Real per-image n_objects distribution (from the same full_train labels).
+    n_obj_distribution = (
+        instance_df.groupby("image_index", observed=True).size().to_numpy().tolist()
+    )
+
+    samples = build_balanced_layouts(
+        instance_df=instance_df,
+        counts=counts,
+        n_obj_distribution=n_obj_distribution,
+        target=str(bal.target),
+        seed=int(bal.seed),
+        jitter_frac=float(bal.jitter_frac),
+        max_pair_iou=float(bal.max_pair_iou),
+        placement_tries=int(bal.placement_tries),
+    )
+    if not samples:
+        raise RuntimeError("Balanced layout generation produced no layouts (no slice deficits?).")
+    print(
+        f"[Experiment B] balanced layouts: {len(samples)} synthetic images, "
+        f"{sum(len(s.boxes) for s in samples)} boxes (target={bal.target})."
+    )
+    return _fm_generate_for_samples(
+        cfg=cfg,
+        samples=samples,
+        dataset_payload=dataset_payload,
+        output_dir=output_dir,
+        device=device,
+        generator_kind="fm_balanced_aug",
+    )
 
 
 def _load_sd_pipeline(cfg: YOLOExperimentConfig, *, device: str):
@@ -579,6 +671,13 @@ def audit_generated_candidates(
 ) -> tuple[list[dict[str, Any]], Path, dict[str, Any]]:
     """Audit generated candidates and return kept/discarded image rows."""
 
+    if str(cfg.experiment_b.filter.kind) == "yolo":
+        return _audit_generated_candidates_yolo(
+            cfg=cfg,
+            generated_dataset_dir=generated_dataset_dir,
+            device=device,
+        )
+
     run_dir, checkpoint_path = _resolve_filter_source(cfg)
     model, summary, threshold, input_size, context_ratio, resolved_run_dir = load_filter_from_run_or_checkpoint(
         device=device,
@@ -645,12 +744,84 @@ def audit_generated_candidates(
     return classified_rows, audit_dir, discard_summary
 
 
+def _audit_generated_candidates_yolo(
+    *,
+    cfg: YOLOExperimentConfig,
+    generated_dataset_dir: Path,
+    device: str,
+) -> tuple[list[dict[str, Any]], Path, dict[str, Any]]:
+    """Audit generated candidates with the trained YOLO detector (IoU-to-GT)."""
+
+    yolo_weights = _repo_path(cfg.experiment_b.filter.yolo_weights)
+    if yolo_weights is None or not yolo_weights.is_file():
+        raise FileNotFoundError(f"Missing YOLO filter weights: {cfg.experiment_b.filter.yolo_weights}")
+
+    instance_rows, image_rows, stats = audit_generated_candidates_yolo(
+        generated_dataset_dir=generated_dataset_dir,
+        yolo_weights=yolo_weights,
+        device=device,
+        iou_thr=float(cfg.experiment_b.filter.adherence_iou),
+        conf=float(cfg.experiment_b.filter.yolo_conf),
+        batch_size=int(cfg.experiment_b.filter.batch_size),
+    )
+
+    audit_dir = generated_dataset_dir / "filter_audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    write_jsonl(audit_dir / "per_instance_manifest.jsonl", instance_rows)
+    write_jsonl(audit_dir / "per_image_manifest.jsonl", image_rows)
+    write_csv(audit_dir / "per_instance_manifest.csv", list(instance_rows))
+    write_csv(audit_dir / "per_image_manifest.csv", list(image_rows))
+    _write_json(
+        audit_dir / "filter_audit_summary.json",
+        {
+            "generated_dataset_dir": str(generated_dataset_dir),
+            "filter_kind": "yolo",
+            "yolo_weights": str(yolo_weights),
+            "adherence_iou": float(cfg.experiment_b.filter.adherence_iou),
+            "yolo_conf": float(cfg.experiment_b.filter.yolo_conf),
+            "discard_empty_images": bool(cfg.experiment_b.filter.discard_empty_images),
+            "stats": stats,
+        },
+    )
+
+    annotation_filter_summary = _write_filtered_annotations_from_audit(
+        generated_dataset_dir=generated_dataset_dir,
+        instance_rows=instance_rows,
+        drop_empty_images=bool(cfg.experiment_b.filter.discard_empty_images),
+    )
+    classified_rows = classify_generated_image_rows(
+        image_rows,
+        invalid_instance_ratio_threshold=float(cfg.experiment_b.invalid_instance_ratio_threshold),
+    )
+    discard_summary = build_instance_discard_summary(
+        instance_rows=instance_rows,
+        classified_image_rows=classified_rows,
+        invalid_instance_ratio_threshold=float(cfg.experiment_b.invalid_instance_ratio_threshold),
+    )
+    _write_json(audit_dir / "experiment_b_discard_summary.json", discard_summary)
+    print(
+        "[Experiment B] YOLO filter summary: "
+        f"{annotation_filter_summary['n_invalid_annotations_removed']}/"
+        f"{annotation_filter_summary['n_annotations_unfiltered']} boxes removed; "
+        f"{annotation_filter_summary['n_empty_images_discarded']}/"
+        f"{annotation_filter_summary['n_images_unfiltered']} empty images discarded."
+    )
+    return classified_rows, audit_dir, discard_summary
+
+
 def _write_filtered_annotations_from_audit(
     *,
     generated_dataset_dir: Path,
     instance_rows: Sequence[dict[str, Any]],
+    drop_empty_images: bool = False,
 ) -> dict[str, Any]:
-    """Remove invalid instance annotations while retaining every generated image."""
+    """Remove invalid instance annotations from the generated dataset.
+
+    By default every generated image is retained (only invalid annotations are
+    dropped).  When ``drop_empty_images`` is True, images left with zero valid
+    annotations are removed from the ``images`` list so the downstream export
+    skips them entirely.
+    """
 
     annotations_path = generated_dataset_dir / "annotations.json"
     unfiltered_path = generated_dataset_dir / "annotations_unfiltered.json"
@@ -668,14 +839,26 @@ def _write_filtered_annotations_from_audit(
         ann for ann in payload.get("annotations", [])
         if int(ann.get("id", -1)) in valid_annotation_ids
     ]
+    all_images = list(payload.get("images", []))
+    n_images_unfiltered = len(all_images)
+    if drop_empty_images:
+        image_ids_with_annotations = {int(ann["image_id"]) for ann in filtered_annotations}
+        filtered_images = [
+            image for image in all_images
+            if int(image.get("id", -1)) in image_ids_with_annotations
+        ]
+    else:
+        filtered_images = all_images
     filtered_payload = {
-        "images": list(payload.get("images", [])),
+        "images": filtered_images,
         "annotations": filtered_annotations,
         "categories": list(payload.get("categories", [])),
     }
     _write_json(annotations_path, filtered_payload)
     summary = {
         "n_images": len(filtered_payload["images"]),
+        "n_images_unfiltered": n_images_unfiltered,
+        "n_empty_images_discarded": n_images_unfiltered - len(filtered_images),
         "n_annotations_unfiltered": len(payload.get("annotations", [])),
         "n_annotations": len(filtered_annotations),
         "n_invalid_annotations_removed": len(payload.get("annotations", [])) - len(filtered_annotations),
@@ -1019,6 +1202,13 @@ def prepare_experiment_b_dataset(cfg: YOLOExperimentConfig, *, device: str) -> d
         generate_fm_candidates(
             cfg=cfg,
             samples=source_samples,
+            dataset_payload=dataset_payload,
+            output_dir=generated_dataset_dir,
+            device=device,
+        )
+    elif mode == "fm_balanced_aug":
+        generate_fm_balanced_candidates(
+            cfg=cfg,
             dataset_payload=dataset_payload,
             output_dir=generated_dataset_dir,
             device=device,

@@ -1,0 +1,9 @@
+extends: _base.yaml
+
+# Ultralytics built-in detection augmentation is ON by default (mosaic, hsv,
+# fliplr, scale, translate, erasing, etc.).  No baseline sampling — uniform.
+baseline:
+  mode: none
+
+output:
+  experiment_name: default_aug

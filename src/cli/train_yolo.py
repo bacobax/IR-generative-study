@@ -40,6 +40,12 @@ from src.algorithms.training.yolo_experiment_b import (
 )
 from src.core.configs.config_loader import load_yaml, merge_config_and_cli
 from src.core.configs.yolo_experiment_config import YOLOExperimentConfig
+from src.analysis.flir_subgroup.yolo_slice_eval import (
+    compute_frozen_thresholds,
+    evaluate_per_slice,
+    evaluate_per_slice_from_predictions,
+    save_frozen_thresholds,
+)
 from src.core.diffusers_compat import restore_real_scipy_if_available
 from src.core.paths import repo_root, yolo_analysis_root
 
@@ -53,12 +59,24 @@ def _parse_bool_arg(value: str) -> bool:
     raise argparse.ArgumentTypeError(f"Expected a boolean value, got: {value!r}")
 
 
+def _parse_int_list_arg(value: str) -> list[int]:
+    if isinstance(value, list):
+        return [int(item) for item in value]
+    text = str(value).strip()
+    if not text:
+        raise argparse.ArgumentTypeError("Expected a comma-separated integer list.")
+    try:
+        return [int(item.strip()) for item in text.split(",") if item.strip()]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Expected a comma-separated integer list, got: {value!r}") from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ultralytics YOLO experiment runner")
     parser.add_argument("--config", type=str, default=None,
                         help="YAML config file. CLI overrides config values.")
     parser.add_argument("--action", type=str, default="train",
-                        choices=["train", "eval", "run_exp_a", "run_exp_a_all", "run_exp_b", "run_exp_b_all"])
+                        choices=["train", "eval", "eval_slices", "run_exp_a", "run_exp_a_all", "run_exp_b", "run_exp_b_all"])
     parser.add_argument("--dataset_yaml", type=str, default=str(Path("data/derived/yolo-test-ds/balanced.yaml")))
     parser.add_argument("--balanced_dataset_yaml", type=str, default=str(Path("data/derived/yolo-test-ds/balanced.yaml")))
     parser.add_argument("--unbalanced_dataset_yaml", type=str, default=str(Path("data/derived/yolo-test-ds/unbalanced.yaml")))
@@ -66,6 +84,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test_dataset_yaml", type=str, default=None)
     parser.add_argument("--weights", type=str, default="yolov8n.pt")
     parser.add_argument("--task", type=str, default="detect")
+    parser.add_argument("--model_backend", type=str, default=None, choices=["ultralytics", "simple_torch"])
+    parser.add_argument("--simple_input_channels", type=int, default=None)
+    parser.add_argument("--simple_base_channels", type=int, default=None)
+    parser.add_argument("--simple_width_multiplier", type=float, default=None)
+    parser.add_argument("--simple_channel_multipliers", type=_parse_int_list_arg, default=None)
+    parser.add_argument("--simple_blocks_per_stage", type=_parse_int_list_arg, default=None)
+    parser.add_argument("--simple_output_stride", type=int, default=None)
+    parser.add_argument("--simple_boxes_per_cell", type=int, default=None)
+    parser.add_argument("--simple_activation", type=str, default=None, choices=["silu", "relu", "leaky_relu"])
+    parser.add_argument("--simple_dropout", type=float, default=None)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--lr0", type=float, default=0.01)
     parser.add_argument("--optimizer", type=str, default="auto")
@@ -80,6 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cos_lr", action="store_true", default=False)
     parser.add_argument("--freeze_backbone_epochs", type=int, default=0)
     parser.add_argument("--backbone_lr_multiplier", type=float, default=1.0)
+    parser.add_argument("--mixed_precision", type=str, default=None, choices=["auto", "no", "fp32", "fp16", "bf16"])
+    parser.add_argument("--grad_clip_norm", type=float, default=None)
+    parser.add_argument("--val_interval", type=int, default=None)
+    parser.add_argument("--tensorboard_image_interval", type=int, default=None)
+    parser.add_argument("--tensorboard_max_images", type=int, default=None)
+    parser.add_argument("--tensorboard_prediction_conf", type=float, default=None)
+    parser.add_argument("--box_weight", type=float, default=None)
+    parser.add_argument("--giou_weight", type=float, default=None)
+    parser.add_argument("--objectness_weight", type=float, default=None)
+    parser.add_argument("--no_object_weight", type=float, default=None)
+    parser.add_argument("--class_weight", type=float, default=None)
     parser.add_argument("--baseline_mode", type=str, default=None,
                         choices=["none", "baseline_a", "baseline_b"])
     parser.add_argument("--rarity_alpha", type=float, default=None)
@@ -99,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--crop_min_rare_box_area_retained", type=float, default=None)
     parser.add_argument("--crop_max_attempts", type=int, default=None)
     parser.add_argument("--allow_horizontal_flip", type=_parse_bool_arg, default=None)
+    parser.add_argument("--use_weighted_sampler", type=_parse_bool_arg, default=None)
     parser.add_argument("--baseline_seed", type=int, default=None)
     parser.add_argument("--experiment_name", type=str, default="exp_balanced")
     parser.add_argument("--balanced_experiment_name", type=str, default="exp_balanced")
@@ -120,6 +160,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--experiment_b_precomputed_dataset_dir", type=str, default=None)
     parser.add_argument("--experiment_b_augmented_yolo_root", type=str, default=None)
     parser.add_argument("--experiment_b_filter_enabled", type=_parse_bool_arg, default=None)
+    parser.add_argument("--cache_images", type=_parse_bool_arg, default=None)
+    parser.add_argument("--augment_enabled", type=_parse_bool_arg, default=None)
+    parser.add_argument("--augment_fliplr", type=float, default=None)
+    parser.add_argument("--augment_scale", type=float, default=None)
+    parser.add_argument("--augment_translate", type=float, default=None)
+    parser.add_argument("--augment_brightness", type=float, default=None)
+    parser.add_argument("--augment_contrast", type=float, default=None)
     parser.add_argument("--device", type=str, default=None)
     return parser
 
@@ -135,6 +182,16 @@ _FLAT_TO_NESTED = {
     "image_size": "data.image_size",
     "weights": "model.weights",
     "task": "model.task",
+    "model_backend": "model.backend",
+    "simple_input_channels": "model.simple.input_channels",
+    "simple_base_channels": "model.simple.base_channels",
+    "simple_width_multiplier": "model.simple.width_multiplier",
+    "simple_channel_multipliers": "model.simple.channel_multipliers",
+    "simple_blocks_per_stage": "model.simple.blocks_per_stage",
+    "simple_output_stride": "model.simple.output_stride",
+    "simple_boxes_per_cell": "model.simple.boxes_per_cell",
+    "simple_activation": "model.simple.activation",
+    "simple_dropout": "model.simple.dropout",
     "epochs": "training.epochs",
     "lr0": "training.lr0",
     "optimizer": "training.optimizer",
@@ -146,6 +203,17 @@ _FLAT_TO_NESTED = {
     "cos_lr": "training.cos_lr",
     "freeze_backbone_epochs": "training.freeze_backbone_epochs",
     "backbone_lr_multiplier": "training.backbone_lr_multiplier",
+    "mixed_precision": "training.mixed_precision",
+    "grad_clip_norm": "training.grad_clip_norm",
+    "val_interval": "training.val_interval",
+    "tensorboard_image_interval": "training.tensorboard_image_interval",
+    "tensorboard_max_images": "training.tensorboard_max_images",
+    "tensorboard_prediction_conf": "training.tensorboard_prediction_conf",
+    "box_weight": "loss.box_weight",
+    "giou_weight": "loss.giou_weight",
+    "objectness_weight": "loss.objectness_weight",
+    "no_object_weight": "loss.no_object_weight",
+    "class_weight": "loss.class_weight",
     "baseline_mode": "baseline.mode",
     "rarity_alpha": "baseline.rarity_alpha",
     "rarity_eps": "baseline.rarity_eps",
@@ -164,6 +232,7 @@ _FLAT_TO_NESTED = {
     "crop_min_rare_box_area_retained": "baseline.crop_min_rare_box_area_retained",
     "crop_max_attempts": "baseline.crop_max_attempts",
     "allow_horizontal_flip": "baseline.allow_horizontal_flip",
+    "use_weighted_sampler": "baseline.use_weighted_sampler",
     "baseline_seed": "baseline.seed",
     "eval_dataset_yaml": "evaluation.dataset_yaml",
     "split": "evaluation.split",
@@ -184,6 +253,13 @@ _FLAT_TO_NESTED = {
     "experiment_b_precomputed_dataset_dir": "experiment_b.precomputed_dataset_dir",
     "experiment_b_augmented_yolo_root": "experiment_b.augmented_yolo_root",
     "experiment_b_filter_enabled": "experiment_b.filter.enabled",
+    "cache_images": "data.cache_images",
+    "augment_enabled": "augment.enabled",
+    "augment_fliplr": "augment.fliplr",
+    "augment_scale": "augment.scale",
+    "augment_translate": "augment.translate",
+    "augment_brightness": "augment.brightness",
+    "augment_contrast": "augment.contrast",
     "device": "device",
 }
 
@@ -500,13 +576,14 @@ def _save_filtered_confusion_matrix_plots(results, *, analysis_dir: Path) -> dic
 
 def _save_resolved_config(cfg: YOLOExperimentConfig, path: Path) -> None:
     payload = {
-        "data": vars(cfg.data),
-        "model": vars(cfg.model),
-        "training": vars(cfg.training),
-        "baseline": vars(cfg.baseline),
-        "evaluation": vars(cfg.evaluation),
-        "output": vars(cfg.output),
-        "launcher": vars(cfg.launcher),
+        "data": asdict(cfg.data),
+        "model": asdict(cfg.model),
+        "training": asdict(cfg.training),
+        "loss": asdict(cfg.loss),
+        "baseline": asdict(cfg.baseline),
+        "evaluation": asdict(cfg.evaluation),
+        "output": asdict(cfg.output),
+        "launcher": asdict(cfg.launcher),
         "experiment_b": asdict(cfg.experiment_b),
         "device": cfg.device,
     }
@@ -710,6 +787,11 @@ def _validate_baseline_config(cfg: YOLOExperimentConfig) -> None:
         raise ValueError("baseline.crop_max_attempts must be >= 1.")
 
 
+def _validate_model_backend(cfg: YOLOExperimentConfig) -> None:
+    if str(cfg.model.backend) not in {"ultralytics", "simple_torch"}:
+        raise ValueError("model.backend must be one of: ultralytics, simple_torch.")
+
+
 def _build_train_stages(cfg: YOLOExperimentConfig) -> list[dict[str, Any]]:
     _validate_training_schedule(cfg)
     total_epochs = int(cfg.training.epochs)
@@ -806,7 +888,7 @@ def _make_differential_lr_detection_trainer(
             if getattr(dataset, "rect", False) and shuffle and not np.all(dataset.batch_shapes == dataset.batch_shapes[0]):
                 LOGGER.warning("'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")
                 shuffle = False
-            if mode == "train" and prepared_baseline is not None and str(cfg.baseline.mode) in {"baseline_a", "baseline_b"}:
+            if mode == "train" and prepared_baseline is not None and str(cfg.baseline.mode) in {"baseline_a", "baseline_b"} and bool(cfg.baseline.use_weighted_sampler):
                 return build_weighted_train_dataloader(
                     dataset=dataset,
                     batch_size=batch_size,
@@ -982,6 +1064,24 @@ def _stage_train_kwargs(
 
 
 def run_train(cfg: YOLOExperimentConfig) -> dict[str, Any]:
+    _validate_model_backend(cfg)
+    if str(cfg.model.backend) == "simple_torch":
+        from src.algorithms.training.simple_yolo_detector import train_simple_yolo
+
+        _set_seed(cfg.training.seed, cfg.training.deterministic)
+        run_dir, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+        _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+        _validate_baseline_config(cfg)
+        dataset_yaml = _require_dataset_yaml(cfg.data.dataset_yaml)
+        return train_simple_yolo(
+            cfg,
+            dataset_yaml=dataset_yaml,
+            run_dir=run_dir,
+            checkpoint_dir=checkpoint_dir,
+            analysis_dir=analysis_dir,
+            device=_torch_generation_device(cfg.resolved_device()),
+        )
+
     YOLO = _require_ultralytics()
     restore_real_scipy_if_available()
     _set_seed(cfg.training.seed, cfg.training.deterministic)
@@ -1107,6 +1207,51 @@ def run_train(cfg: YOLOExperimentConfig) -> dict[str, Any]:
 
 
 def run_eval(cfg: YOLOExperimentConfig, *, weights_path: Optional[str] = None) -> dict[str, Any]:
+    _validate_model_backend(cfg)
+    if str(cfg.model.backend) == "simple_torch":
+        from src.algorithms.training.simple_yolo_detector import eval_simple_yolo
+
+        _set_seed(cfg.training.seed, cfg.training.deterministic)
+        _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+        _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+        resolved_weights = weights_path or str(checkpoint_dir / "best.pt")
+        data_yaml = _require_dataset_yaml(
+            cfg.evaluation.dataset_yaml
+            or cfg.data.test_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        eval_payload = eval_simple_yolo(
+            cfg,
+            weights_path=resolved_weights,
+            data_yaml=data_yaml,
+            analysis_dir=analysis_dir,
+            device=_torch_generation_device(cfg.resolved_device()),
+        )
+        summary = {
+            key: value
+            for key, value in eval_payload.items()
+            if key not in {"predictions", "ground_truths", "names", "per_class"}
+        }
+        if cfg.evaluation.per_slice_enabled:
+            threshold_yaml = (
+                cfg.evaluation.slice_threshold_dataset_yaml
+                or cfg.data.dataset_yaml
+            )
+            threshold_yaml = _require_dataset_yaml(threshold_yaml)
+            thresholds = compute_frozen_thresholds(threshold_yaml)
+            per_slice_results = evaluate_per_slice_from_predictions(
+                predictions=eval_payload["predictions"],
+                test_yaml=data_yaml,
+                thresholds=thresholds,
+                output_dir=analysis_dir,
+                iou_threshold=float(cfg.evaluation.iou) if cfg.evaluation.iou is not None else 0.5,
+            )
+            summary["per_slice_metrics_csv"] = str(analysis_dir / "per_slice_metrics.csv")
+            summary["per_slice_metrics_json"] = str(analysis_dir / "per_slice_metrics.json")
+            summary["per_slice_overall"] = per_slice_results.get("overall", {})
+            _write_json(analysis_dir / "eval_summary.json", summary)
+        return summary
+
     YOLO = _require_ultralytics()
     _set_seed(cfg.training.seed, cfg.training.deterministic)
     _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
@@ -1162,6 +1307,100 @@ def run_eval(cfg: YOLOExperimentConfig, *, weights_path: Optional[str] = None) -
     per_class_df = _per_class_metrics_dataframe(results)
     if not per_class_df.empty:
         per_class_df.to_csv(analysis_dir / "per_class_metrics.csv", index=False)
+
+    if cfg.evaluation.per_slice_enabled:
+        threshold_yaml = (
+            cfg.evaluation.slice_threshold_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        threshold_yaml = _require_dataset_yaml(threshold_yaml)
+        thresholds = compute_frozen_thresholds(threshold_yaml)
+        device_str = _normalize_ultralytics_device(cfg.resolved_device())
+        per_slice_results = evaluate_per_slice(
+            weights=resolved_weights,
+            test_yaml=data_yaml,
+            thresholds=thresholds,
+            output_dir=analysis_dir,
+            imgsz=cfg.data.image_size,
+            conf=float(cfg.evaluation.conf) if cfg.evaluation.conf is not None else 0.001,
+            iou_threshold=float(cfg.evaluation.iou) if cfg.evaluation.iou is not None else 0.5,
+            device=device_str,
+        )
+        summary["per_slice_metrics_csv"] = str(analysis_dir / "per_slice_metrics.csv")
+        summary["per_slice_metrics_json"] = str(analysis_dir / "per_slice_metrics.json")
+        summary["per_slice_overall"] = per_slice_results.get("overall", {})
+        _write_json(analysis_dir / "eval_summary.json", summary)
+
+    return summary
+
+
+def run_eval_slices(cfg: YOLOExperimentConfig, *, weights_path: Optional[str] = None) -> dict[str, Any]:
+    """Re-run only the per-slice mAP evaluation against an existing checkpoint.
+
+    Skips ``model.val()``; reads ``best.pt`` (or ``weights_path``) directly.
+    Useful for re-evaluating slice metrics after changing threshold parameters.
+    """
+    _validate_model_backend(cfg)
+    if str(cfg.model.backend) == "simple_torch":
+        from src.algorithms.training.simple_yolo_detector import eval_simple_yolo_slices
+
+        _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+        _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+        resolved_weights = weights_path or str(checkpoint_dir / "best.pt")
+        data_yaml = _require_dataset_yaml(
+            cfg.evaluation.dataset_yaml
+            or cfg.data.test_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        threshold_yaml = (
+            cfg.evaluation.slice_threshold_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        threshold_yaml = _require_dataset_yaml(threshold_yaml)
+        return eval_simple_yolo_slices(
+            cfg,
+            weights_path=resolved_weights,
+            data_yaml=data_yaml,
+            threshold_yaml=threshold_yaml,
+            analysis_dir=analysis_dir,
+            device=_torch_generation_device(cfg.resolved_device()),
+        )
+
+    _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+    _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+
+    resolved_weights = weights_path or str(checkpoint_dir / "best.pt")
+    data_yaml = _require_dataset_yaml(
+        cfg.evaluation.dataset_yaml
+        or cfg.data.test_dataset_yaml
+        or cfg.data.dataset_yaml
+    )
+    threshold_yaml = (
+        cfg.evaluation.slice_threshold_dataset_yaml
+        or cfg.data.dataset_yaml
+    )
+    threshold_yaml = _require_dataset_yaml(threshold_yaml)
+    device_str = _normalize_ultralytics_device(cfg.resolved_device())
+    thresholds = compute_frozen_thresholds(threshold_yaml)
+    per_slice_results = evaluate_per_slice(
+        weights=resolved_weights,
+        test_yaml=data_yaml,
+        thresholds=thresholds,
+        output_dir=analysis_dir,
+        imgsz=cfg.data.image_size,
+        conf=float(cfg.evaluation.conf) if cfg.evaluation.conf is not None else 0.001,
+        iou_threshold=float(cfg.evaluation.iou) if cfg.evaluation.iou is not None else 0.5,
+        device=device_str,
+    )
+    summary = {
+        "experiment_name": cfg.output.experiment_name,
+        "weights_path": resolved_weights,
+        "dataset_yaml": data_yaml,
+        "per_slice_metrics_csv": str(analysis_dir / "per_slice_metrics.csv"),
+        "per_slice_metrics_json": str(analysis_dir / "per_slice_metrics.json"),
+        "per_slice_overall": per_slice_results.get("overall", {}),
+    }
+    _write_json(analysis_dir / "eval_slices_summary.json", summary)
     return summary
 
 
@@ -1482,6 +1721,8 @@ def main(argv: Optional[list[str]] = None) -> None:
         run_train(cfg)
     elif args.action == "eval":
         run_eval(cfg)
+    elif args.action == "eval_slices":
+        run_eval_slices(cfg)
     elif args.action == "run_exp_a":
         run_experiment_a(cfg)
     elif args.action == "run_exp_a_all":

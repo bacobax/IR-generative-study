@@ -1,0 +1,26 @@
+# Real-only baseline for the FM-augmentation experiment. Identical architecture,
+# epochs, and ultralytics-style augmentation as small_v4_fmaug.yaml, but trained on
+# the v18 full_train real images only (experiment_b.mode=plain → no synthetic data).
+#
+# Launcher:
+#   python -m src.cli.train_yolo --action experiment_b \
+#     --config configs/yolo/exp_v18_simple_yolo_tiny/small_v4_fmaug_baseline.yaml
+extends: _base_v4.yaml
+
+data:
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  full_train_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+experiment_b:
+  mode: plain
+
+augment:
+  enabled: true
+  fliplr: 0.5
+  scale: 0.5
+  translate: 0.1
+  brightness: 0.4
+  contrast: 0.0
+
+output:
+  experiment_name: small_v4_fmaug_baseline
