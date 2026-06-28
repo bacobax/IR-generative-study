@@ -82,8 +82,6 @@ def _():
     plotly_express, _plotly_express_error = _optional_import("plotly.express")
     plotly_go, _plotly_go_error = _optional_import("plotly.graph_objects")
     scipy_stats, _scipy_error = _optional_import("scipy.stats")
-    sklearn_decomposition, _sklearn_decomposition_error = _optional_import("sklearn.decomposition")
-    sklearn_preprocessing, _sklearn_preprocessing_error = _optional_import("sklearn.preprocessing")
     umap_module, _umap_error = _optional_import("umap")
     lpips_module, _lpips_error = _optional_import("lpips")
     diffusers_module, _diffusers_error = _optional_import("diffusers")
@@ -127,13 +125,16 @@ def _():
     )
 
     DEFAULT_CHECKPOINT_SPEC = "\n".join(
+
         [
             f"epoch_10, {DEFAULT_VAE_ROOT / 'vae_epoch_10.pt'}",
             f"epoch_20, {DEFAULT_VAE_ROOT / 'vae_epoch_20.pt'}",
+            f"epoch_30, {DEFAULT_VAE_ROOT / 'vae_epoch_30.pt'}",
             f"epoch_50, {DEFAULT_VAE_ROOT / 'vae_epoch_50.pt'}",
             f"epoch_100, {DEFAULT_VAE_ROOT / 'vae_epoch_100.pt'}",
             f"epoch_150, {DEFAULT_VAE_ROOT / 'vae_epoch_150.pt'}",
-            f"best, {DEFAULT_VAE_ROOT / 'vae_best.pt'}",
+            f"vae_best, {DEFAULT_VAE_ROOT / 'vae_best.pt'}",
+
         ]
     )
 
@@ -155,7 +156,6 @@ def _():
             ("repo VAE helpers", _repo_vae_error is None, _repo_vae_error or "training-compatible checkpoint loading"),
             ("plotly", plotly_express is not None and plotly_go is not None, _plotly_express_error or _plotly_go_error or "interactive plots"),
             ("scipy", scipy_stats is not None, _scipy_error or "Gaussianity tests"),
-            ("scikit-learn", sklearn_decomposition is not None and sklearn_preprocessing is not None, _sklearn_decomposition_error or _sklearn_preprocessing_error or "PCA and scaling"),
             ("umap-learn", umap_module is not None, _umap_error or "optional UMAP"),
             ("lpips", lpips_module is not None, _lpips_error or "optional LPIPS"),
         ]
@@ -163,7 +163,7 @@ def _():
 
     def install_hint() -> str:
         return (
-            "python -m pip install marimo plotly diffusers scikit-learn "
+            "python -m pip install marimo plotly diffusers "
             "umap-learn torchvision lpips scipy pillow pandas tqdm"
         )
 
@@ -210,8 +210,6 @@ def _():
         re,
         resize_and_normalize,
         scipy_stats,
-        sklearn_decomposition,
-        sklearn_preprocessing,
         time,
         torch,
         tqdm,
@@ -258,9 +256,9 @@ def _(
         label="Normalization",
     )
     image_size_ui = mo.ui.slider(64, 1024, value=256, step=32, label="Image resolution")
-    batch_size_ui = mo.ui.slider(1, 64, value=4, step=1, label="Batch size")
+    batch_size_ui = mo.ui.slider(1, 512, value=4, step=1, label="Batch size")
     max_images_ui = mo.ui.slider(1, 5000, value=256, step=1, label="Max images")
-    num_workers_ui = mo.ui.slider(0, 0, value=0, step=1, label="DataLoader workers")
+    num_workers_ui = mo.ui.slider(0, 4, value=0, step=1, label="DataLoader workers")
 
     original_model_ui = mo.ui.text(
         value="runwayml/stable-diffusion-v1-5",
@@ -317,6 +315,11 @@ def _(
             mo.hstack([random_grid_ui, interp_pairs_ui, interp_steps_ui]),
             mo.hstack([enable_lpips_ui, enable_umap_ui, save_grids_ui]),
             mo.hstack([run_analysis_ui, export_ui]),
+            mo.md(
+                "**How to run:** execute the notebook once so all cells are registered, "
+                "then click **Run posterior analysis**. Progress and logs appear in the "
+                "**Analysis Runner** section below the resolved configuration."
+            ),
         ]
     )
     return (
@@ -379,8 +382,6 @@ def _(
     re,
     resize_and_normalize,
     scipy_stats,
-    sklearn_decomposition,
-    sklearn_preprocessing,
     time,
     torch,
     tqdm,
@@ -690,12 +691,18 @@ def _(
     ) -> dict[str, Any]:
         rng = np.random.default_rng(SEED)
         t0 = time.time()
+        print(f"[vae_posterior_analysis] Loading checkpoint: {spec.label}", flush=True)
         if spec.role == "baseline":
             vae = load_original_vae(original_model, original_subfolder, device, dtype)
         else:
             if config_path is None:
                 raise ValueError("config_path is required for finetuned checkpoints.")
             vae = load_finetuned_vae(config_path, spec.path, device, dtype)
+        print(
+            "[vae_posterior_analysis] "
+            f"Analyzing {spec.label}: {len(loader.dataset)} images, {len(loader)} batches",
+            flush=True,
+        )
 
         lpips_model = make_lpips_model(device, enable_lpips)
         mu_values: list[np.ndarray] = []
@@ -716,7 +723,14 @@ def _(
         total_images = 0
         latent_shape = None
 
-        for batch in tqdm(loader, desc=f"Analyze {spec.label}", leave=False):
+        for batch in tqdm(
+            loader,
+            desc=f"{spec.label}: posterior",
+            total=len(loader),
+            unit="batch",
+            dynamic_ncols=True,
+            leave=True,
+        ):
             x_in = batch["pixel_values"]
             paths = list(batch["path"])
             x, mu, sigma, z, mode = encode_batch(vae, x_in, device, dtype)
@@ -819,6 +833,7 @@ def _(
         if device.type == "cuda":
             torch.cuda.empty_cache()
         gc.collect()
+        print(f"[vae_posterior_analysis] Finished checkpoint: {spec.label}", flush=True)
         return {"summary": summary, "arrays": arrays}
 
     def covariance_summary(vectors: np.ndarray, feature_cap: int) -> dict[str, float]:
@@ -846,20 +861,25 @@ def _(
         corr = np.corrcoef(xs, rowvar=False)
         mask = ~np.eye(corr.shape[0], dtype=bool)
         out["corr_offdiag_abs_mean"] = float(np.nanmean(np.abs(corr[mask])))
-        if sklearn_decomposition is None:
-            return out
-        n_components = min(20, x.shape[0], x.shape[1])
+        n_components = min(20, x.shape[0] - 1, x.shape[1])
         if n_components < 2:
             return out
-        pca = sklearn_decomposition.PCA(n_components=n_components, svd_solver="randomized", random_state=SEED)
-        pca.fit(x)
-        ratios = np.asarray(pca.explained_variance_ratio_, dtype=np.float64)
+        try:
+            _, singular_values, _ = np.linalg.svd(x, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return out
+        eigenvalues = (singular_values ** 2) / max(1, x.shape[0] - 1)
+        eigenvalues = eigenvalues[:n_components]
+        total_variance = float(np.sum(eigenvalues))
+        if total_variance <= 0.0:
+            return out
+        ratios = np.asarray(eigenvalues / total_variance, dtype=np.float64)
         probs = ratios / max(float(ratios.sum()), 1e-12)
         out["effective_rank"] = float(np.exp(-np.sum(probs * np.log(np.clip(probs, 1e-12, None)))))
         for idx in range(min(3, ratios.size)):
             out[f"pca_explained_var_{idx + 1}"] = float(ratios[idx])
-        for idx in range(min(10, pca.explained_variance_.size)):
-            out[f"cov_eigenvalue_{idx + 1}"] = float(pca.explained_variance_[idx])
+        for idx in range(min(10, eigenvalues.size)):
+            out[f"cov_eigenvalue_{idx + 1}"] = float(eigenvalues[idx])
         return out
 
     def gaussian_summary(values: np.ndarray, shapiro_cap: int) -> dict[str, float]:
@@ -979,13 +999,19 @@ def _(
 
     def compute_embeddings(results: dict[str, Any], enable_umap: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
         x, labels = combined_latent_vectors(results)
-        if x.size == 0 or x.shape[0] < 3 or sklearn_decomposition is None or sklearn_preprocessing is None:
+        if x.size == 0 or x.shape[0] < 3:
             return pd.DataFrame(), pd.DataFrame()
-        scaler = sklearn_preprocessing.StandardScaler(with_mean=True, with_std=True)
-        xs = scaler.fit_transform(x)
+        xs = np.asarray(x, dtype=np.float64)
+        xs = np.nan_to_num(xs, nan=0.0, posinf=0.0, neginf=0.0)
+        xs = xs - xs.mean(axis=0, keepdims=True)
+        xs = xs / (xs.std(axis=0, keepdims=True) + 1e-8)
         n_components = min(3, xs.shape[0], xs.shape[1])
-        pca = sklearn_decomposition.PCA(n_components=n_components, random_state=SEED)
-        xp = pca.fit_transform(xs)
+        try:
+            u, singular_values, _ = np.linalg.svd(xs, full_matrices=False)
+            xp = u[:, :n_components] * singular_values[:n_components]
+        except np.linalg.LinAlgError as exc:
+            print(f"[vae_posterior_analysis] PCA skipped: {exc}", flush=True)
+            return pd.DataFrame(), pd.DataFrame()
         pca_df = pd.DataFrame(
             {
                 "checkpoint": labels,
@@ -996,9 +1022,12 @@ def _(
         )
         umap_df = pd.DataFrame()
         if enable_umap and umap_module is not None and xs.shape[0] >= 10:
-            reducer = umap_module.UMAP(n_components=2, random_state=SEED, n_neighbors=min(15, xs.shape[0] - 1))
-            xu = reducer.fit_transform(xs)
-            umap_df = pd.DataFrame({"checkpoint": labels, "umap1": xu[:, 0], "umap2": xu[:, 1]})
+            try:
+                reducer = umap_module.UMAP(n_components=2, random_state=SEED, n_neighbors=min(15, xs.shape[0] - 1))
+                xu = reducer.fit_transform(xs)
+                umap_df = pd.DataFrame({"checkpoint": labels, "umap1": xu[:, 0], "umap2": xu[:, 1]})
+            except Exception as exc:
+                print(f"[vae_posterior_analysis] UMAP skipped: {type(exc).__name__}: {exc}", flush=True)
         return pca_df, umap_df
 
     def tensor_to_display_array(tensor: torch.Tensor, normalization_mode: str) -> np.ndarray:
@@ -1160,12 +1189,16 @@ def _(
         if "baseline_distance" in summary_df:
             drift = summary_df.loc[summary_df["role"] != "baseline", "baseline_distance"].max()
             lines.append(f"- Maximum baseline latent distribution distance: {drift:.6g}.")
+        try:
+            summary_table = summary_df.to_markdown(index=False)
+        except ImportError:
+            summary_table = "```\n" + summary_df.to_string(index=False) + "\n```"
         lines.extend(
             [
                 "",
                 "## Summary Table",
                 "",
-                summary_df.to_markdown(index=False),
+                summary_table,
                 "",
                 "## Saved Grids",
                 "",
@@ -1280,11 +1313,17 @@ def _(
 
 
 @app.cell
-def _(checkpoint_table, key, mo):
+def _(checkpoint_table, key, mo, run_analysis_ui):
+    run_status = (
+        "Run requested. The Analysis Runner cell will load/cache results or compute all checkpoints."
+        if run_analysis_ui.value
+        else "Waiting. Click **Run posterior analysis** after setting inputs."
+    )
     mo.vstack(
         [
             mo.md("## Resolved run configuration"),
             mo.md(f"Cache key: `{key}`"),
+            mo.md(f"**Run status:** {run_status}"),
             mo.ui.table(checkpoint_table),
             mo.md(
                 "Missing finetuned checkpoint paths will be reported as errors during analysis. "
@@ -1316,8 +1355,10 @@ def _(
     resolve_dtype,
     run_analysis_ui,
     torch,
+    tqdm,
     traceback,
 ):
+    mo.md("## Analysis Runner")
     if not run_analysis_ui.value:
         analysis_state: dict[str, Any] = {
             "ready": False,
@@ -1332,59 +1373,127 @@ def _(
         cache_root = Path(analysis_config["cache_root"])
         cache_root.mkdir(parents=True, exist_ok=True)
         cache_path = cache_root / f"{key}.pt"
+        partial_cache_path = cache_root / f"{key}.partial.pt"
         if analysis_config["use_cache"] and cache_path.exists() and not analysis_config["force_recompute"]:
             analysis_state = torch.load(cache_path, map_location="cpu", weights_only=False)
             analysis_state["message"] = f"Loaded cached analysis from {cache_path}"
         else:
-            device = resolve_device(analysis_config["device"])
-            dtype = resolve_dtype(analysis_config["precision"], device)
-            dataset = PosteriorImageDataset(
-                analysis_config["dataset_root"],
-                analysis_config["image_size"],
-                analysis_config["normalization_mode"],
-                analysis_config["max_images"],
-            )
-            loader = DataLoader(
-                dataset,
-                batch_size=analysis_config["batch_size"],
-                shuffle=False,
-                num_workers=0,
-                pin_memory=device.type == "cuda",
-            )
             results = {}
-            summaries = []
-            for spec in all_specs:
-                try:
-                    if spec.role != "baseline" and not Path(spec.path).exists():
-                        raise FileNotFoundError(f"Checkpoint does not exist: {spec.path}")
-                    result = analyze_checkpoint(
-                        spec,
-                        config_path=analysis_config["finetuned_config"],
-                        original_model=analysis_config["original_model"],
-                        original_subfolder=analysis_config["original_subfolder"],
-                        loader=loader,
-                        device=device,
-                        dtype=dtype,
-                        flat_sample_cap=analysis_config["flat_sample_cap"],
-                        latent_vector_cap=analysis_config["latent_vector_cap"],
-                        feature_cap=analysis_config["feature_cap"],
-                        shapiro_cap=analysis_config["shapiro_cap"],
-                        enable_lpips=analysis_config["enable_lpips"],
+            try:
+                print("[vae_posterior_analysis] Starting posterior analysis", flush=True)
+                print("[vae_posterior_analysis] Resolving device and dataset", flush=True)
+                device = resolve_device(analysis_config["device"])
+                dtype = resolve_dtype(analysis_config["precision"], device)
+                dataset = PosteriorImageDataset(
+                    analysis_config["dataset_root"],
+                    analysis_config["image_size"],
+                    analysis_config["normalization_mode"],
+                    analysis_config["max_images"],
+                )
+                loader = DataLoader(
+                    dataset,
+                    batch_size=analysis_config["batch_size"],
+                    shuffle=False,
+                    num_workers=0,
+                    pin_memory=device.type == "cuda",
+                )
+                if (
+                    analysis_config["use_cache"]
+                    and partial_cache_path.exists()
+                    and not analysis_config["force_recompute"]
+                ):
+                    partial_state = torch.load(partial_cache_path, map_location="cpu", weights_only=False)
+                    results = dict(partial_state.get("results", {}))
+                    print(
+                        "[vae_posterior_analysis] "
+                        f"Resuming {len(results)} cached checkpoint result(s) from {partial_cache_path}",
+                        flush=True,
                     )
-                except RuntimeError as exc:
-                    if "out of memory" in str(exc).lower():
-                        if device.type == "cuda":
-                            torch.cuda.empty_cache()
-                        result = {
-                            "summary": {
-                                "checkpoint": spec.label,
-                                "role": spec.role,
-                                "path": spec.path,
-                                "error": f"CUDA OOM: {exc}",
-                            },
-                            "arrays": {},
-                        }
-                    else:
+
+                def save_partial_cache(stage: str) -> None:
+                    if not analysis_config["use_cache"]:
+                        return
+                    torch.save(
+                        {
+                            "ready": False,
+                            "version": NOTEBOOK_VERSION,
+                            "config": analysis_config,
+                            "results": results,
+                            "completed": list(results.keys()),
+                            "stage": stage,
+                            "message": (
+                                f"Partial analysis cache after {stage}: "
+                                f"{len(results)}/{len(all_specs)} checkpoint(s)."
+                            ),
+                        },
+                        partial_cache_path,
+                    )
+                    print(
+                        "[vae_posterior_analysis] "
+                        f"Saved partial cache ({stage}) to {partial_cache_path}",
+                        flush=True,
+                    )
+
+                for spec in tqdm(
+                    all_specs,
+                    desc="All checkpoints",
+                    total=len(all_specs),
+                    unit="ckpt",
+                    dynamic_ncols=True,
+                    leave=True,
+                ):
+                    cached_result = results.get(spec.label)
+                    cached_summary = (
+                        cached_result.get("summary", {}) if isinstance(cached_result, dict) else {}
+                    )
+                    if cached_result is not None and not cached_summary.get("error"):
+                        print(
+                            "[vae_posterior_analysis] "
+                            f"Skipping {spec.label}; loaded from partial cache",
+                            flush=True,
+                        )
+                        continue
+                    try:
+                        if spec.role != "baseline" and not Path(spec.path).exists():
+                            raise FileNotFoundError(f"Checkpoint does not exist: {spec.path}")
+                        result = analyze_checkpoint(
+                            spec,
+                            config_path=analysis_config["finetuned_config"],
+                            original_model=analysis_config["original_model"],
+                            original_subfolder=analysis_config["original_subfolder"],
+                            loader=loader,
+                            device=device,
+                            dtype=dtype,
+                            flat_sample_cap=analysis_config["flat_sample_cap"],
+                            latent_vector_cap=analysis_config["latent_vector_cap"],
+                            feature_cap=analysis_config["feature_cap"],
+                            shapiro_cap=analysis_config["shapiro_cap"],
+                            enable_lpips=analysis_config["enable_lpips"],
+                        )
+                    except RuntimeError as exc:
+                        if "out of memory" in str(exc).lower():
+                            if device.type == "cuda":
+                                torch.cuda.empty_cache()
+                            result = {
+                                "summary": {
+                                    "checkpoint": spec.label,
+                                    "role": spec.role,
+                                    "path": spec.path,
+                                    "error": f"CUDA OOM: {exc}",
+                                },
+                                "arrays": {},
+                            }
+                        else:
+                            result = {
+                                "summary": {
+                                    "checkpoint": spec.label,
+                                    "role": spec.role,
+                                    "path": spec.path,
+                                    "error": traceback.format_exc(limit=4),
+                                },
+                                "arrays": {},
+                            }
+                    except Exception:
                         result = {
                             "summary": {
                                 "checkpoint": spec.label,
@@ -1394,74 +1503,107 @@ def _(
                             },
                             "arrays": {},
                         }
-                except Exception:
-                    result = {
-                        "summary": {
-                            "checkpoint": spec.label,
-                            "role": spec.role,
-                            "path": spec.path,
-                            "error": traceback.format_exc(limit=4),
-                        },
-                        "arrays": {},
-                    }
-                results[spec.label] = result
-                summaries.append(result["summary"])
+                    results[spec.label] = result
+                    save_partial_cache(f"checkpoint:{spec.label}")
 
-            summary_df = pd.DataFrame(summaries)
-            summary_df = compute_baseline_deltas(summary_df)
+                print("[vae_posterior_analysis] Building summary tables", flush=True)
+                summaries = [
+                    results[spec.label]["summary"]
+                    for spec in all_specs
+                    if spec.label in results
+                ]
+                run_summary = pd.DataFrame(summaries)
+                run_summary = compute_baseline_deltas(run_summary)
+                save_partial_cache("summary")
 
-            grid_paths = []
-            if analysis_config["save_grids"]:
+                run_grid_paths = []
+                if analysis_config["save_grids"]:
+                    try:
+                        print("[vae_posterior_analysis] Generating reconstruction/interpolation grids", flush=True)
+                        health, run_grid_paths = generate_image_grids(
+                            all_specs,
+                            config_path=analysis_config["finetuned_config"],
+                            original_model=analysis_config["original_model"],
+                            original_subfolder=analysis_config["original_subfolder"],
+                            dataset=dataset,
+                            output_root=Path(analysis_config["output_root"]) / "grids",
+                            normalization_mode=analysis_config["normalization_mode"],
+                            device=device,
+                            dtype=dtype,
+                            random_grid_count=analysis_config["random_grid_count"],
+                            interp_pairs=analysis_config["interp_pairs"],
+                            interp_steps=analysis_config["interp_steps"],
+                        )
+                        for label, row in health.items():
+                            mask = run_summary["checkpoint"] == label
+                            for col, value in row.items():
+                                run_summary.loc[mask, col] = value
+                    except Exception as exc:
+                        run_grid_paths = [f"Grid generation failed: {type(exc).__name__}: {exc}"]
+
+                print("[vae_posterior_analysis] Computing readiness score and embeddings", flush=True)
+                run_summary = readiness_score(run_summary)
                 try:
-                    health, grid_paths = generate_image_grids(
-                        all_specs,
-                        config_path=analysis_config["finetuned_config"],
-                        original_model=analysis_config["original_model"],
-                        original_subfolder=analysis_config["original_subfolder"],
-                        dataset=dataset,
-                        output_root=Path(analysis_config["output_root"]) / "grids",
-                        normalization_mode=analysis_config["normalization_mode"],
-                        device=device,
-                        dtype=dtype,
-                        random_grid_count=analysis_config["random_grid_count"],
-                        interp_pairs=analysis_config["interp_pairs"],
-                        interp_steps=analysis_config["interp_steps"],
+                    run_pca, run_umap = compute_embeddings(
+                        {label: result for label, result in results.items() if result.get("arrays", {}).get("latent_vectors") is not None},
+                        analysis_config["enable_umap"],
                     )
-                    for label, row in health.items():
-                        mask = summary_df["checkpoint"] == label
-                        for col, value in row.items():
-                            summary_df.loc[mask, col] = value
                 except Exception as exc:
-                    grid_paths = [f"Grid generation failed: {type(exc).__name__}: {exc}"]
-
-            summary_df = readiness_score(summary_df)
-            pca_df, umap_df = compute_embeddings(
-                {label: result for label, result in results.items() if result.get("arrays", {}).get("latent_vectors") is not None},
-                analysis_config["enable_umap"],
-            )
-            analysis_state = {
-                "ready": True,
-                "version": NOTEBOOK_VERSION,
-                "config": analysis_config,
-                "results": results,
-                "summary": summary_df,
-                "pca": pca_df,
-                "umap": umap_df,
-                "grid_paths": grid_paths,
-                "message": f"Computed analysis for {len(results)} checkpoints.",
-            }
-            if analysis_config["use_cache"]:
-                torch.save(analysis_state, cache_path)
-                analysis_state["message"] += f" Cached to {cache_path}."
+                    print(
+                        "[vae_posterior_analysis] "
+                        f"Embedding computation skipped: {type(exc).__name__}: {exc}",
+                        flush=True,
+                    )
+                    run_pca, run_umap = pd.DataFrame(), pd.DataFrame()
+                save_partial_cache("embeddings")
+                analysis_state = {
+                    "ready": True,
+                    "version": NOTEBOOK_VERSION,
+                    "config": analysis_config,
+                    "results": results,
+                    "summary": run_summary,
+                    "pca": run_pca,
+                    "umap": run_umap,
+                    "grid_paths": run_grid_paths,
+                    "message": f"Computed analysis for {len(results)} checkpoints.",
+                }
+                if analysis_config["use_cache"]:
+                    print("[vae_posterior_analysis] Saving analysis cache", flush=True)
+                    torch.save(analysis_state, cache_path)
+                    analysis_state["message"] += f" Cached to {cache_path}."
+                print("[vae_posterior_analysis] Analysis complete", flush=True)
+            except Exception:
+                message = traceback.format_exc(limit=6)
+                analysis_state = {
+                    "ready": False,
+                    "version": NOTEBOOK_VERSION,
+                    "config": analysis_config,
+                    "results": results,
+                    "summary": pd.DataFrame(
+                        [
+                            result.get("summary", {})
+                            for result in results.values()
+                            if isinstance(result, dict)
+                        ]
+                    ),
+                    "pca": pd.DataFrame(),
+                    "umap": pd.DataFrame(),
+                    "grid_paths": [],
+                    "message": (
+                        "Analysis failed, but completed checkpoint results were "
+                        f"kept in the partial cache: {partial_cache_path}\n\n{message}"
+                    ),
+                }
+                print(analysis_state["message"], flush=True)
     mo.md(analysis_state["message"])
     return (analysis_state,)
 
 
 @app.cell
-def _(analysis_state: "dict[str, Any]", mo):
+def tedt(analysis_state: "dict[str, Any]", mo):
     summary_df = analysis_state["summary"]
     if summary_df.empty:
-        mo.md("No summary table yet.")
+        mo.output.replace(mo.md("No summary table yet."))
     else:
         visible_cols = [
             col
@@ -1494,7 +1636,7 @@ def _(analysis_state: "dict[str, Any]", mo):
             ]
             if col in summary_df.columns
         ]
-        mo.vstack([mo.md("## Summary and Flow Matching readiness"), mo.ui.table(summary_df[visible_cols])])
+        mo.output.replace(mo.vstack([mo.md("## Summary and Flow Matching readiness"), mo.ui.table(summary_df[visible_cols])]))
     return (summary_df,)
 
 
@@ -1509,7 +1651,7 @@ def _(
     dist_df = pd.DataFrame()
     stat_selector = None
     if not analysis_state["ready"] or plotly_express is None:
-        mo.md("Interactive Plotly distribution plots are unavailable until analysis is ready and Plotly is installed.")
+        mo.output.replace(mo.md("Interactive Plotly distribution plots are unavailable until analysis is ready and Plotly is installed."))
     else:
         dist_frames = []
         for key_name in ["mu", "sigma", "z", "latent_norm"]:
@@ -1517,17 +1659,17 @@ def _(
             dist_frames.append(frame)
         dist_df = pd.concat(dist_frames, ignore_index=True)
         stat_selector = mo.ui.dropdown(options=sorted(dist_df["stat"].unique()), value="mu", label="Distribution")
-        mo.vstack([mo.md("## Distribution diagnostics"), stat_selector])
+        mo.output.replace(mo.vstack([mo.md("## Distribution diagnostics"), stat_selector]))
     return dist_df, stat_selector
 
 
 @app.cell
 def _(dist_df, mo, plotly_express, stat_selector):
     if stat_selector is None or dist_df.empty or plotly_express is None:
-        mo.md("No distribution plot selected.")
+        mo.output.replace(mo.md("No distribution plot selected."))
     else:
         subset = dist_df[dist_df["stat"] == stat_selector.value]
-        fig = plotly_express.histogram(
+        fig_dist = plotly_express.histogram(
             subset,
             x="value",
             color="checkpoint",
@@ -1537,15 +1679,15 @@ def _(dist_df, mo, plotly_express, stat_selector):
             marginal="box",
             title=f"{stat_selector.value} distribution by checkpoint",
         )
-        fig.update_layout(height=520)
-        mo.ui.plotly(fig)
+        fig_dist.update_layout(height=520)
+        mo.output.replace(mo.ui.plotly(fig_dist))
     return
 
 
 @app.cell
 def _(mo, plotly_express, summary_df):
     if summary_df.empty or plotly_express is None:
-        mo.md("No trend plots available.")
+        mo.output.replace(mo.md("No trend plots available."))
     else:
         trend_cols = [
             col
@@ -1564,7 +1706,7 @@ def _(mo, plotly_express, summary_df):
             if col in summary_df.columns
         ]
         if not trend_cols:
-            mo.md("Summary does not contain plottable trend columns.")
+            mo.output.replace(mo.md("Summary does not contain plottable trend columns."))
         else:
             trend_long = summary_df.melt(
                 id_vars=["checkpoint", "role"],
@@ -1572,7 +1714,7 @@ def _(mo, plotly_express, summary_df):
                 var_name="metric",
                 value_name="value",
             )
-            fig = plotly_express.line(
+            fig_trend = plotly_express.line(
                 trend_long,
                 x="checkpoint",
                 y="value",
@@ -1580,8 +1722,8 @@ def _(mo, plotly_express, summary_df):
                 markers=True,
                 title="Checkpoint trends",
             )
-            fig.update_layout(height=520)
-            mo.vstack([mo.md("## Checkpoint trends"), mo.ui.plotly(fig)])
+            fig_trend.update_layout(height=520)
+            mo.output.replace(mo.vstack([mo.md("## Checkpoint trends"), mo.ui.plotly(fig_trend)]))
     return
 
 
@@ -1589,11 +1731,11 @@ def _(mo, plotly_express, summary_df):
 def _(analysis_state: "dict[str, Any]", mo, plotly_go, scipy_stats):
     qq_selector = None
     if not analysis_state["ready"] or plotly_go is None or scipy_stats is None:
-        mo.md("QQ plots require completed analysis, Plotly, and SciPy.")
+        mo.output.replace(mo.md("QQ plots require completed analysis, Plotly, and SciPy."))
     else:
         labels = [label for label, result in analysis_state["results"].items() if "z" in result.get("arrays", {})]
         qq_selector = mo.ui.dropdown(options=labels, value=labels[0] if labels else None, label="QQ checkpoint")
-        mo.vstack([mo.md("## Gaussianity QQ plot"), qq_selector])
+        mo.output.replace(mo.vstack([mo.md("## Gaussianity QQ plot"), qq_selector]))
     return (qq_selector,)
 
 
@@ -1607,7 +1749,7 @@ def _(
     scipy_stats,
 ):
     if qq_selector is None or qq_selector.value is None or plotly_go is None or scipy_stats is None:
-        mo.md("No QQ plot selected.")
+        mo.output.replace(mo.md("No QQ plot selected."))
     else:
         values = np.asarray(analysis_state["results"][qq_selector.value]["arrays"]["z"], dtype=np.float64)
         values = values[np.isfinite(values)]
@@ -1617,13 +1759,13 @@ def _(
             values = values[idx]
         probs = (np.arange(values.size) + 0.5) / max(values.size, 1)
         normal_q = scipy_stats.norm.ppf(probs)
-        fig = plotly_go.Figure()
-        fig.add_trace(plotly_go.Scatter(x=normal_q, y=values, mode="markers", name=qq_selector.value))
+        fig_qq = plotly_go.Figure()
+        fig_qq.add_trace(plotly_go.Scatter(x=normal_q, y=values, mode="markers", name=qq_selector.value))
         lo = float(min(normal_q.min(), values.min()))
         hi = float(max(normal_q.max(), values.max()))
-        fig.add_trace(plotly_go.Scatter(x=[lo, hi], y=[lo, hi], mode="lines", name="N(0,1)"))
-        fig.update_layout(title=f"QQ plot for z: {qq_selector.value}", xaxis_title="Normal quantile", yaxis_title="Observed z quantile", height=520)
-        mo.ui.plotly(fig)
+        fig_qq.add_trace(plotly_go.Scatter(x=[lo, hi], y=[lo, hi], mode="lines", name="N(0,1)"))
+        fig_qq.update_layout(title=f"QQ plot for z: {qq_selector.value}", xaxis_title="Normal quantile", yaxis_title="Observed z quantile", height=520)
+        mo.output.replace(mo.ui.plotly(fig_qq))
     return
 
 
@@ -1632,7 +1774,7 @@ def _(analysis_state: "dict[str, Any]", mo, plotly_express):
     pca_df = analysis_state["pca"]
     umap_df = analysis_state["umap"]
     if pca_df.empty or plotly_express is None:
-        mo.md("PCA/UMAP plots are unavailable until analysis is ready and scikit-learn/Plotly are installed.")
+        mo.output.replace(mo.md("PCA/UMAP plots are unavailable until analysis is ready and Plotly is installed."))
     else:
         fig2 = plotly_express.scatter(
             pca_df,
@@ -1662,7 +1804,7 @@ def _(analysis_state: "dict[str, Any]", mo, plotly_express):
             )
             figu.update_layout(height=520)
             plots.append(mo.ui.plotly(figu))
-        mo.vstack([mo.md("## Latent manifold analysis"), *plots])
+        mo.output.replace(mo.vstack([mo.md("## Latent manifold analysis"), *plots]))
     return
 
 
@@ -1670,9 +1812,9 @@ def _(analysis_state: "dict[str, Any]", mo, plotly_express):
 def _(analysis_state: "dict[str, Any]", mo):
     grid_paths = analysis_state.get("grid_paths", [])
     if not grid_paths:
-        mo.md("No image grids saved yet.")
+        mo.output.replace(mo.md("No image grids saved yet."))
     else:
-        mo.vstack([mo.md("## Saved image grids"), mo.md("\n".join(f"- `{path}`" for path in grid_paths))])
+        mo.output.replace(mo.vstack([mo.md("## Saved image grids"), mo.md("\n".join(f"- `{path}`" for path in grid_paths))]))
     return
 
 
@@ -1686,9 +1828,9 @@ def _(
     mo,
 ):
     if not export_ui.value:
-        mo.md("Press 'Export summary/report' after analysis to write CSV, JSON, and Markdown outputs.")
+        mo.output.replace(mo.md("Press 'Export summary/report' after analysis to write CSV, JSON, and Markdown outputs."))
     elif not analysis_state["ready"]:
-        mo.md("Run analysis before exporting.")
+        mo.output.replace(mo.md("Run analysis before exporting."))
     else:
         paths = export_report(
             analysis_state["summary"],
@@ -1696,10 +1838,45 @@ def _(
             analysis_config,
             analysis_state.get("grid_paths", []),
         )
-        mo.md(
+        mo.output.replace(mo.md(
             "## Exported outputs\n\n"
             + "\n".join(f"- **{name}**: `{path}`" for name, path in paths.items())
-        )
+        ))
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
     return
 
 
