@@ -335,8 +335,11 @@ def test_threshold_from_config_reaches_audit_discard_helper(tmp_path: Path, monk
     assert seen_thresholds == [0.25]
 
 
-def test_experiment_b_filter_rejects_binary_classifier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_experiment_b_filter_accepts_binary_classifier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Binary fg/bg classifier must be accepted by audit_generated_candidates (no multiclass-only restriction)."""
     cfg = _cfg_for_dataset(_make_yolo_dataset(tmp_path))
+    cfg.experiment_b.invalid_instance_ratio_threshold = 1.0
+    seen_modes: list[str] = []
 
     class FakeModel:
         def eval(self):
@@ -352,10 +355,21 @@ def test_experiment_b_filter_rejects_binary_classifier(tmp_path: Path, monkeypat
         "load_filter_from_run_or_checkpoint",
         lambda **kwargs: (FakeModel(), {"classifier_mode": "binary"}, 0.5, 16, 1.0, None),
     )
+    monkeypatch.setattr(
+        yolo_experiment_b,
+        "audit_generated_layout_dataset",
+        lambda **kwargs: ([], [{"generated_image_id": 1, "n_instances": 1, "n_negative_instances": 0}], {}),
+    )
+    monkeypatch.setattr(yolo_experiment_b, "export_audit_results", lambda **kwargs: None)
+    monkeypatch.setattr(
+        yolo_experiment_b,
+        "_write_filtered_annotations_from_audit",
+        lambda **kwargs: {"n_invalid_annotations_removed": 0, "n_annotations_unfiltered": 1},
+    )
 
-    with pytest.raises(ValueError, match="requires the multiclass"):
-        yolo_experiment_b.audit_generated_candidates(
-            cfg=cfg,
-            generated_dataset_dir=tmp_path / "generated",
-            device="cpu",
-        )
+    # Must not raise — binary is now allowed
+    yolo_experiment_b.audit_generated_candidates(
+        cfg=cfg,
+        generated_dataset_dir=tmp_path / "generated",
+        device="cpu",
+    )

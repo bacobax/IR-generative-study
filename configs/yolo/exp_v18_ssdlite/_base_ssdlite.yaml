@@ -1,0 +1,68 @@
+data:
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  test_dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
+  batch_size: 16
+  workers: 8
+  image_size: 256
+  cache_images: true
+
+model:
+  backend: ssdlite
+  weights: ""
+  task: detect
+  ssdlite:
+    input_channels: 3
+    n_feature_maps: 3
+    anchor_min_sizes: [0.07, 0.15, 0.33]
+    anchor_max_sizes: [0.15, 0.33, 0.60]
+    anchor_aspect_ratios: [2.0]
+    conf_threshold: 0.25
+    nms_iou_threshold: 0.45
+    iou_pos_threshold: 0.50
+    iou_neg_threshold: 0.40
+
+training:
+  epochs: 75
+  lr0: 0.001
+  optimizer: AdamW
+  momentum: 0.937
+  weight_decay: 0.0005
+  seed: 7
+  deterministic: true
+  patience: 20
+  cos_lr: true
+  mixed_precision: auto
+  grad_clip_norm: 10.0
+  val_interval: 5
+  tensorboard_image_interval: 5
+  tensorboard_max_images: 4
+  tensorboard_prediction_conf: 0.25
+
+loss:
+  box_weight: 5.0
+  giou_weight: 2.0
+  objectness_weight: 1.0
+  no_object_weight: 2.0
+  class_weight: 1.0
+  neg_pos_ratio: 3.0
+
+augment:
+  enabled: false
+
+baseline:
+  mode: none
+
+evaluation:
+  dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
+  split: test
+  save_json: true
+  save_hybrid: false
+  conf: 0.25
+  iou: 0.45
+  per_slice_enabled: true
+  slice_threshold_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+output:
+  runs_root: artifacts/runs/yolo/exp_v18_ssdlite
+  checkpoints_root: artifacts/checkpoints/yolo/exp_v18_ssdlite
+  analysis_root: artifacts/analysis/yolo/exp_v18_ssdlite

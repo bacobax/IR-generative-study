@@ -1,0 +1,185 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.23.9",
+    "script_metadata_hash": null
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "aba57583519fb254d73abfb5041e8b07",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stderr",
+          "text": "/export/livia/home/vision/Fbassignana/miniconda3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:86: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.\n  @torch.cuda.amp.autocast(enabled=False)\n/export/livia/home/vision/Fbassignana/miniconda3/envs/diffusers-dev/lib/python3.10/site-packages/generative/networks/layers/vector_quantizer.py:124: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.\n  @torch.cuda.amp.autocast(enabled=False)\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "vblA",
+      "code_hash": "1064540bd2fcd5125246bf759ed4ba2a",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "6627b8142a8306a52bdec10e73bf4308",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"fm-conditioning-quality-stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2\">FM Conditioning Quality \u2014 <code>stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2</code></h1>\n<span class=\"paragraph\">Visual test of layout-conditioning fidelity on the single-class v18 dataset (<code>person</code>).</span>\n<span class=\"paragraph\"><strong>Part 1</strong> \u2014 Person-count sweep: does the generator render 1\u2026N persons?\nLayouts use novel random positions sampled from the real bbox-size distribution.</span>\n<span class=\"paragraph\"><strong>Part 2</strong> \u2014 Slice sweep: does the generator respond to conditioning on\nunderrepresented <code>(size_bin, position_bin)</code> cells?</span>\n<span class=\"paragraph\">Each row: <strong>layout sketch</strong> | <strong>generated + GT boxes (green)</strong> | <strong>YOLOv11n detections (red)</strong>.</span>\n<blockquote>\n<span class=\"paragraph\">Edit the <strong>Config</strong> cell above to change device, steps, counts, etc.</span>\n</blockquote></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "738a9cc42eeba7073e2a4212f6fe8764",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-callout-output data-html='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eModels loaded on &#92;u003cstrong&#92;u003ecuda:0&#92;u003c/strong&#92;u003e.&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-kind='&quot;success&quot;'></marimo-callout-output>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "ac6fb7528999b6289d877a7c15ddcc3b",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><hr />\n<h2 id=\"part-1-person-count-sweep\">Part 1 \u2014 Person Count Sweep</h2></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Xref",
+      "code_hash": "58c820090eeb4546a8eb4e9af7bff362",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='Xref-0' random-id='ff3feb22-28ef-2282-9e4a-75c4066f79de'><marimo-plotly data-initial-value='{}' data-label='null' data-figure='{&quot;data&quot;:[{&quot;hovertemplate&quot;:&quot;persons per image=%{x}&#92;u003cbr&#92;u003eimage count=%{y}&#92;u003cextra&#92;u003e&#92;u003c/extra&#92;u003e&quot;,&quot;legendgroup&quot;:&quot;&quot;,&quot;marker&quot;:{&quot;color&quot;:&quot;#636efa&quot;,&quot;pattern&quot;:{&quot;shape&quot;:&quot;&quot;}},&quot;name&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;v&quot;,&quot;showlegend&quot;:false,&quot;textposition&quot;:&quot;auto&quot;,&quot;x&quot;:{&quot;dtype&quot;:&quot;i1&quot;,&quot;bdata&quot;:&quot;AAECAwQFBgcICQoLDA0ODxAREhM=&quot;},&quot;xaxis&quot;:&quot;x&quot;,&quot;y&quot;:{&quot;dtype&quot;:&quot;i2&quot;,&quot;bdata&quot;:&quot;BgCWCu0FdgRxAkcBegBRACQAHgAYABQAEwAdAA0AAwAIAAIAAwAIAA==&quot;},&quot;yaxis&quot;:&quot;y&quot;,&quot;type&quot;:&quot;bar&quot;}],&quot;layout&quot;:{&quot;template&quot;:{&quot;data&quot;:{&quot;histogram2dcontour&quot;:[{&quot;type&quot;:&quot;histogram2dcontour&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;choropleth&quot;:[{&quot;type&quot;:&quot;choropleth&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}],&quot;histogram2d&quot;:[{&quot;type&quot;:&quot;histogram2d&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;heatmap&quot;:[{&quot;type&quot;:&quot;heatmap&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;contourcarpet&quot;:[{&quot;type&quot;:&quot;contourcarpet&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}],&quot;contour&quot;:[{&quot;type&quot;:&quot;contour&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;surface&quot;:[{&quot;type&quot;:&quot;surface&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;mesh3d&quot;:[{&quot;type&quot;:&quot;mesh3d&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}],&quot;scatter&quot;:[{&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;#283442&quot;}},&quot;type&quot;:&quot;scatter&quot;}],&quot;parcoords&quot;:[{&quot;type&quot;:&quot;parcoords&quot;,&quot;line&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scatterpolargl&quot;:[{&quot;type&quot;:&quot;scatterpolargl&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;bar&quot;:[{&quot;error_x&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;},&quot;error_y&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;},&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;,&quot;width&quot;:0.5},&quot;pattern&quot;:{&quot;fillmode&quot;:&quot;overlay&quot;,&quot;size&quot;:10,&quot;solidity&quot;:0.2}},&quot;type&quot;:&quot;bar&quot;}],&quot;scattergeo&quot;:[{&quot;type&quot;:&quot;scattergeo&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scatterpolar&quot;:[{&quot;type&quot;:&quot;scatterpolar&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;histogram&quot;:[{&quot;marker&quot;:{&quot;pattern&quot;:{&quot;fillmode&quot;:&quot;overlay&quot;,&quot;size&quot;:10,&quot;solidity&quot;:0.2}},&quot;type&quot;:&quot;histogram&quot;}],&quot;scattergl&quot;:[{&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;#283442&quot;}},&quot;type&quot;:&quot;scattergl&quot;}],&quot;scatter3d&quot;:[{&quot;type&quot;:&quot;scatter3d&quot;,&quot;line&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}},&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scattermap&quot;:[{&quot;type&quot;:&quot;scattermap&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scattermapbox&quot;:[{&quot;type&quot;:&quot;scattermapbox&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scatterternary&quot;:[{&quot;type&quot;:&quot;scatterternary&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scattercarpet&quot;:[{&quot;type&quot;:&quot;scattercarpet&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;carpet&quot;:[{&quot;aaxis&quot;:{&quot;endlinecolor&quot;:&quot;#A2B1C6&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;minorgridcolor&quot;:&quot;#506784&quot;,&quot;startlinecolor&quot;:&quot;#A2B1C6&quot;},&quot;baxis&quot;:{&quot;endlinecolor&quot;:&quot;#A2B1C6&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;minorgridcolor&quot;:&quot;#506784&quot;,&quot;startlinecolor&quot;:&quot;#A2B1C6&quot;},&quot;type&quot;:&quot;carpet&quot;}],&quot;table&quot;:[{&quot;cells&quot;:{&quot;fill&quot;:{&quot;color&quot;:&quot;#506784&quot;},&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;}},&quot;header&quot;:{&quot;fill&quot;:{&quot;color&quot;:&quot;#2a3f5f&quot;},&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;}},&quot;type&quot;:&quot;table&quot;}],&quot;barpolar&quot;:[{&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;,&quot;width&quot;:0.5},&quot;pattern&quot;:{&quot;fillmode&quot;:&quot;overlay&quot;,&quot;size&quot;:10,&quot;solidity&quot;:0.2}},&quot;type&quot;:&quot;barpolar&quot;}],&quot;pie&quot;:[{&quot;automargin&quot;:true,&quot;type&quot;:&quot;pie&quot;}]},&quot;layout&quot;:{&quot;autotypenumbers&quot;:&quot;strict&quot;,&quot;colorway&quot;:[&quot;#636efa&quot;,&quot;#EF553B&quot;,&quot;#00cc96&quot;,&quot;#ab63fa&quot;,&quot;#FFA15A&quot;,&quot;#19d3f3&quot;,&quot;#FF6692&quot;,&quot;#B6E880&quot;,&quot;#FF97FF&quot;,&quot;#FECB52&quot;],&quot;font&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;},&quot;hovermode&quot;:&quot;closest&quot;,&quot;hoverlabel&quot;:{&quot;align&quot;:&quot;left&quot;},&quot;paper_bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;plot_bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;polar&quot;:{&quot;bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;angularaxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;},&quot;radialaxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;}},&quot;ternary&quot;:{&quot;bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;aaxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;},&quot;baxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;},&quot;caxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;}},&quot;coloraxis&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}},&quot;colorscale&quot;:{&quot;sequential&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]],&quot;sequentialminus&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]],&quot;diverging&quot;:[[0,&quot;#8e0152&quot;],[0.1,&quot;#c51b7d&quot;],[0.2,&quot;#de77ae&quot;],[0.3,&quot;#f1b6da&quot;],[0.4,&quot;#fde0ef&quot;],[0.5,&quot;#f7f7f7&quot;],[0.6,&quot;#e6f5d0&quot;],[0.7,&quot;#b8e186&quot;],[0.8,&quot;#7fbc41&quot;],[0.9,&quot;#4d9221&quot;],[1,&quot;#276419&quot;]]},&quot;xaxis&quot;:{&quot;gridcolor&quot;:&quot;#283442&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;,&quot;title&quot;:{&quot;standoff&quot;:15},&quot;zerolinecolor&quot;:&quot;#283442&quot;,&quot;automargin&quot;:true,&quot;zerolinewidth&quot;:2},&quot;yaxis&quot;:{&quot;gridcolor&quot;:&quot;#283442&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;,&quot;title&quot;:{&quot;standoff&quot;:15},&quot;zerolinecolor&quot;:&quot;#283442&quot;,&quot;automargin&quot;:true,&quot;zerolinewidth&quot;:2},&quot;scene&quot;:{&quot;xaxis&quot;:{&quot;backgroundcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;showbackground&quot;:true,&quot;ticks&quot;:&quot;&quot;,&quot;zerolinecolor&quot;:&quot;#C8D4E3&quot;,&quot;gridwidth&quot;:2},&quot;yaxis&quot;:{&quot;backgroundcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;showbackground&quot;:true,&quot;ticks&quot;:&quot;&quot;,&quot;zerolinecolor&quot;:&quot;#C8D4E3&quot;,&quot;gridwidth&quot;:2},&quot;zaxis&quot;:{&quot;backgroundcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;showbackground&quot;:true,&quot;ticks&quot;:&quot;&quot;,&quot;zerolinecolor&quot;:&quot;#C8D4E3&quot;,&quot;gridwidth&quot;:2}},&quot;shapedefaults&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;}},&quot;annotationdefaults&quot;:{&quot;arrowcolor&quot;:&quot;#f2f5fa&quot;,&quot;arrowhead&quot;:0,&quot;arrowwidth&quot;:1},&quot;geo&quot;:{&quot;bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;landcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;subunitcolor&quot;:&quot;#506784&quot;,&quot;showland&quot;:true,&quot;showlakes&quot;:true,&quot;lakecolor&quot;:&quot;rgb(17,17,17)&quot;},&quot;title&quot;:{&quot;x&quot;:0.05},&quot;updatemenudefaults&quot;:{&quot;bgcolor&quot;:&quot;#506784&quot;,&quot;borderwidth&quot;:0},&quot;sliderdefaults&quot;:{&quot;bgcolor&quot;:&quot;#C8D4E3&quot;,&quot;borderwidth&quot;:1,&quot;bordercolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;tickwidth&quot;:0},&quot;mapbox&quot;:{&quot;style&quot;:&quot;dark&quot;}}},&quot;xaxis&quot;:{&quot;anchor&quot;:&quot;y&quot;,&quot;domain&quot;:[0.0,1.0],&quot;title&quot;:{&quot;text&quot;:&quot;persons per image&quot;}},&quot;yaxis&quot;:{&quot;anchor&quot;:&quot;x&quot;,&quot;domain&quot;:[0.0,1.0],&quot;title&quot;:{&quot;text&quot;:&quot;image count&quot;}},&quot;legend&quot;:{&quot;tracegroupgap&quot;:0},&quot;title&quot;:{&quot;text&quot;:&quot;v18 full_train \u2014 person count distribution&quot;},&quot;barmode&quot;:&quot;relative&quot;,&quot;bargap&quot;:0.15,&quot;height&quot;:320}}' data-config='{}'></marimo-plotly></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "66397e8f8f40912f2f7465481bb5062b",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Generating 8 images (counts 1\u20138) \u2026\n  [1/8] count_1  \u2192  1 detected\n  [2/8] count_2  \u2192  3 detected\n  [3/8] count_3  \u2192  2 detected\n  [4/8] count_4  \u2192  2 detected\n  [5/8] count_5  \u2192  4 detected\n  [6/8] count_6  \u2192  4 detected\n  [7/8] count_7  \u2192  3 detected\n  [8/8] count_8  \u2192  7 detected\nPart 1 done.\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "80d6009bc6de99c1e286961ed56a1b83",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "14c26a8a56f7ec78cba74e0c5436892f",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><hr />\n<h2 id=\"part-2-slice-distribution-sweep\">Part 2 \u2014 Slice Distribution Sweep</h2></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "21745074b1337a8c90db607ef2851d4c",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='Kclp-0' random-id='fff0908f-c388-9833-2afd-cf6cde4d9424'><marimo-plotly data-initial-value='{}' data-label='null' data-figure='{&quot;data&quot;:[{&quot;colorscale&quot;:[[0.0,&quot;#440154&quot;],[0.1111111111111111,&quot;#482878&quot;],[0.2222222222222222,&quot;#3e4989&quot;],[0.3333333333333333,&quot;#31688e&quot;],[0.4444444444444444,&quot;#26828e&quot;],[0.5555555555555556,&quot;#1f9e89&quot;],[0.6666666666666666,&quot;#35b779&quot;],[0.7777777777777778,&quot;#6ece58&quot;],[0.8888888888888888,&quot;#b5de2b&quot;],[1.0,&quot;#fde725&quot;]],&quot;text&quot;:[[678,398,790,507,2,454,1098,515,1166],[459,490,745,547,119,727,935,715,869],[274,598,513,616,929,923,362,739,654]],&quot;texttemplate&quot;:&quot;%{text}&quot;,&quot;x&quot;:[&quot;top_left&quot;,&quot;top_center&quot;,&quot;top_right&quot;,&quot;middle_left&quot;,&quot;middle_center&quot;,&quot;middle_right&quot;,&quot;bottom_left&quot;,&quot;bottom_center&quot;,&quot;bottom_right&quot;],&quot;y&quot;:[&quot;small&quot;,&quot;medium&quot;,&quot;large&quot;],&quot;z&quot;:[[678,398,790,507,2,454,1098,515,1166],[459,490,745,547,119,727,935,715,869],[274,598,513,616,929,923,362,739,654]],&quot;type&quot;:&quot;heatmap&quot;}],&quot;layout&quot;:{&quot;template&quot;:{&quot;data&quot;:{&quot;histogram2dcontour&quot;:[{&quot;type&quot;:&quot;histogram2dcontour&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;choropleth&quot;:[{&quot;type&quot;:&quot;choropleth&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}],&quot;histogram2d&quot;:[{&quot;type&quot;:&quot;histogram2d&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;heatmap&quot;:[{&quot;type&quot;:&quot;heatmap&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;contourcarpet&quot;:[{&quot;type&quot;:&quot;contourcarpet&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}],&quot;contour&quot;:[{&quot;type&quot;:&quot;contour&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;surface&quot;:[{&quot;type&quot;:&quot;surface&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;},&quot;colorscale&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]]}],&quot;mesh3d&quot;:[{&quot;type&quot;:&quot;mesh3d&quot;,&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}],&quot;scatter&quot;:[{&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;#283442&quot;}},&quot;type&quot;:&quot;scatter&quot;}],&quot;parcoords&quot;:[{&quot;type&quot;:&quot;parcoords&quot;,&quot;line&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scatterpolargl&quot;:[{&quot;type&quot;:&quot;scatterpolargl&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;bar&quot;:[{&quot;error_x&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;},&quot;error_y&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;},&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;,&quot;width&quot;:0.5},&quot;pattern&quot;:{&quot;fillmode&quot;:&quot;overlay&quot;,&quot;size&quot;:10,&quot;solidity&quot;:0.2}},&quot;type&quot;:&quot;bar&quot;}],&quot;scattergeo&quot;:[{&quot;type&quot;:&quot;scattergeo&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scatterpolar&quot;:[{&quot;type&quot;:&quot;scatterpolar&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;histogram&quot;:[{&quot;marker&quot;:{&quot;pattern&quot;:{&quot;fillmode&quot;:&quot;overlay&quot;,&quot;size&quot;:10,&quot;solidity&quot;:0.2}},&quot;type&quot;:&quot;histogram&quot;}],&quot;scattergl&quot;:[{&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;#283442&quot;}},&quot;type&quot;:&quot;scattergl&quot;}],&quot;scatter3d&quot;:[{&quot;type&quot;:&quot;scatter3d&quot;,&quot;line&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}},&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scattermap&quot;:[{&quot;type&quot;:&quot;scattermap&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scattermapbox&quot;:[{&quot;type&quot;:&quot;scattermapbox&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scatterternary&quot;:[{&quot;type&quot;:&quot;scatterternary&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;scattercarpet&quot;:[{&quot;type&quot;:&quot;scattercarpet&quot;,&quot;marker&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}}}],&quot;carpet&quot;:[{&quot;aaxis&quot;:{&quot;endlinecolor&quot;:&quot;#A2B1C6&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;minorgridcolor&quot;:&quot;#506784&quot;,&quot;startlinecolor&quot;:&quot;#A2B1C6&quot;},&quot;baxis&quot;:{&quot;endlinecolor&quot;:&quot;#A2B1C6&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;minorgridcolor&quot;:&quot;#506784&quot;,&quot;startlinecolor&quot;:&quot;#A2B1C6&quot;},&quot;type&quot;:&quot;carpet&quot;}],&quot;table&quot;:[{&quot;cells&quot;:{&quot;fill&quot;:{&quot;color&quot;:&quot;#506784&quot;},&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;}},&quot;header&quot;:{&quot;fill&quot;:{&quot;color&quot;:&quot;#2a3f5f&quot;},&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;}},&quot;type&quot;:&quot;table&quot;}],&quot;barpolar&quot;:[{&quot;marker&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;rgb(17,17,17)&quot;,&quot;width&quot;:0.5},&quot;pattern&quot;:{&quot;fillmode&quot;:&quot;overlay&quot;,&quot;size&quot;:10,&quot;solidity&quot;:0.2}},&quot;type&quot;:&quot;barpolar&quot;}],&quot;pie&quot;:[{&quot;automargin&quot;:true,&quot;type&quot;:&quot;pie&quot;}]},&quot;layout&quot;:{&quot;autotypenumbers&quot;:&quot;strict&quot;,&quot;colorway&quot;:[&quot;#636efa&quot;,&quot;#EF553B&quot;,&quot;#00cc96&quot;,&quot;#ab63fa&quot;,&quot;#FFA15A&quot;,&quot;#19d3f3&quot;,&quot;#FF6692&quot;,&quot;#B6E880&quot;,&quot;#FF97FF&quot;,&quot;#FECB52&quot;],&quot;font&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;},&quot;hovermode&quot;:&quot;closest&quot;,&quot;hoverlabel&quot;:{&quot;align&quot;:&quot;left&quot;},&quot;paper_bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;plot_bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;polar&quot;:{&quot;bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;angularaxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;},&quot;radialaxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;}},&quot;ternary&quot;:{&quot;bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;aaxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;},&quot;baxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;},&quot;caxis&quot;:{&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;}},&quot;coloraxis&quot;:{&quot;colorbar&quot;:{&quot;outlinewidth&quot;:0,&quot;ticks&quot;:&quot;&quot;}},&quot;colorscale&quot;:{&quot;sequential&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]],&quot;sequentialminus&quot;:[[0.0,&quot;#0d0887&quot;],[0.1111111111111111,&quot;#46039f&quot;],[0.2222222222222222,&quot;#7201a8&quot;],[0.3333333333333333,&quot;#9c179e&quot;],[0.4444444444444444,&quot;#bd3786&quot;],[0.5555555555555556,&quot;#d8576b&quot;],[0.6666666666666666,&quot;#ed7953&quot;],[0.7777777777777778,&quot;#fb9f3a&quot;],[0.8888888888888888,&quot;#fdca26&quot;],[1.0,&quot;#f0f921&quot;]],&quot;diverging&quot;:[[0,&quot;#8e0152&quot;],[0.1,&quot;#c51b7d&quot;],[0.2,&quot;#de77ae&quot;],[0.3,&quot;#f1b6da&quot;],[0.4,&quot;#fde0ef&quot;],[0.5,&quot;#f7f7f7&quot;],[0.6,&quot;#e6f5d0&quot;],[0.7,&quot;#b8e186&quot;],[0.8,&quot;#7fbc41&quot;],[0.9,&quot;#4d9221&quot;],[1,&quot;#276419&quot;]]},&quot;xaxis&quot;:{&quot;gridcolor&quot;:&quot;#283442&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;,&quot;title&quot;:{&quot;standoff&quot;:15},&quot;zerolinecolor&quot;:&quot;#283442&quot;,&quot;automargin&quot;:true,&quot;zerolinewidth&quot;:2},&quot;yaxis&quot;:{&quot;gridcolor&quot;:&quot;#283442&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;ticks&quot;:&quot;&quot;,&quot;title&quot;:{&quot;standoff&quot;:15},&quot;zerolinecolor&quot;:&quot;#283442&quot;,&quot;automargin&quot;:true,&quot;zerolinewidth&quot;:2},&quot;scene&quot;:{&quot;xaxis&quot;:{&quot;backgroundcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;showbackground&quot;:true,&quot;ticks&quot;:&quot;&quot;,&quot;zerolinecolor&quot;:&quot;#C8D4E3&quot;,&quot;gridwidth&quot;:2},&quot;yaxis&quot;:{&quot;backgroundcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;showbackground&quot;:true,&quot;ticks&quot;:&quot;&quot;,&quot;zerolinecolor&quot;:&quot;#C8D4E3&quot;,&quot;gridwidth&quot;:2},&quot;zaxis&quot;:{&quot;backgroundcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;gridcolor&quot;:&quot;#506784&quot;,&quot;linecolor&quot;:&quot;#506784&quot;,&quot;showbackground&quot;:true,&quot;ticks&quot;:&quot;&quot;,&quot;zerolinecolor&quot;:&quot;#C8D4E3&quot;,&quot;gridwidth&quot;:2}},&quot;shapedefaults&quot;:{&quot;line&quot;:{&quot;color&quot;:&quot;#f2f5fa&quot;}},&quot;annotationdefaults&quot;:{&quot;arrowcolor&quot;:&quot;#f2f5fa&quot;,&quot;arrowhead&quot;:0,&quot;arrowwidth&quot;:1},&quot;geo&quot;:{&quot;bgcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;landcolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;subunitcolor&quot;:&quot;#506784&quot;,&quot;showland&quot;:true,&quot;showlakes&quot;:true,&quot;lakecolor&quot;:&quot;rgb(17,17,17)&quot;},&quot;title&quot;:{&quot;x&quot;:0.05},&quot;updatemenudefaults&quot;:{&quot;bgcolor&quot;:&quot;#506784&quot;,&quot;borderwidth&quot;:0},&quot;sliderdefaults&quot;:{&quot;bgcolor&quot;:&quot;#C8D4E3&quot;,&quot;borderwidth&quot;:1,&quot;bordercolor&quot;:&quot;rgb(17,17,17)&quot;,&quot;tickwidth&quot;:0},&quot;mapbox&quot;:{&quot;style&quot;:&quot;dark&quot;}}},&quot;title&quot;:{&quot;text&quot;:&quot;v18 full_train \u2014 person slice distribution (size \u00d7 position)&quot;},&quot;xaxis&quot;:{&quot;title&quot;:{&quot;text&quot;:&quot;position_bin&quot;}},&quot;yaxis&quot;:{&quot;title&quot;:{&quot;text&quot;:&quot;size_bin&quot;}},&quot;height&quot;:300}}' data-config='{}'></marimo-plotly></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "e77636933788c4b6cdac1802ff9c30dc",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Generating 9 rare-slice images \u2026\n  [1/9] slice_small_middle_center  \u2192  1 detected\n  [2/9] slice_medium_middle_center  \u2192  1 detected\n  [3/9] slice_large_top_left  \u2192  1 detected\n  [4/9] slice_large_bottom_left  \u2192  1 detected\n  [5/9] slice_small_top_center  \u2192  1 detected\n  [6/9] slice_small_middle_right  \u2192  1 detected\n  [7/9] slice_medium_top_left  \u2192  1 detected\n  [8/9] slice_medium_top_center  \u2192  0 detected\n  [9/9] slice_small_middle_left  \u2192  1 detected\nPart 2 done.\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "Hstk",
+      "code_hash": "05b9c19c377f293664feb17dcd69a915",
+      "outputs": [],
+      "console": []
+    }
+  ]
+}

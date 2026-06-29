@@ -685,12 +685,8 @@ def audit_generated_candidates(
         checkpoint_path=checkpoint_path,
         threshold_override=None,
     )
-    if str(summary.get("classifier_mode", "")) != "multiclass":
-        raise ValueError(
-            "Experiment B requires the multiclass foreground/background filter. "
-            "An instance is valid only when the classifier predicts the expected class "
-            "and passes that class threshold."
-        )
+    classifier_mode = str(summary.get("classifier_mode", "binary"))
+    print(f"[Experiment B] fg/bg filter: classifier_mode={classifier_mode}, threshold={threshold}")
     instance_rows, image_rows, stats = audit_generated_layout_dataset(
         dataset_dir=generated_dataset_dir,
         filter_model=model,

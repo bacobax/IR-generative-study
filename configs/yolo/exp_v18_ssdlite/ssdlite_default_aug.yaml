@@ -1,0 +1,12 @@
+extends: _base_ssdlite.yaml
+
+augment:
+  enabled: true
+  fliplr: 0.5
+  scale: 0.5
+  translate: 0.1
+  brightness: 0.4
+  contrast: 0.0
+
+output:
+  experiment_name: ssdlite_default_aug

@@ -47,6 +47,21 @@ class SimpleYOLOModelConfig:
 
 
 @dataclass
+class SSDLiteModelConfig:
+    """SSDLite detector architecture controls (MobileNetV3-Small backbone)."""
+
+    input_channels: int = 3
+    n_feature_maps: int = 3
+    anchor_min_sizes: list[float] = field(default_factory=lambda: [0.07, 0.15, 0.33])
+    anchor_max_sizes: list[float] = field(default_factory=lambda: [0.15, 0.33, 0.60])
+    anchor_aspect_ratios: list[float] = field(default_factory=lambda: [2.0])
+    conf_threshold: float = 0.25
+    nms_iou_threshold: float = 0.45
+    iou_pos_threshold: float = 0.50
+    iou_neg_threshold: float = 0.40
+
+
+@dataclass
 class YOLOModelConfig:
     """Model weights/backend selection and task settings."""
 
@@ -54,6 +69,7 @@ class YOLOModelConfig:
     task: str = "detect"
     backend: str = "ultralytics"
     simple: SimpleYOLOModelConfig = field(default_factory=SimpleYOLOModelConfig)
+    ssdlite: SSDLiteModelConfig = field(default_factory=SSDLiteModelConfig)
 
 
 @dataclass
@@ -90,6 +106,7 @@ class YOLOLossConfig:
     objectness_weight: float = 1.0
     no_object_weight: float = 0.5
     class_weight: float = 1.0
+    neg_pos_ratio: float = 3.0
 
 
 @dataclass

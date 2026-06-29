@@ -1,0 +1,5 @@
+# Smoke audit: run the binary fg/bg classifier on pre-generated v18 FM candidates.
+# Uses existing 6725-image generated dataset (no re-generation needed).
+# If filter_run_dir is empty, the script auto-selects the latest binary classifier run.
+generated_dataset_dir: artifacts/generated/yolo/exp_b/generated_candidates/small_v4_fmaug/fm_aug
+batch_size: 64

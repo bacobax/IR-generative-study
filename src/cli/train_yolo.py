@@ -192,6 +192,10 @@ _FLAT_TO_NESTED = {
     "simple_boxes_per_cell": "model.simple.boxes_per_cell",
     "simple_activation": "model.simple.activation",
     "simple_dropout": "model.simple.dropout",
+    "ssdlite_input_channels": "model.ssdlite.input_channels",
+    "ssdlite_n_feature_maps": "model.ssdlite.n_feature_maps",
+    "ssdlite_conf_threshold": "model.ssdlite.conf_threshold",
+    "ssdlite_nms_iou_threshold": "model.ssdlite.nms_iou_threshold",
     "epochs": "training.epochs",
     "lr0": "training.lr0",
     "optimizer": "training.optimizer",
@@ -788,8 +792,8 @@ def _validate_baseline_config(cfg: YOLOExperimentConfig) -> None:
 
 
 def _validate_model_backend(cfg: YOLOExperimentConfig) -> None:
-    if str(cfg.model.backend) not in {"ultralytics", "simple_torch"}:
-        raise ValueError("model.backend must be one of: ultralytics, simple_torch.")
+    if str(cfg.model.backend) not in {"ultralytics", "simple_torch", "ssdlite"}:
+        raise ValueError("model.backend must be one of: ultralytics, simple_torch, ssdlite.")
 
 
 def _build_train_stages(cfg: YOLOExperimentConfig) -> list[dict[str, Any]]:
@@ -1082,6 +1086,23 @@ def run_train(cfg: YOLOExperimentConfig) -> dict[str, Any]:
             device=_torch_generation_device(cfg.resolved_device()),
         )
 
+    elif str(cfg.model.backend) == "ssdlite":
+        from src.algorithms.training.ssdlite_detector import train_ssdlite
+
+        _set_seed(cfg.training.seed, cfg.training.deterministic)
+        run_dir, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+        _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+        _validate_baseline_config(cfg)
+        dataset_yaml = _require_dataset_yaml(cfg.data.dataset_yaml)
+        return train_ssdlite(
+            cfg,
+            dataset_yaml=dataset_yaml,
+            run_dir=run_dir,
+            checkpoint_dir=checkpoint_dir,
+            analysis_dir=analysis_dir,
+            device=_torch_generation_device(cfg.resolved_device()),
+        )
+
     YOLO = _require_ultralytics()
     restore_real_scipy_if_available()
     _set_seed(cfg.training.seed, cfg.training.deterministic)
@@ -1252,6 +1273,50 @@ def run_eval(cfg: YOLOExperimentConfig, *, weights_path: Optional[str] = None) -
             _write_json(analysis_dir / "eval_summary.json", summary)
         return summary
 
+    elif str(cfg.model.backend) == "ssdlite":
+        from src.algorithms.training.ssdlite_detector import eval_ssdlite
+
+        _set_seed(cfg.training.seed, cfg.training.deterministic)
+        _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+        _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+        resolved_weights = weights_path or str(checkpoint_dir / "best.pt")
+        data_yaml = _require_dataset_yaml(
+            cfg.evaluation.dataset_yaml
+            or cfg.data.test_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        eval_payload = eval_ssdlite(
+            cfg,
+            weights_path=resolved_weights,
+            data_yaml=data_yaml,
+            analysis_dir=analysis_dir,
+            device=_torch_generation_device(cfg.resolved_device()),
+        )
+        summary = {
+            key: value
+            for key, value in eval_payload.items()
+            if key not in {"predictions", "ground_truths", "names", "per_class"}
+        }
+        if cfg.evaluation.per_slice_enabled:
+            threshold_yaml = (
+                cfg.evaluation.slice_threshold_dataset_yaml
+                or cfg.data.dataset_yaml
+            )
+            threshold_yaml = _require_dataset_yaml(threshold_yaml)
+            thresholds = compute_frozen_thresholds(threshold_yaml)
+            per_slice_results = evaluate_per_slice_from_predictions(
+                predictions=eval_payload["predictions"],
+                test_yaml=data_yaml,
+                thresholds=thresholds,
+                output_dir=analysis_dir,
+                iou_threshold=float(cfg.evaluation.iou) if cfg.evaluation.iou is not None else 0.5,
+            )
+            summary["per_slice_metrics_csv"] = str(analysis_dir / "per_slice_metrics.csv")
+            summary["per_slice_metrics_json"] = str(analysis_dir / "per_slice_metrics.json")
+            summary["per_slice_overall"] = per_slice_results.get("overall", {})
+            _write_json(analysis_dir / "eval_summary.json", summary)
+        return summary
+
     YOLO = _require_ultralytics()
     _set_seed(cfg.training.seed, cfg.training.deterministic)
     _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
@@ -1358,6 +1423,31 @@ def run_eval_slices(cfg: YOLOExperimentConfig, *, weights_path: Optional[str] = 
         )
         threshold_yaml = _require_dataset_yaml(threshold_yaml)
         return eval_simple_yolo_slices(
+            cfg,
+            weights_path=resolved_weights,
+            data_yaml=data_yaml,
+            threshold_yaml=threshold_yaml,
+            analysis_dir=analysis_dir,
+            device=_torch_generation_device(cfg.resolved_device()),
+        )
+
+    elif str(cfg.model.backend) == "ssdlite":
+        from src.algorithms.training.ssdlite_detector import eval_ssdlite_slices
+
+        _, checkpoint_dir, analysis_dir = _prepare_output_dirs(cfg)
+        _save_resolved_config(cfg, analysis_dir / "resolved_config.json")
+        resolved_weights = weights_path or str(checkpoint_dir / "best.pt")
+        data_yaml = _require_dataset_yaml(
+            cfg.evaluation.dataset_yaml
+            or cfg.data.test_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        threshold_yaml = (
+            cfg.evaluation.slice_threshold_dataset_yaml
+            or cfg.data.dataset_yaml
+        )
+        threshold_yaml = _require_dataset_yaml(threshold_yaml)
+        return eval_ssdlite_slices(
             cfg,
             weights_path=resolved_weights,
             data_yaml=data_yaml,
