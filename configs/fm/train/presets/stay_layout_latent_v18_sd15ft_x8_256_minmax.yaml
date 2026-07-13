@@ -1,0 +1,26 @@
+# STAY-style latent FM on v18 using the MINMAX-finetuned SD1.5 VAE.
+# IMPORTANT: normalization_mode MUST match the VAE's training normalization
+# (per_image_minmax). This overrides the v18 dataset_id default
+# (raw_uint16_percentile) via the data.normalization_mode config override.
+# The latent cache keys on normalization, so this run gets its own cache dir,
+# distinct from the percentile run. TensorBoard images are plotted directly
+# ([-1,1]->[0,1]); per-image min/max is not revertible to the raw sensor domain.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_minmax.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256.yaml
+
+data:
+  normalization_mode: per_image_minmax
+
+model:
+  vae_config: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256_minmax/VAE/vae_epoch_10.pt"
+
+training:
+  patience: null
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax"
+  log_dir: "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_minmax"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_minmax"

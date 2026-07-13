@@ -1,0 +1,12 @@
+extends: _base.yaml
+
+# All Ultralytics augmentation disabled (mosaic, hsv, fliplr, scale,
+# translate, degrees, mixup, copy_paste, erasing all set to 0).
+experiment_b:
+  disable_ultralytics_augmentations: true
+
+baseline:
+  mode: none
+
+output:
+  experiment_name: plain

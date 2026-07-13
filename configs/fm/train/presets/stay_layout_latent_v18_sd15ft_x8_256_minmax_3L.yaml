@@ -1,0 +1,14 @@
+# Ablation: same as minmax but with 3-level small UNet (59M vs 640M params).
+# Only model.unet_config changes — all other hparams identical to minmax preset.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256_minmax.yaml
+
+model:
+  unet_config: "configs/models/fm/stable_unet_3L_small_v18_256.json"
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L"
+  log_dir:   "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_minmax_3L"

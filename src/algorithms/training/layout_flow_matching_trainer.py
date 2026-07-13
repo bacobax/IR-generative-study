@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import csv
 import os
 import platform
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -50,6 +51,32 @@ from src.models.stay_layout_conditioned_unet import build_stay_layout_conditione
 
 if TYPE_CHECKING:
     from torch.utils.tensorboard import SummaryWriter
+
+
+# Loss components recorded by flow_matching_step into self._last_loss_components.
+LOSS_COMPONENT_KEYS: Tuple[str, ...] = (
+    "total_loss",
+    "fm_loss",
+    "aux_loss",
+    "mask_overlap_loss",
+    "mask_sharpness_loss",
+    "mask_activation_loss",
+)
+
+
+def _append_csv_row(path: str, row: Dict[str, Any], field_order: List[str]) -> None:
+    """Append one row to a CSV, writing the header when the file is new.
+
+    Flushes immediately so the file stays tail-able while training runs.
+    """
+    write_header = not os.path.exists(path) or os.path.getsize(path) == 0
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=field_order)
+        if write_header:
+            writer.writeheader()
+        writer.writerow({key: row.get(key, "") for key in field_order})
+        handle.flush()
 
 
 class LayoutFMTrainer(FlowMatchingTrainer):
@@ -190,6 +217,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
         dataloader: DataLoader,
         eval_dataloader: Optional[DataLoader] = None,
     ) -> None:
+        self._prepare_checkpoint_eval(config)
         self.train(
             dataloader=dataloader,
             epochs=config.training.epochs,
@@ -228,6 +256,56 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             mixed_precision=getattr(config.precision, "mixed_precision", "auto"),
             max_grad_norm=getattr(config.training, "max_grad_norm", 1.0),
         )
+
+    def _prepare_checkpoint_eval(self, config) -> None:
+        """Dump the effective config and stash checkpoint-eval settings.
+
+        Called once before training when ``config.checkpoint_eval.enabled``; the
+        dumped yaml is what the per-checkpoint eval subprocess reloads.
+        """
+        ce = getattr(config, "checkpoint_eval", None)
+        self._checkpoint_eval = ce if (ce is not None and getattr(ce, "enabled", False)) else None
+        self._checkpoint_eval_config_path = None
+        if self._checkpoint_eval is None:
+            return
+        import yaml
+        from src.core.configs.config_loader import dataclass_to_dict
+
+        os.makedirs(self.model_dir, exist_ok=True)
+        cfg_path = os.path.join(self.model_dir, "effective_config.yaml")
+        with open(cfg_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(dataclass_to_dict(config), handle, sort_keys=False)
+        self._checkpoint_eval_config_path = cfg_path
+
+    def _maybe_launch_checkpoint_eval(self, checkpoint_path: str, epoch: int) -> None:
+        ce = getattr(self, "_checkpoint_eval", None)
+        cfg_path = getattr(self, "_checkpoint_eval_config_path", None)
+        if ce is None or cfg_path is None:
+            return
+        import subprocess
+
+        out_dir = os.path.join(self.model_dir, ce.out_subdir)
+        os.makedirs(out_dir, exist_ok=True)
+        # Map "cuda:N" / "cuda" / "N" → CUDA_VISIBLE_DEVICES index; child sees cuda:0.
+        dev = str(ce.device)
+        gpu_index = dev.split(":", 1)[1] if dev.startswith("cuda:") else ("0" if dev == "cuda" else dev)
+        child_env = os.environ.copy()
+        child_env["CUDA_VISIBLE_DEVICES"] = gpu_index
+        cmd = [
+            "conda", "run", "-n", str(ce.conda_env), "--no-capture-output",
+            "python", "-m", "scripts.eval_checkpoint_quality",
+            "--config", cfg_path,
+            "--checkpoint", checkpoint_path,
+            "--device", "cuda:0",
+            "--out", out_dir,
+        ]
+        log_path = os.path.join(out_dir, f"eval_epoch_{epoch}.log")
+        try:
+            log_handle = open(log_path, "w")
+            subprocess.Popen(cmd, env=child_env, stdout=log_handle, stderr=subprocess.STDOUT)
+            print(f"  [checkpoint-eval] launched epoch {epoch} on {dev} → {log_path}", flush=True)
+        except Exception as exc:  # never break training because eval failed to spawn
+            print(f"  [checkpoint-eval] WARNING: failed to launch eval for epoch {epoch}: {exc}", flush=True)
 
     def _save_configs(self) -> None:
         if self.unet_config is not None:
@@ -849,6 +927,33 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             )
 
         writer = build_summary_writer(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
+        step_csv_path = os.path.join(log_dir, "metrics_step.csv")
+        epoch_csv_path = os.path.join(log_dir, "metrics_epoch.csv")
+        step_csv_fields = [
+            "global_step",
+            "epoch",
+            "lr",
+            "grad_norm",
+            *LOSS_COMPONENT_KEYS,
+            "mean_objects",
+            "empty_layout_fraction",
+        ]
+        epoch_csv_fields = [
+            "epoch",
+            "global_step",
+            "lr",
+            "grad_norm",
+            *(f"train_{key}" for key in LOSS_COMPONENT_KEYS),
+            *(f"eval_{key}" for key in LOSS_COMPONENT_KEYS),
+            "best_eval",
+            "best_epoch",
+            "bad_epochs",
+        ]
+        print(
+            f"[LayoutFM] CSV metrics -> {step_csv_path} (per logged step) and "
+            f"{epoch_csv_path} (per epoch)"
+        )
         sampler = self._make_sampler()
         fixed_batch = self._build_fixed_validation_batch(
             eval_dataloader or dataloader,
@@ -893,19 +998,43 @@ class LayoutFMTrainer(FlowMatchingTrainer):
             )
             save_training_checkpoint(path, ckpt)
 
+        def _write_epoch_row(
+            epoch_idx: int,
+            train_sums: Dict[str, float],
+            train_count: int,
+            grad_norm_value: float,
+            eval_avgs: Optional[Dict[str, float]],
+        ) -> None:
+            row: Dict[str, Any] = {
+                "epoch": epoch_idx + 1,
+                "global_step": global_step,
+                "lr": float(optimizer.param_groups[0]["lr"]),
+                "grad_norm": float(grad_norm_value),
+                "best_eval": float(best_eval) if best_eval != float("inf") else "",
+                "best_epoch": best_epoch + 1 if best_epoch >= 0 else "",
+                "bad_epochs": bad_epochs,
+            }
+            denom = max(1, train_count)
+            for key in LOSS_COMPONENT_KEYS:
+                row[f"train_{key}"] = train_sums[key] / denom
+                row[f"eval_{key}"] = eval_avgs[key] if eval_avgs is not None else ""
+            _append_csv_row(epoch_csv_path, row, epoch_csv_fields)
+
         for epoch in range(start_epoch, epochs):
             self.unet.train()
             total_loss = 0.0
+            train_component_sums: Dict[str, float] = {key: 0.0 for key in LOSS_COMPONENT_KEYS}
+            train_component_count = 0
+            last_grad_norm = 0.0
             last_batch: Optional[Dict[str, Any]] = None
             last_cond_kw: Optional[Dict[str, torch.Tensor]] = None
 
             for batch in tqdm(dataloader, desc=f"LayoutFM Epoch {epoch + 1}/{epochs}"):
-                pixel_values = batch["pixel_values"].to(self.device)
                 cond_kw = self.prepare_conditioning_kwargs(batch)
                 last_batch = batch
                 last_cond_kw = cond_kw
                 with torch.no_grad():
-                    x_fm = self.encode_fm_input(pixel_values)
+                    x_fm = self.fm_input_from_batch(batch)
 
                 optimizer.zero_grad(set_to_none=True)
                 with autocast_context(precision):
@@ -934,6 +1063,10 @@ class LayoutFMTrainer(FlowMatchingTrainer):
 
                 global_step += 1
                 total_loss += float(loss.item())
+                last_grad_norm = float(step_grad_norm)
+                for key in LOSS_COMPONENT_KEYS:
+                    train_component_sums[key] += float(self._last_loss_components.get(key, 0.0))
+                train_component_count += 1
 
                 if self._should_log(global_step, scalar_every_steps):
                     with torch.no_grad():
@@ -1019,6 +1152,17 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                             float(layout_debug["edge_map"].abs().mean().item()),
                             global_step,
                         )
+                    step_row = {
+                        "global_step": global_step,
+                        "epoch": epoch + 1,
+                        "lr": float(optimizer.param_groups[0]["lr"]),
+                        "grad_norm": float(step_grad_norm),
+                        "mean_objects": float(n_objects.mean().item()),
+                        "empty_layout_fraction": float((n_objects == 0).to(torch.float32).mean().item()),
+                    }
+                    for key in LOSS_COMPONENT_KEYS:
+                        step_row[key] = float(self._last_loss_components.get(key, 0.0))
+                    _append_csv_row(step_csv_path, step_row, step_csv_fields)
                     del layout_debug, soft_masks
 
                 if (not epoch_image_logging) and self._should_log(global_step, image_every_steps):
@@ -1065,12 +1209,17 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 )
 
             if save_every_n_epochs and (epoch + 1) % save_every_n_epochs == 0:
-                self.save_unet_weights(os.path.join(self._unet_dir(), f"unet_fm_epoch_{epoch + 1}.pt"))
+                epoch_ckpt_path = os.path.join(self._unet_dir(), f"unet_fm_epoch_{epoch + 1}.pt")
+                self.save_unet_weights(epoch_ckpt_path)
                 _save_checkpoint(
                     os.path.join(self._unet_dir(), f"unet_fm_epoch_{epoch + 1}_ckpt.pt"),
                     epoch_idx=epoch,
                 )
+                # Parallel generation-quality eval (KID/MMD/FID + YOLO adherence).
+                # Fire-and-forget on a configurable GPU; never blocks training.
+                self._maybe_launch_checkpoint_eval(epoch_ckpt_path, epoch + 1)
 
+            eval_component_avgs: Optional[Dict[str, float]] = None
             should_run_eval = (
                 eval_dataloader is not None
                 and eval_every > 0
@@ -1080,21 +1229,24 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                 self.unet.eval()
                 eval_loss = 0.0
                 n_eval = 0
+                eval_component_sums: Dict[str, float] = {key: 0.0 for key in LOSS_COMPONENT_KEYS}
 
                 ema_context = ema.average_parameters(self.unet) if ema is not None and global_step >= int(ema_start_step) else torch.no_grad()
                 with ema_context:
                     with torch.no_grad():
                         for batch in tqdm(eval_dataloader, desc=f"LayoutFM Eval {epoch + 1}/{epochs}"):
-                            pixel_values = batch["pixel_values"].to(self.device)
                             cond_kw = self.prepare_conditioning_kwargs(batch)
-                            x_fm = self.encode_fm_input(pixel_values)
+                            x_fm = self.fm_input_from_batch(batch)
                             with autocast_context(precision):
                                 loss = self.flow_matching_step(x_fm, cond_kw)
-                            batch_size = int(pixel_values.shape[0])
+                            batch_size = int(x_fm.shape[0])
                             eval_loss += float(loss.item()) * batch_size
+                            for key in LOSS_COMPONENT_KEYS:
+                                eval_component_sums[key] += float(self._last_loss_components.get(key, 0.0)) * batch_size
                             n_eval += batch_size
 
                 avg_eval = eval_loss / max(1, n_eval)
+                eval_component_avgs = {key: eval_component_sums[key] / max(1, n_eval) for key in LOSS_COMPONENT_KEYS}
                 writer.add_scalar("layout_fm/eval_loss_epoch", avg_eval, epoch)
                 print(f"  [Eval loss: {avg_eval:.6f}]")
                 release_cuda_cache()
@@ -1114,6 +1266,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                     bad_epochs += 1
                     print(f"  No improvement (best={best_eval:.6f}), bad_epochs={bad_epochs}/{patience}")
                     if bad_epochs >= patience:
+                        _write_epoch_row(epoch, train_component_sums, train_component_count, last_grad_norm, eval_component_avgs)
                         _save_checkpoint(os.path.join(self._unet_dir(), "unet_last_ckpt.pt"), epoch_idx=epoch)
                         print(f"Early stopping. Best epoch: {best_epoch + 1}")
                         break
@@ -1146,6 +1299,7 @@ class LayoutFMTrainer(FlowMatchingTrainer):
                         )
                 release_cuda_cache()
 
+            _write_epoch_row(epoch, train_component_sums, train_component_count, last_grad_norm, eval_component_avgs)
             _save_checkpoint(os.path.join(self._unet_dir(), "unet_last_ckpt.pt"), epoch_idx=epoch)
 
         writer.close()

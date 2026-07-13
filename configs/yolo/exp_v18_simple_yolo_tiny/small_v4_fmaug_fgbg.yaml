@@ -1,0 +1,53 @@
+# Tiny simple_torch YOLO trained on real v18 full_train + FM-generated synthetic
+# images filtered by a binary fg/bg crop classifier (alternative to YOLO-adherence).
+#
+# Pipeline (action=experiment_b):
+#   1. FM generation: 1 layout-conditioned image per real image (minmax 640M, ep570).
+#   2. fg/bg classifier filter: for each GT bbox crop, keep it only if the binary
+#      classifier scores it as foreground (prob >= chosen_threshold). Boxes classified
+#      as background are dropped; images keep all remaining GT.
+#   3. Merge real + filtered synthetic → train tiny YOLO → eval on v18 test.
+#
+# Requires a trained binary fg/bg classifier. Train with:
+#   python scripts/standalone/train_fg_bg_classifier.py \
+#     --config configs/auxiliary/foreground_background_filter/presets/default.yaml \
+#     --device cuda:0
+# Then set filter.checkpoint_dir to the run directory produced.
+#
+# Launcher:
+#   python -m src.cli.train_yolo --action experiment_b \
+#     --config configs/yolo/exp_v18_simple_yolo_tiny/small_v4_fmaug_fgbg.yaml
+extends: _base_v4.yaml
+
+data:
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  full_train_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+experiment_b:
+  mode: fm_aug
+  invalid_instance_ratio_threshold: 1.0
+  generated_dataset_dir: artifacts/generated/yolo/exp_b/generated_candidates
+  augmented_yolo_root: artifacts/generated/yolo/exp_b/augmented_yolo
+  fm:
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/UNET/unet_fm_epoch_570.pt
+    preset_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/effective_config.yaml
+    steps: 50
+    batch_size: 8
+  filter:
+    kind: fgbg
+    enabled: true
+    # Set to the run directory produced by train_fg_bg_classifier.py.
+    # _resolve_filter_source will find checkpoints/best.pt inside it.
+    checkpoint_dir: artifacts/checkpoints/foreground_background_filter/runs/fgbg_20260629_141800
+    batch_size: 64
+
+augment:
+  enabled: true
+  fliplr: 0.5
+  scale: 0.5
+  translate: 0.1
+  brightness: 0.4
+  contrast: 0.0
+
+output:
+  experiment_name: small_v4_fmaug_fgbg

@@ -76,6 +76,10 @@ class DataConfig:
     train_dir: str = "./data/raw/v18/train/"
     val_dir: str = "./data/raw/v18/val/"
     annotations_path: Optional[str] = None
+    # Optional override for the input normalization. When set it wins over the
+    # dataset_id default — required when the FM input must match a VAE finetuned
+    # under a different normalization (e.g. per_image_minmax).
+    normalization_mode: Optional[str] = None
     image_size: int = 256
     batch_size: int = 8
     num_workers: int = 4
@@ -108,7 +112,13 @@ class ModelConfig:
 
 @dataclass
 class AugmentConfig:
-    """Augmentation schedule for ``ScheduledAugment256``."""
+    """Augmentation schedule for ``ScheduledAugment256`` / ``LayoutScheduledAugment``.
+
+    The ``p_*`` triples follow a warmup → ramp → decay schedule. For
+    bbox-aware layout training (``LayoutScheduledAugment``) crop/rotation are
+    applied jointly to image + boxes and require ``latent_cache.enabled=False``
+    (the disk cache cannot materialise non-flip geometric augmentation).
+    """
 
     warmup_frac: float = 0.1
     ramp_frac: float = 0.3
@@ -121,6 +131,37 @@ class AugmentConfig:
     p_hflip_warmup: float = 0.0
     p_hflip_max: float = 0.0
     p_hflip_final: float = 0.0
+    # Photometric augmentation (image-only; boxes unchanged). Applied by
+    # ``LayoutScheduledAugment`` on the normalized image, re-clamped to range.
+    p_photometric_warmup: float = 0.0
+    p_photometric_max: float = 0.0
+    p_photometric_final: float = 0.0
+    photometric_brightness: float = 0.2   # max +/- additive brightness shift
+    photometric_contrast: float = 0.2     # max +/- contrast jitter fraction
+    photometric_gamma: float = 0.2        # max +/- gamma exponent jitter
+    photometric_noise_std: float = 0.03   # gaussian noise std (normalized domain)
+    # Geometric knobs for bbox-aware crop/rotation.
+    crop_min_scale: float = 0.8           # random square crop min scale of FOV
+    crop_min_visibility: float = 0.3      # drop boxes keeping < this area fraction
+    rot_allow_90: bool = True             # rotate by 90-degree multiples (exact boxes)
+
+
+@dataclass
+class LatentCacheConfig:
+    """Disk latent-cache settings shared across VAE-encoder trainings.
+
+    When ``enabled``, images (+ materialised augmentation variants) are encoded
+    once through the VAE and cached on disk, keyed by
+    ``<VAE, dataset, augmentation, normalization>``. Later runs with the same
+    tuple reuse the cache and skip the VAE encode entirely.
+    """
+
+    enabled: bool = False
+    cache_root: Optional[str] = None          # default: data/cache/latents
+    store_dtype: str = "fp16"                  # "fp16" | "fp32"
+    rebuild: bool = False                      # force re-encode even if warm
+    encode_batch_size: int = 32               # VAE encode batch during cache build
+                                              # (separate from data.batch_size for training)
 
 
 @dataclass
@@ -368,6 +409,38 @@ class OutputConfig:
         return f"{self.model_dir}/debug_samples/"
 
 
+@dataclass
+class CheckpointEvalConfig:
+    """Parallel per-checkpoint generation-quality evaluation.
+
+    When ``enabled``, every periodic checkpoint save fires a non-blocking
+    subprocess that generates samples from real test-split layouts and from
+    synthetic unseen layouts, then scores KID/MMD/FID (DINOv2 features) against
+    the test set plus YOLO bbox-adherence on the unseen-layout images. Results
+    accumulate in ``<run>/<out_subdir>/checkpoint_eval_metrics.csv``.
+    """
+
+    enabled: bool = False
+    device: str = "cuda:1"                 # GPU for the parallel eval subprocess
+    conda_env: str = "diffusers-dev"       # conda env used to launch the subprocess
+    n_test_images: int = 100               # generations from real test-split layouts
+    n_unseen_images: int = 100             # generations from synthetic unseen layouts
+    sample_steps: int = 40
+    feature_extractor: str = "dinov2"
+    dinov2_model_name: str = "facebook/dinov2-base"
+    yolo_weights: str = (
+        "./artifacts/checkpoints/yolo/exp_v18_scratch_yolo11n/default_aug/best.pt"
+    )
+    test_dir: Optional[str] = None         # default: data/raw/<dataset_id>/test
+    test_annotations: Optional[str] = None # default: <test_dir>/annotations.json
+    out_subdir: str = "checkpoint_eval"
+    adherence_iou: float = 0.5
+    yolo_conf: float = 0.25
+    seed: int = 1234
+    gen_batch_size: int = 8
+    feature_batch_size: int = 32
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Top-level composite configs
 # ═══════════════════════════════════════════════════════════════════════════
@@ -396,6 +469,8 @@ class FMTrainConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     count_filter: CountFilterConfig = field(default_factory=CountFilterConfig)
+    latent_cache: LatentCacheConfig = field(default_factory=LatentCacheConfig)
+    checkpoint_eval: CheckpointEvalConfig = field(default_factory=CheckpointEvalConfig)
     architecture_mode: str = "legacy"
     # Registry component names (None → use default)
     trainer_name: Optional[str] = None

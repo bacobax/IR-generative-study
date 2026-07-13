@@ -1,0 +1,16 @@
+extends: _base_v4.yaml
+
+# General ultralytics-like augmentation applied to ALL training images.
+# v18 is effectively grayscale, so HSV hue/sat aug would be no-ops;
+# we use geometric (hflip/scale/translate) + brightness only.
+
+augment:
+  enabled: true
+  fliplr: 0.5       # horizontal-flip probability
+  scale: 0.5        # ± scale gain (e.g. 0.5 → [0.5x, 1.5x])
+  translate: 0.1    # ± translate as fraction of image size
+  brightness: 0.4   # ± brightness gain (grayscale analogue of hsv_v)
+  contrast: 0.0
+
+output:
+  experiment_name: small_v4_genaug

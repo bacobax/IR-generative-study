@@ -1,0 +1,25 @@
+# Final percentile 640M regularization run.
+# Uses raw_uint16_percentile normalization with the matching VAE (v18_sd15_vae_x8_256,
+# trained under percentile normalization). Inherits the full 640M reg stack from
+# minmax_reg_v2: dropout=0.1, bbox-aware aug, p_photometric_final=0.0, 600ep, checkpoint eval.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_percentile_reg.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2.yaml
+
+device: "cuda:1"
+
+data:
+  normalization_mode: raw_uint16_percentile
+
+model:
+  vae_config: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_epoch_10.pt"
+
+checkpoint_eval:
+  device: "cuda:1"
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_percentile_reg"
+  log_dir:   "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_percentile_reg"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_percentile_reg"

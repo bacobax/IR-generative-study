@@ -188,3 +188,40 @@ def test_constrained_crop_resize_rejects_invalid_and_preserves_protected_box() -
     protected_box = accepted["boxes"][0]
     assert protected_box[2] > 0.0
     assert protected_box[3] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# use_weighted_sampler decoupling
+# ---------------------------------------------------------------------------
+
+def test_use_weighted_sampler_flag_default_true() -> None:
+    """YOLOBaselineConfig.use_weighted_sampler defaults to True."""
+    from src.core.configs.yolo_experiment_config import YOLOBaselineConfig
+    cfg = YOLOBaselineConfig()
+    assert cfg.use_weighted_sampler is True
+
+
+def test_use_weighted_sampler_flag_false() -> None:
+    """use_weighted_sampler=False is accepted and stored."""
+    from src.core.configs.yolo_experiment_config import YOLOBaselineConfig
+    cfg = YOLOBaselineConfig(use_weighted_sampler=False)
+    assert cfg.use_weighted_sampler is False
+
+
+def test_use_weighted_sampler_config_round_trip(tmp_path: Path) -> None:
+    """Config YAML with use_weighted_sampler: false loads correctly."""
+    from src.core.configs.config_loader import load_yaml
+    from src.core.configs.yolo_experiment_config import YOLOBaselineConfig
+    import dataclasses
+
+    yaml_path = tmp_path / "cfg.yaml"
+    yaml_path.write_text("baseline:\n  mode: baseline_b\n  use_weighted_sampler: false\n",
+                         encoding="utf-8")
+    payload = load_yaml(yaml_path)
+    baseline_payload = payload.get("baseline", {})
+    cfg = YOLOBaselineConfig(**{
+        k: v for k, v in baseline_payload.items()
+        if k in {f.name for f in dataclasses.fields(YOLOBaselineConfig)}
+    })
+    assert cfg.mode == "baseline_b"
+    assert cfg.use_weighted_sampler is False

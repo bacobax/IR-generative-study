@@ -27,6 +27,7 @@ from tqdm import tqdm
 from src.core.normalization import (
     RAW_UINT16_PERCENTILE,
     UINT8_LINEAR,
+    PER_IMAGE_MINMAX,
     norm_to_display as from_norm_to_display,
     norm_to_uint16,
     resize_and_normalize,
@@ -67,7 +68,7 @@ def parse_args() -> argparse.Namespace:
         "--normalization-mode",
         type=str,
         default=RAW_UINT16_PERCENTILE,
-        choices=[RAW_UINT16_PERCENTILE, UINT8_LINEAR],
+        choices=[RAW_UINT16_PERCENTILE, UINT8_LINEAR, PER_IMAGE_MINMAX],
         help="Input normalization applied after resize.",
     )
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size.")
@@ -642,15 +643,15 @@ def train_vae(
             with torch.no_grad():
                 x_tr, _ = _unpack_vae_batch(next(iter(dataloader)), device)
                 recon_tr, _, _ = vae(x_tr)
-                x_tr_vis = _stretch_for_vis(x_tr[:4])
-                recon_tr_vis = _stretch_for_vis(recon_tr[:4])
+                x_tr_vis = from_norm_to_display(x_tr[:4]).clamp(0, 1)
+                recon_tr_vis = from_norm_to_display(recon_tr[:4]).clamp(0, 1)
                 writer.add_images("train/input", x_tr_vis, epoch)
                 writer.add_images("train/reconstruction", recon_tr_vis, epoch)
 
                 x_ev, _ = _unpack_vae_batch(next(iter(eval_dataloader)), device)
                 recon_ev, _, _ = vae(x_ev)
-                x_ev_vis = _stretch_for_vis(x_ev[:4])
-                recon_ev_vis = _stretch_for_vis(recon_ev[:4])
+                x_ev_vis = from_norm_to_display(x_ev[:4]).clamp(0, 1)
+                recon_ev_vis = from_norm_to_display(recon_ev[:4]).clamp(0, 1)
                 writer.add_images("eval/input", x_ev_vis, epoch)
                 writer.add_images("eval/reconstruction", recon_ev_vis, epoch)
 

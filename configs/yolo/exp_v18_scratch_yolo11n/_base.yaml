@@ -1,0 +1,39 @@
+data:
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  test_dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
+  batch_size: 16
+  workers: 4
+  image_size: 640
+
+model:
+  weights: yolo11n.yaml
+  task: detect
+
+training:
+  epochs: 100
+  lr0: 0.01
+  optimizer: SGD
+  momentum: 0.937
+  weight_decay: 0.0005
+  seed: 7
+  deterministic: true
+  patience: 20
+  cos_lr: false
+  # training from scratch: no backbone freeze, no differential LR
+  freeze_backbone_epochs: 0
+  freeze_backbone_layers: null
+  backbone_lr_multiplier: 1.0
+  backbone_param_prefixes: []
+
+evaluation:
+  dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
+  split: test
+  save_json: true
+  save_hybrid: false
+  per_slice_enabled: true
+  slice_threshold_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+output:
+  runs_root: artifacts/runs/yolo/exp_v18_scratch_yolo11n
+  checkpoints_root: artifacts/checkpoints/yolo/exp_v18_scratch_yolo11n
+  analysis_root: artifacts/analysis/yolo/exp_v18_scratch_yolo11n

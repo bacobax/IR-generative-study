@@ -1,0 +1,41 @@
+# Default FM augmentation (1 synth per real image, exact GT layout) WITHOUT any filter.
+# All generated images are kept as-is with their original GT boxes.
+#
+# Pipeline (action=run_exp_b, mode=fm_aug):
+#   1. FM generation: 1 layout-conditioned image per real image (minmax ep570).
+#   2. NO filter: every generated image is kept, every GT box is kept.
+#   3. Merge real + synthetic -> train tiny YOLO -> eval on v18 test.
+#
+# Launcher:
+#   CUDA_VISIBLE_DEVICES=1 python -m src.cli.train_yolo --action run_exp_b \
+#     --device cuda:0 --epochs 150 \
+#     --config configs/yolo/exp_v18_simple_yolo_tiny/small_v4_fmaug_nofilter.yaml
+extends: _base_v4.yaml
+
+data:
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  full_train_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+experiment_b:
+  mode: fm_aug
+  invalid_instance_ratio_threshold: 1.0
+  generated_dataset_dir: artifacts/generated/yolo/exp_b/generated_candidates
+  augmented_yolo_root: artifacts/generated/yolo/exp_b/augmented_yolo
+  fm:
+    checkpoint_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/UNET/unet_fm_epoch_570.pt
+    preset_path: artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2/effective_config.yaml
+    steps: 50
+    batch_size: 8
+  filter:
+    enabled: false   # no filtering; all generated images & GT boxes are kept
+
+augment:
+  enabled: true
+  fliplr: 0.5
+  scale: 0.5
+  translate: 0.1
+  brightness: 0.4
+  contrast: 0.0
+
+output:
+  experiment_name: small_v4_fmaug_nofilter

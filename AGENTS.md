@@ -9,8 +9,13 @@ Start here, then load only the smallest useful docs under `docs/agent_docs/`. Lo
 | FLIR subgroup/data analysis | `docs/agent_docs/datasets/flir.md` | SDXL/RegionDiff docs |
 | BigEarthNet S2 B08 5x5 stride3 | `docs/agent_docs/datasets/bigearthnet_s2_b08_5x5_stride3.md` | FLIR/v18 docs |
 | subsampling/manifests/holdouts | `docs/agent_docs/datasets/subsampling.md` | Training objective docs unless training behavior changes |
+| layout slices / bbox subgroup analysis / class-area-rarity balancing | `docs/agent_docs/analysis/layout_slices_balance.md` | STAY/RegionDiff generation docs unless conditioning is involved |
+| native/custom/simple YOLO detector architecture/training/eval | `docs/agent_docs/training_objectives/simple_yolo_detector_training.md` | Ultralytics Experiment A/B docs unless those harnesses change |
+| SSDLite detector architecture/training/eval (backend: ssdlite) | `docs/agent_docs/training_objectives/ssdlite_detector_training.md` | Ultralytics/simple_yolo docs unless those harnesses change |
+| YOLO detector training/eval, Experiment A/B, synthetic-aug detector runs | `docs/agent_docs/training_objectives/yolo_detector_training.md` | FM/SD/RegionDiff generation docs unless the generators themselves change |
 | flow matching objective | `docs/agent_docs/training_objectives/flow_matching.md` | diffusion/RegionDiff docs |
 | diffusion objective | `docs/agent_docs/training_objectives/diffusion.md` | flow/STAY docs |
+| fg/bg crop classifier as post-generation layout filter (keep/discard generated GT bboxes) | `docs/agent_docs/training_objectives/foreground_background_filter_training.md` | detector docs unless the detector itself changes |
 | from-scratch training | `docs/agent_docs/training_regime/from_scratch.md` | SD15/SDXL fine-tuning docs |
 | SD15 adaptation | `docs/agent_docs/high_level_training_types/sd15_adaptation.md` | SDXL/STAY docs |
 | SDXL adaptation | `docs/agent_docs/high_level_training_types/sdxl_adaptation.md` | SD15/STAY docs |

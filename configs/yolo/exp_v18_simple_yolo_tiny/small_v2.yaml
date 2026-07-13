@@ -1,0 +1,64 @@
+data:
+  dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+  test_dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
+  batch_size: 16
+  workers: 4
+  image_size: 256
+
+model:
+  backend: simple_torch
+  weights: ""
+  task: detect
+  simple:
+    input_channels: 3
+    base_channels: 16
+    width_multiplier: 0.5
+    channel_multipliers: [1, 2, 4, 8]
+    blocks_per_stage: [1, 1, 1, 1]
+    output_stride: 16
+    boxes_per_cell: 2
+    activation: silu
+    dropout: 0.0
+
+training:
+  epochs: 50
+  lr0: 0.001
+  optimizer: AdamW
+  momentum: 0.937
+  weight_decay: 0.0005
+  seed: 7
+  deterministic: true
+  patience: 15
+  cos_lr: true
+  mixed_precision: auto
+  grad_clip_norm: 10.0
+  val_interval: 1
+  tensorboard_image_interval: 5
+  tensorboard_max_images: 4
+  tensorboard_prediction_conf: 0.25
+
+loss:
+  box_weight: 5.0
+  giou_weight: 2.0
+  objectness_weight: 1.0
+  no_object_weight: 2.0
+  class_weight: 1.0
+
+baseline:
+  mode: none
+
+evaluation:
+  dataset_yaml: data/derived/yolo-test-ds_v18/test.yaml
+  split: test
+  save_json: true
+  save_hybrid: false
+  conf: 0.25
+  iou: 0.5
+  per_slice_enabled: true
+  slice_threshold_dataset_yaml: data/derived/yolo-test-ds_v18/full_train.yaml
+
+output:
+  experiment_name: small_v2
+  runs_root: artifacts/runs/yolo/exp_v18_simple_yolo_tiny
+  checkpoints_root: artifacts/checkpoints/yolo/exp_v18_simple_yolo_tiny
+  analysis_root: artifacts/analysis/yolo/exp_v18_simple_yolo_tiny

@@ -1,0 +1,24 @@
+extends: _base_v4.yaml
+
+# Rare-slice targeted augmentation — mirrors exp_v18_scratch_yolo11n/rare_aug.yaml.
+# Augmentation fires ONLY on images whose bounding-box slices are rare.
+# Sampling stays uniform (use_weighted_sampler: false).
+
+baseline:
+  mode: baseline_b
+  use_weighted_sampler: false
+  rarity_alpha: 1.0
+  image_score_top_k: 3
+  targeted_aug_probability: 0.8
+  targeted_aug_rarity_quantile: 0.7
+  translate_fraction: 0.05
+  scale_min: 0.85
+  scale_max: 1.15
+  crop_scale_min: 0.80
+  crop_scale_max: 1.0
+  crop_min_rare_box_area_retained: 0.5
+  crop_max_attempts: 10
+  allow_horizontal_flip: true
+
+output:
+  experiment_name: small_v4_rareaug

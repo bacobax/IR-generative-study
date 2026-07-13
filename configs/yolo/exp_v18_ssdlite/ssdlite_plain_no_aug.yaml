@@ -1,0 +1,4 @@
+extends: _base_ssdlite.yaml
+
+output:
+  experiment_name: ssdlite_plain_no_aug

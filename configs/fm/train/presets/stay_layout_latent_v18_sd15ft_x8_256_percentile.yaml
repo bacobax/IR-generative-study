@@ -1,0 +1,26 @@
+# STAY-style latent FM on v18 using the PERCENTILE-finetuned SD1.5 VAE.
+# Input normalization (raw_uint16_percentile) matches the VAE's training
+# normalization. Inherits all hparams from the baseline preset; only the VAE
+# artifact, normalization, and output dirs differ.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_percentile.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256.yaml
+
+data:
+  normalization_mode: raw_uint16_percentile
+
+
+model:
+  vae_config: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/config.json"
+  vae_weights: "./artifacts/checkpoints/vae/vae_runs/v18_sd15_vae_x8_256/VAE/vae_epoch_10.pt"
+
+training:
+  patience: null
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_percentile"
+  log_dir: "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_percentile"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_percentile"
+
+device: "cuda:1"

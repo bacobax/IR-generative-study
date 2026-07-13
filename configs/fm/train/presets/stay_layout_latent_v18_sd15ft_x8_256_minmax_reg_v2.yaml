@@ -1,0 +1,24 @@
+# Final minmax 640M regularization run — corrects augmentation finals and eval device.
+# Previous run (minmax_reg, ep524) had two issues:
+#   1. p_photometric_final=0.5 and p_crop_final=0.3: both add OOD characteristics to x_1 at
+#      convergence that box conditioning cannot recover at inference. Photometric has no
+#      conditioning signal at all; crop upscaling artifacts and cropped backgrounds are not
+#      encoded in box coordinates. hflip/rot90 stay non-zero (fully conditioning-controlled).
+#   2. checkpoint_eval used cuda:1 (separate GPU); now runs on the same device as training.
+# With finals=0.0, photometric and crop ramp to max by ~ep120 then decay to 0.0 by ep600.
+#
+# Launcher:
+#   python -m src.cli.train_flow_matching --config configs/fm/train/presets/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2.yaml
+extends: stay_layout_latent_v18_sd15ft_x8_256_minmax_reg.yaml
+
+augment:
+  p_crop_final: 0.0         # crop upscaling artifacts + cropped bg not recoverable from box conditioning
+  p_photometric_final: 0.0  # photometric has no conditioning signal at all
+
+checkpoint_eval:
+  device: "cuda:0"           # same device as training
+
+output:
+  model_dir: "./artifacts/checkpoints/flow_matching/serious_runs/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2"
+  log_dir:   "./artifacts/runs/main/flow_matching/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2"
+  debug_dir: "./artifacts/debug/stay_layout_latent_v18_sd15ft_x8_256_minmax_reg_v2"
