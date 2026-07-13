@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.85 0.012 80);border-radius:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  @keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
+  a{color:oklch(0.5 0.15 45);text-decoration:none}
+  a:hover{color:oklch(0.42 0.15 45)}
+  input,select{font-family:inherit}
+</style>
+</helmet>
+<div style="height:100vh;display:flex;flex-direction:column;background:oklch(0.975 0.006 80);color:oklch(0.22 0.012 60);overflow:hidden;font-size:13px">
+
+  <div style="display:flex;align-items:center;height:52px;padding:0 20px;border-bottom:1px solid oklch(0.89 0.012 80);background:#ffffff;gap:22px;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:9px">
+      <div style="width:20px;height:20px;border-radius:5px;background:oklch(0.56 0.15 45)"></div>
+      <span style="font-weight:600;font-size:14px;letter-spacing:.01em">IR Training Console</span>
+    </div>
+    <div style="display:flex;gap:2px;margin-left:6px">
+      <button style="border:none;background:{{configsTabBg}};color:{{configsTabColor}};padding:7px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit" style-hover="background:oklch(0.94 0.045 45)" onClick="{{setConfigsTab}}">Configs</button>
+      <button style="border:none;background:{{runsTabBg}};color:{{runsTabColor}};padding:7px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px;font-family:inherit" style-hover="background:oklch(0.94 0.045 45)" onClick="{{setRunsTab}}">
+        Runs
+        <sc-if value="{{hasRunning}}" hint-placeholder-val="{{false}}">
+          <span style="background:oklch(0.94 0.03 250);color:oklch(0.45 0.16 250);font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:9px;font-family:'IBM Plex Mono',monospace">{{runningCount}}</span>
+        </sc-if>
+      </button>
+    </div>
+    <div style="flex:1"></div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:oklch(0.62 0.012 60)">bacobax/IR-generative-study</div>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0;overflow:hidden">
+
+    <sc-if value="{{isConfigsTab}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex:1;min-height:0;overflow:hidden">
+
+        <div style="width:264px;flex-shrink:0;border-right:1px solid oklch(0.89 0.012 80);background:#ffffff;overflow-y:auto;padding:10px 8px">
+          <sc-for list="{{familiesView}}" as="fam" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 8px 5px;cursor:pointer;user-select:none" onClick="{{fam.toggle}}">
+              <span style="font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:oklch(0.62 0.012 60)">{{fam.label}}</span>
+              <span style="font-size:10px;color:oklch(0.62 0.012 60)">{{fam.chevron}}</span>
+            </div>
+            <sc-if value="{{fam.expanded}}" hint-placeholder-val="{{true}}">
+              <sc-for list="{{fam.types}}" as="t" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px;cursor:pointer;background:{{t.rowBg}};margin-bottom:1px" style-hover="background:oklch(0.96 0.01 80)" onClick="{{t.select}}">
+                  <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                    <span style="width:6px;height:6px;border-radius:50%;background:{{t.dotColor}};flex-shrink:0"></span>
+                    <span style="font-size:12.5px;color:{{t.rowColor}};font-weight:{{t.rowWeight}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.label}}</span>
+                  </div>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:oklch(0.68 0.012 60);flex-shrink:0">{{t.count}}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+          </sc-for>
+        </div>
+
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden">
+
+          <div style="padding:14px 24px 12px;border-bottom:1px solid oklch(0.89 0.012 80);background:#ffffff;flex-shrink:0">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:oklch(0.62 0.012 60)">{{breadcrumbFamily}} / {{breadcrumbType}}</div>
+            <div style="display:flex;gap:6px;margin-top:9px;overflow-x:auto;padding-bottom:2px">
+              <sc-for list="{{configChips}}" as="c" hint-placeholder-count="3">
+                <button style="border:1px solid {{c.borderColor}};background:{{c.bg}};color:{{c.color}};padding:6px 12px;border-radius:16px;font-size:12px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;cursor:pointer;flex-shrink:0" onClick="{{c.select}}">{{c.name}}<sc-if value="{{c.dirty}}" hint-placeholder-val="{{false}}"> •</sc-if></button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:18px;padding:12px 24px;border-bottom:1px solid oklch(0.89 0.012 80);background:#ffffff;flex-shrink:0;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:oklch(0.55 0.012 60);text-transform:uppercase;letter-spacing:.04em">dataset</span>
+              <div style="display:flex;gap:4px">
+                <sc-for list="{{datasetOptionsView}}" as="d" hint-placeholder-count="3">
+                  <button style="border:1px solid {{d.borderColor}};background:{{d.bg}};color:{{d.color}};padding:5px 11px;border-radius:14px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit" onClick="{{d.select}}">{{d.label}}</button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:oklch(0.55 0.012 60);text-transform:uppercase;letter-spacing:.04em">size</span>
+              <div style="display:flex;gap:4px">
+                <sc-for list="{{sizeOptionsView}}" as="sz" hint-placeholder-count="3">
+                  <button style="border:1px solid {{sz.borderColor}};background:{{sz.bg}};color:{{sz.color}};padding:5px 11px;border-radius:14px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit" onClick="{{sz.select}}">{{sz.label}}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid oklch(0.89 0.012 80);background:#ffffff;flex-shrink:0;gap:16px">
+            <div style="min-width:0">
+              <div style="font-weight:600;font-size:14.5px;font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{selectedConfig.file}}</div>
+              <div style="color:oklch(0.5 0.012 60);font-size:12px;margin-top:2px">{{selectedConfig.description}} · modified {{selectedConfig.modified}}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+              <sc-if value="{{isDirty}}" hint-placeholder-val="{{false}}">
+                <span style="background:oklch(0.94 0.045 45);color:oklch(0.5 0.15 45);font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:12px">{{dirtyCount}} changed</span>
+                <button style="border:1px solid oklch(0.89 0.012 80);background:#ffffff;color:oklch(0.4 0.012 60);padding:8px 14px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit" style-hover="background:oklch(0.96 0.01 80)" onClick="{{discardChanges}}">Discard</button>
+              </sc-if>
+              <button style="border:none;background:oklch(0.56 0.15 45);color:#ffffff;padding:8px 16px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit" style-hover="background:oklch(0.49 0.15 45)" onClick="{{openLaunchModal}}">Launch →</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:2px;padding:0 24px;border-bottom:1px solid oklch(0.89 0.012 80);background:#ffffff;flex-shrink:0;overflow-x:auto">
+            <sc-for list="{{sectionsView}}" as="sec" hint-placeholder-count="5">
+              <button style="border:none;background:none;padding:10px 12px;font-size:12.5px;font-weight:500;color:{{sec.color}};border-bottom:2px solid {{sec.borderColor}};cursor:pointer;white-space:nowrap;font-family:inherit" onClick="{{sec.select}}">{{sec.label}}</button>
+            </sc-for>
+          </div>
+
+          <div style="flex:1;overflow-y:auto;padding:22px 24px 40px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px 26px">
+              <sc-for list="{{activeSectionFields}}" as="f" hint-placeholder-count="6">
+                <div style="border-left:2px solid {{f.indicatorColor}};padding-left:11px">
+                  <label style="display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.03em;color:oklch(0.55 0.012 60);text-transform:none;margin-bottom:5px">{{f.label}}</label>
+                  <sc-if value="{{f.isBoolean}}" hint-placeholder-val="{{false}}">
+                    <input type="checkbox" checked="{{f.value}}" onChange="{{f.onChange}}" style="width:17px;height:17px;accent-color:oklch(0.56 0.15 45);cursor:pointer"/>
+                  </sc-if>
+                  <sc-if value="{{f.isSelect}}" hint-placeholder-val="{{false}}">
+                    <select value="{{f.value}}" onChange="{{f.onChange}}" style="width:100%;padding:7px 9px;border:1px solid oklch(0.89 0.012 80);border-radius:5px;background:#ffffff;font-size:12.5px;color:oklch(0.22 0.012 60)">
+                      <sc-for list="{{f.options}}" as="opt" hint-placeholder-count="3">
+                        <option value="{{opt}}">{{opt}}</option>
+                      </sc-for>
+                    </select>
+                  </sc-if>
+                  <sc-if value="{{f.isPlain}}" hint-placeholder-val="{{true}}">
+                    <input type="{{f.inputType}}" value="{{f.value}}" step="{{f.step}}" onChange="{{f.onChange}}" style="width:100%;padding:7px 9px;border:1px solid oklch(0.89 0.012 80);border-radius:5px;background:#ffffff;font-size:12.5px;font-family:'IBM Plex Mono',monospace;color:oklch(0.22 0.012 60);box-sizing:border-box"/>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isRunsTab}}" hint-placeholder-val="{{false}}">
+      <div style="flex:1;overflow-y:auto;padding:22px 24px 40px">
+        <div style="display:flex;gap:7px;margin-bottom:20px;flex-wrap:wrap">
+          <sc-for list="{{runsFiltersView}}" as="rf" hint-placeholder-count="6">
+            <button style="border:1px solid {{rf.borderColor}};background:{{rf.bg}};color:{{rf.color}};padding:6px 13px;border-radius:16px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px" onClick="{{rf.select}}">{{rf.label}}<span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;opacity:.7">{{rf.count}}</span></button>
+          </sc-for>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px">
+          <sc-for list="{{runsView}}" as="r" hint-placeholder-count="4">
+            <div style="background:#ffffff;border:1px solid oklch(0.89 0.012 80);border-radius:8px;padding:16px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+                <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                  <span style="width:8px;height:8px;border-radius:50%;background:{{r.familyColor}};flex-shrink:0"></span>
+                  <span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{r.typeLabel}}</span>
+                </div>
+                <span style="background:{{r.statusBg}};color:{{r.statusColor}};font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;gap:5px">
+                  <span style="width:6px;height:6px;border-radius:50%;background:{{r.statusColor}};animation:{{r.statusAnim}}"></span>{{r.statusLabel}}
+                </span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:oklch(0.5 0.012 60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.configFile}}</span>
+                <span style="font-size:10.5px;font-weight:600;color:oklch(0.5 0.012 60);background:oklch(0.95 0.008 80);padding:2px 7px;border-radius:8px;flex-shrink:0">{{r.datasetSizeLabel}}</span>
+              </div>
+
+              <div style="height:6px;border-radius:3px;background:oklch(0.93 0.01 80);overflow:hidden;margin-bottom:10px">
+                <div style="height:100%;border-radius:3px;background:{{r.statusColor}};width:{{r.progressPct}}"></div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;font-size:11.5px;margin-bottom:14px">
+                <div><span style="color:oklch(0.6 0.012 60)">progress</span><div style="font-family:'IBM Plex Mono',monospace;margin-top:1px">{{r.epochLabel}}</div></div>
+                <div><span style="color:oklch(0.6 0.012 60)">{{r.metricLabel}}</span><div style="font-family:'IBM Plex Mono',monospace;margin-top:1px">{{r.metricValue}}</div></div>
+                <div><span style="color:oklch(0.6 0.012 60)">elapsed</span><div style="font-family:'IBM Plex Mono',monospace;margin-top:1px">{{r.elapsedLabel}}</div></div>
+                <div><span style="color:oklch(0.6 0.012 60)">ETA</span><div style="font-family:'IBM Plex Mono',monospace;margin-top:1px">{{r.etaLabel}}</div></div>
+              </div>
+
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a href="{{r.tbUrl}}" target="_blank" style="border:1px solid oklch(0.89 0.012 80);background:oklch(0.96 0.01 80);color:oklch(0.22 0.012 60);padding:6px 11px;border-radius:5px;font-size:11.5px;font-weight:500;display:inline-flex;align-items:center;gap:5px">TensorBoard ↗</a>
+                <button style="border:1px solid oklch(0.89 0.012 80);background:#ffffff;color:oklch(0.22 0.012 60);padding:6px 11px;border-radius:5px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit" onClick="{{r.toggleLogs}}">{{r.logsLabel}}</button>
+                <sc-if value="{{r.canStop}}" hint-placeholder-val="{{false}}">
+                  <button style="border:1px solid oklch(0.85 0.06 25);background:#ffffff;color:oklch(0.5 0.19 25);padding:6px 11px;border-radius:5px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit;margin-left:auto" onClick="{{r.stop}}">Stop</button>
+                </sc-if>
+              </div>
+
+              <sc-if value="{{r.logsOpen}}" hint-placeholder-val="{{false}}">
+                <pre style="margin:12px 0 0;padding:10px 11px;background:oklch(0.16 0.008 60);color:oklch(0.85 0.02 130);font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.6;border-radius:6px;overflow-x:auto;white-space:pre-wrap">{{r.logsText}}</pre>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{launchModalOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50" onClick="{{closeLaunchModal}}">
+      <div style="width:460px;max-width:90vw;max-height:85vh;overflow-y:auto;background:#ffffff;border-radius:10px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.25)" onClick="{{stopPropagation}}">
+        <div style="font-size:16px;font-weight:600;margin-bottom:3px">Launch training</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:oklch(0.5 0.012 60)">{{selectedConfig.file}}</span>
+          <span style="font-size:11px;font-weight:600;color:oklch(0.4 0.15 45);background:oklch(0.94 0.045 45);padding:2px 8px;border-radius:8px">{{launchDatasetSummary}}</span>
+        </div>
+
+        <sc-if value="{{isDirty}}" hint-placeholder-val="{{false}}">
+          <div style="font-size:12px;color:oklch(0.5 0.15 45);font-weight:600;margin-bottom:10px">{{dirtyCount}} fields differ from the saved config — choose what to do:</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+            <sc-for list="{{launchModeOptionsView}}" as="m" hint-placeholder-count="3">
+              <div style="border:1.5px solid {{m.borderColor}};background:{{m.bg}};border-radius:8px;padding:11px 12px;cursor:pointer;display:flex;gap:10px" onClick="{{m.select}}">
+                <span style="width:16px;height:16px;border-radius:50%;border:1.5px solid {{m.dotBorder}};flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center">
+                  <sc-if value="{{m.active}}" hint-placeholder-val="{{false}}"><span style="width:8px;height:8px;border-radius:50%;background:oklch(0.56 0.15 45)"></span></sc-if>
+                </span>
+                <div>
+                  <div style="font-size:12.5px;font-weight:600">{{m.title}}</div>
+                  <div style="font-size:11.5px;color:oklch(0.5 0.012 60);margin-top:2px">{{m.desc}}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{isCopyMode}}" hint-placeholder-val="{{false}}">
+            <div style="margin-bottom:16px">
+              <label style="display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:oklch(0.55 0.012 60);margin-bottom:5px">new file name</label>
+              <input type="text" value="{{newConfigNameValue}}" onChange="{{setNewConfigName}}" style="width:100%;padding:7px 9px;border:1px solid oklch(0.89 0.012 80);border-radius:5px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;box-sizing:border-box"/>
+            </div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{isClean}}" hint-placeholder-val="{{true}}">
+          <div style="font-size:12px;color:oklch(0.5 0.012 60);margin-bottom:16px">No changes — this will launch with the saved config values.</div>
+        </sc-if>
+
+        <div style="margin-bottom:20px">
+          <label style="display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:oklch(0.55 0.012 60);margin-bottom:5px">compute target</label>
+          <select value="{{launchTargetValue}}" onChange="{{setLaunchTarget}}" style="width:100%;padding:8px 9px;border:1px solid oklch(0.89 0.012 80);border-radius:5px;font-size:12.5px">
+            <sc-for list="{{launchTargetOptions}}" as="opt" hint-placeholder-count="4">
+              <option value="{{opt}}">{{opt}}</option>
+            </sc-for>
+          </select>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button style="border:1px solid oklch(0.89 0.012 80);background:#ffffff;padding:9px 16px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit" onClick="{{closeLaunchModal}}">Cancel</button>
+          <button style="border:none;background:oklch(0.56 0.15 45);color:#ffffff;padding:9px 18px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit" onClick="{{confirmLaunch}}">Launch</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{toastVisible}}" hint-placeholder-val="{{false}}">
+    <div style="position:fixed;bottom:22px;right:22px;background:oklch(0.22 0.012 60);color:#ffffff;padding:11px 18px;border-radius:8px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60">{{toastMessage}}</div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+
+  constructor(props) {
+    super(props);
+
+    this.FAMILIES = [
+      { id: 'generative', label: 'Generative' },
+      { id: 'detectors', label: 'Detectors' },
+      { id: 'support', label: 'Support' },
+    ];
+
+    this.DATASETS = [
+      { id: 'flir', label: 'FLIR' },
+      { id: 'v18', label: 'V18' },
+      { id: 'bigearthnet', label: 'BigEarthNet-S2' },
+    ];
+    this.SIZES = [
+      { id: '2k', label: '~2k' },
+      { id: '5k', label: '~5k' },
+      { id: 'full', label: 'Full' },
+    ];
+
+    this.TYPES = [
+      { id: 'uncond-diffusion', family: 'generative', label: 'Unconditional Diffusion', schema: 'diffusion' },
+      { id: 'uncond-fm', family: 'generative', label: 'Unconditional Flow Matching', schema: 'fm' },
+      { id: 'lora-sd15', family: 'generative', label: 'LoRA SD1.5 Finetune', schema: 'lora' },
+      { id: 'lora-sdxl', family: 'generative', label: 'LoRA SDXL Finetune', schema: 'lora' },
+      { id: 'stay-fm', family: 'generative', label: 'FM + STAY Layout Cond.', schema: 'fm' },
+      { id: 'regiondiff-fm', family: 'generative', label: 'RegionDiff (on FM)', schema: 'regiondiff' },
+      { id: 'regiondiff-sd', family: 'generative', label: 'RegionDiff (on Diffusion)', schema: 'regiondiff' },
+      { id: 'vae', family: 'generative', label: 'VAE', schema: 'vae' },
+      { id: 'yolo-ultra', family: 'detectors', label: 'Ultralytics YOLO', schema: 'yolo' },
+      { id: 'yolo-tiny', family: 'detectors', label: 'Custom Tiny YOLO', schema: 'yolotiny' },
+      { id: 'ssdlite', family: 'detectors', label: 'SSDLite', schema: 'ssdlite' },
+      { id: 'bbox-clf', family: 'support', label: 'BBox Classifier', schema: 'classifier' },
+    ];
+
+    this.SCHEMAS = {
+      fm: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'val_dir', label: 'val_dir', type: 'text' },
+          { key: 'image_size', label: 'image_size', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'num_workers', label: 'num_workers', type: 'number' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'unet_config', label: 'unet_config', type: 'text' },
+          { key: 'vae_config', label: 'vae_config', type: 'text' },
+          { key: 'vae_weights', label: 'vae_weights', type: 'text' },
+          { key: 'pretrained_unet_path', label: 'pretrained_unet_path', type: 'text' },
+        ]},
+        { key: 'augment', label: 'Augment', fields: [
+          { key: 'warmup_frac', label: 'warmup_frac', type: 'number', step: 0.01 },
+          { key: 'ramp_frac', label: 'ramp_frac', type: 'number', step: 0.01 },
+          { key: 'p_crop_max', label: 'p_crop_max', type: 'number', step: 0.01 },
+          { key: 'p_rot_max', label: 'p_rot_max', type: 'number', step: 0.01 },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.00001 },
+          { key: 'gradient_accumulation_steps', label: 'gradient_accumulation_steps', type: 'number' },
+          { key: 't_scale', label: 't_scale', type: 'number' },
+          { key: 'train_target', label: 'train_target', type: 'select', options: ['v', 'eps', 'x0'] },
+          { key: 'save_every_n_epochs', label: 'save_every_n_epochs', type: 'number' },
+          { key: 'eval_every', label: 'eval_every', type: 'number' },
+        ]},
+        { key: 'sampling', label: 'Sampling', fields: [
+          { key: 'sample_every', label: 'sample_every', type: 'number' },
+          { key: 'sample_steps', label: 'sample_steps', type: 'number' },
+          { key: 'sample_batch_size', label: 'sample_batch_size', type: 'number' },
+        ]},
+        { key: 'layout_conditioning', label: 'Layout Cond.', fields: [
+          { key: 'enabled', label: 'enabled', type: 'boolean' },
+          { key: 'variant', label: 'variant', type: 'select', options: ['raster_v1', 'raster_v2', 'token_v1'] },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+          { key: 'resume', label: 'resume', type: 'text' },
+        ]},
+      ]},
+      diffusion: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'val_dir', label: 'val_dir', type: 'text' },
+          { key: 'image_size', label: 'image_size', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'unet_config', label: 'unet_config', type: 'text' },
+          { key: 'pretrained_path', label: 'pretrained_path', type: 'text' },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.00001 },
+          { key: 'noise_schedule', label: 'noise_schedule', type: 'select', options: ['linear', 'cosine', 'scaled_linear'] },
+          { key: 'timesteps', label: 'timesteps', type: 'number' },
+          { key: 'ema_decay', label: 'ema_decay', type: 'number', step: 0.0001 },
+        ]},
+        { key: 'sampling', label: 'Sampling', fields: [
+          { key: 'sample_every', label: 'sample_every', type: 'number' },
+          { key: 'sample_steps', label: 'sample_steps', type: 'number' },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+          { key: 'resume', label: 'resume', type: 'text' },
+        ]},
+      ]},
+      lora: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'instance_prompt', label: 'instance_prompt', type: 'text' },
+          { key: 'resolution', label: 'resolution', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'base_model_id', label: 'base_model_id', type: 'text' },
+          { key: 'revision', label: 'revision', type: 'text' },
+        ]},
+        { key: 'lora', label: 'LoRA', fields: [
+          { key: 'rank', label: 'rank', type: 'select', options: ['4', '8', '16', '32'] },
+          { key: 'alpha', label: 'alpha', type: 'number' },
+          { key: 'target_modules', label: 'target_modules', type: 'text' },
+          { key: 'dropout', label: 'dropout', type: 'number', step: 0.01 },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'max_train_steps', label: 'max_train_steps', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.00001 },
+          { key: 'lr_scheduler', label: 'lr_scheduler', type: 'select', options: ['constant', 'cosine', 'linear'] },
+          { key: 'gradient_accumulation_steps', label: 'gradient_accumulation_steps', type: 'number' },
+          { key: 'mixed_precision', label: 'mixed_precision', type: 'select', options: ['no', 'fp16', 'bf16'] },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'output_dir', label: 'output_dir', type: 'text' },
+          { key: 'save_every_n_steps', label: 'save_every_n_steps', type: 'number' },
+        ]},
+      ]},
+      regiondiff: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'val_dir', label: 'val_dir', type: 'text' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'base_checkpoint', label: 'base_checkpoint', type: 'text' },
+          { key: 'region_encoder_dim', label: 'region_encoder_dim', type: 'number' },
+          { key: 'freeze_base', label: 'freeze_base', type: 'boolean' },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.00001 },
+          { key: 'attention_distill_weight', label: 'attention_distill_weight', type: 'number', step: 0.01 },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+        ]},
+      ]},
+      vae: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'val_dir', label: 'val_dir', type: 'text' },
+          { key: 'image_size', label: 'image_size', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'compression', label: 'compression', type: 'select', options: ['4x', '8x'] },
+          { key: 'latent_channels', label: 'latent_channels', type: 'number' },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.00001 },
+          { key: 'kl_weight', label: 'kl_weight', type: 'number', step: 0.000001 },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+        ]},
+      ]},
+      yolo: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'data_yaml', label: 'data_yaml', type: 'text' },
+          { key: 'imgsz', label: 'imgsz', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'weights', label: 'weights', type: 'text' },
+          { key: 'pretrained', label: 'pretrained', type: 'boolean' },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'batch', label: 'batch', type: 'number' },
+          { key: 'lr0', label: 'lr0', type: 'number', step: 0.0001 },
+          { key: 'optimizer', label: 'optimizer', type: 'select', options: ['SGD', 'Adam', 'AdamW'] },
+        ]},
+        { key: 'augment', label: 'Augment', fields: [
+          { key: 'mosaic', label: 'mosaic', type: 'number', step: 0.01 },
+          { key: 'hsv_h', label: 'hsv_h', type: 'number', step: 0.001 },
+          { key: 'degrees', label: 'degrees', type: 'number' },
+          { key: 'fliplr', label: 'fliplr', type: 'number', step: 0.01 },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'project', label: 'project', type: 'text' },
+          { key: 'name', label: 'name', type: 'text' },
+        ]},
+      ]},
+      yolotiny: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'val_dir', label: 'val_dir', type: 'text' },
+          { key: 'imgsz', label: 'imgsz', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'width_mult', label: 'width_mult', type: 'number', step: 0.05 },
+          { key: 'num_classes', label: 'num_classes', type: 'number' },
+          { key: 'anchors', label: 'anchors', type: 'select', options: ['preset_a', 'preset_b', 'custom'] },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.0001 },
+          { key: 'optimizer', label: 'optimizer', type: 'select', options: ['SGD', 'Adam'] },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+        ]},
+      ]},
+      ssdlite: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'train_dir', label: 'train_dir', type: 'text' },
+          { key: 'val_dir', label: 'val_dir', type: 'text' },
+          { key: 'imgsz', label: 'imgsz', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'backbone', label: 'backbone', type: 'select', options: ['mobilenet_v3_large', 'mobilenet_v3_small'] },
+          { key: 'num_classes', label: 'num_classes', type: 'number' },
+          { key: 'pretrained_backbone', label: 'pretrained_backbone', type: 'boolean' },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.0001 },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+        ]},
+      ]},
+      classifier: { sections: [
+        { key: 'data', label: 'Data', fields: [
+          { key: 'instances_dir', label: 'instances_dir', type: 'text' },
+          { key: 'mode', label: 'mode', type: 'select', options: ['binary', 'multiclass'] },
+          { key: 'class_names', label: 'class_names', type: 'text' },
+          { key: 'image_size', label: 'image_size', type: 'number' },
+          { key: 'subset_manifest', label: 'subset_manifest', type: 'text' },
+        ]},
+        { key: 'model', label: 'Model', fields: [
+          { key: 'backbone', label: 'backbone', type: 'select', options: ['resnet18', 'resnet34', 'efficientnet_b0'] },
+          { key: 'pretrained', label: 'pretrained', type: 'boolean' },
+        ]},
+        { key: 'training', label: 'Training', fields: [
+          { key: 'epochs', label: 'epochs', type: 'number' },
+          { key: 'batch_size', label: 'batch_size', type: 'number' },
+          { key: 'lr', label: 'lr', type: 'number', step: 0.0001 },
+        ]},
+        { key: 'output', label: 'Output', fields: [
+          { key: 'model_dir', label: 'model_dir', type: 'text' },
+        ]},
+      ]},
+    };
+
+    this.SCHEMA_DEFAULTS = {
+      fm: {
+        data: { train_dir: './data/raw/v18/train/', val_dir: './data/raw/v18/val/', image_size: 256, batch_size: 8, num_workers: 4 },
+        model: { unet_config: 'configs/models/fm/stable_unet_config.json', vae_config: 'configs/models/fm/vae_config.json', vae_weights: './artifacts/checkpoints/vae/vae_runs/vae_fm_x4/VAE/vae_best.pt', pretrained_unet_path: '' },
+        augment: { warmup_frac: 0.1, ramp_frac: 0.3, p_crop_max: 0.2, p_rot_max: 0.3 },
+        training: { epochs: 1, lr: 0.0001, gradient_accumulation_steps: 1, t_scale: 1000, train_target: 'v', save_every_n_epochs: 10, eval_every: 1 },
+        sampling: { sample_every: 1, sample_steps: 100, sample_batch_size: 4 },
+        layout_conditioning: { enabled: false, variant: 'raster_v1' },
+        output: { model_dir: './artifacts/checkpoints/flow_matching/serious_runs/default', resume: '' },
+      },
+      diffusion: {
+        data: { train_dir: './data/raw/v18/train/', val_dir: './data/raw/v18/val/', image_size: 256, batch_size: 8 },
+        model: { unet_config: 'configs/models/sd_uncond/unet_config.json', pretrained_path: '' },
+        training: { epochs: 100, lr: 0.00005, noise_schedule: 'scaled_linear', timesteps: 1000, ema_decay: 0.9999 },
+        sampling: { sample_every: 5, sample_steps: 50 },
+        output: { model_dir: './artifacts/checkpoints/stable_diffusion_uncond/serious_runs/default', resume: '' },
+      },
+      lora: {
+        data: { train_dir: './data/raw/flir/train/', instance_prompt: 'a photo of an ir scene', resolution: 512, batch_size: 4 },
+        model: { base_model_id: 'runwayml/stable-diffusion-v1-5', revision: '' },
+        lora: { rank: '8', alpha: 16, target_modules: 'to_q, to_k, to_v, to_out.0', dropout: 0.0 },
+        training: { max_train_steps: 8000, lr: 0.0001, lr_scheduler: 'cosine', gradient_accumulation_steps: 2, mixed_precision: 'fp16' },
+        output: { output_dir: './artifacts/checkpoints/stable_diffusion/lora_runs/default', save_every_n_steps: 1000 },
+      },
+      regiondiff: {
+        data: { train_dir: './data/raw/v18/train/', val_dir: './data/raw/v18/val/', batch_size: 8 },
+        model: { base_checkpoint: './artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled/best.pt', region_encoder_dim: 256, freeze_base: true },
+        training: { epochs: 60, lr: 0.00005, attention_distill_weight: 0.5 },
+        output: { model_dir: './artifacts/checkpoints/regiondiff/serious_runs/default' },
+      },
+      vae: {
+        data: { train_dir: './data/raw/v18/train/', val_dir: './data/raw/v18/val/', image_size: 256, batch_size: 16 },
+        model: { compression: '4x', latent_channels: 4 },
+        training: { epochs: 200, lr: 0.0002, kl_weight: 0.000001 },
+        output: { model_dir: './artifacts/checkpoints/vae/vae_runs/default' },
+      },
+      yolo: {
+        data: { data_yaml: 'configs/datasets/flir/flir.yaml', imgsz: 640 },
+        model: { weights: 'yolo11n.pt', pretrained: true },
+        training: { epochs: 150, batch: 16, lr0: 0.01, optimizer: 'SGD' },
+        augment: { mosaic: 1.0, hsv_h: 0.015, degrees: 0.0, fliplr: 0.5 },
+        output: { project: 'artifacts/runs/yolo', name: 'exp_a_default' },
+      },
+      yolotiny: {
+        data: { train_dir: './data/raw/v18/train/', val_dir: './data/raw/v18/val/', imgsz: 512 },
+        model: { width_mult: 0.5, num_classes: 1, anchors: 'preset_a' },
+        training: { epochs: 120, batch_size: 32, lr: 0.001, optimizer: 'Adam' },
+        output: { model_dir: './artifacts/checkpoints/yolo_tiny/exp_v18_simple_yolo_tiny/default' },
+      },
+      ssdlite: {
+        data: { train_dir: './data/raw/v18/train/', val_dir: './data/raw/v18/val/', imgsz: 320 },
+        model: { backbone: 'mobilenet_v3_large', num_classes: 1, pretrained_backbone: true },
+        training: { epochs: 100, batch_size: 32, lr: 0.001 },
+        output: { model_dir: './artifacts/checkpoints/ssdlite/exp_v18_ssdlite/default' },
+      },
+      classifier: {
+        data: { instances_dir: './data/derived/bbox_instances/v18', mode: 'binary', class_names: 'background, foreground', image_size: 128 },
+        model: { backbone: 'resnet18', pretrained: true },
+        training: { epochs: 40, batch_size: 64, lr: 0.0005 },
+        output: { model_dir: './artifacts/checkpoints/fg_bg_classifier/default' },
+      },
+    };
+
+    this.STATUS_META = {
+      queued: { label: 'Queued', color: 'oklch(0.5 0.012 60)', bg: 'oklch(0.94 0.006 60)' },
+      running: { label: 'Running', color: 'oklch(0.45 0.16 250)', bg: 'oklch(0.94 0.03 250)' },
+      completed: { label: 'Completed', color: 'oklch(0.45 0.13 145)', bg: 'oklch(0.94 0.05 145)' },
+      failed: { label: 'Failed', color: 'oklch(0.5 0.19 25)', bg: 'oklch(0.94 0.05 25)' },
+      stopped: { label: 'Stopped', color: 'oklch(0.5 0.012 60)', bg: 'oklch(0.94 0.006 60)' },
+    };
+
+    const mk = (id, file, description, modified, schemaKey, overrides, datasetId, sizeId) => {
+      const dsId = datasetId || 'v18';
+      const szId = sizeId || 'full';
+      const dsOverrides = this.computeDatasetOverrides(schemaKey, dsId, szId);
+      const merged = { ...dsOverrides, ...(overrides || {}) };
+      return {
+        id, name: file.replace('.yaml', ''), file, description, modified,
+        dataset: dsId, size: szId,
+        values: this.deepMergeOverrides(this.SCHEMA_DEFAULTS[schemaKey], merged),
+      };
+    };
+
+    this.CONFIGS = {
+      'uncond-diffusion': [
+        mk('diff-default', 'default.yaml', 'Baseline uncond diffusion, cosine schedule', '9d ago', 'diffusion', {}),
+        mk('diff-long-ema', 'long_run_ema.yaml', 'Extended run with EMA 0.9999, higher res', '2d ago', 'diffusion', { 'training.epochs': 300, 'training.ema_decay': 0.9999, 'data.image_size': 320 }),
+      ],
+      'uncond-fm': [
+        mk('fm-default', 'default.yaml', 'Baseline unconditional FM, v18 dataset', '12d ago', 'fm', {}),
+        mk('fm-stable-t', 'stable_training_t_scaled.yaml', 'v-prediction, t-scaled schedule, longer warmup', '3d ago', 'fm', { 'training.epochs': 200, 'augment.p_crop_max': 0.35, 'output.model_dir': './artifacts/checkpoints/flow_matching/serious_runs/stable_training_t_scaled' }),
+        mk('fm-hflip-ot', 'uncond_fm_hflip_ot.yaml', 'OT coupling + hflip augmentation', '1d ago', 'fm', { 'data.batch_size': 16, 'training.epochs': 150, 'output.model_dir': './artifacts/checkpoints/flow_matching/serious_runs/hflip_ot' }, 'v18', '5k'),
+      ],
+      'lora-sd15': [
+        mk('lora15-r4', 'sd_lora_r4.yaml', 'Rank-4 LoRA, FLIR thermal set', '6d ago', 'lora', {}, 'flir'),
+        mk('lora15-r8', 'sd_lora_r8.yaml', 'Rank-8 LoRA, higher capacity', '4d ago', 'lora', { 'lora.rank': '8', 'lora.alpha': 16, 'output.output_dir': './artifacts/checkpoints/stable_diffusion/lora_runs/r8' }, 'flir'),
+        mk('lora15-r16', 'sd_lora_r16.yaml', 'Rank-16 LoRA, long schedule', '10h ago', 'lora', { 'lora.rank': '16', 'lora.alpha': 32, 'training.max_train_steps': 16000, 'output.output_dir': './artifacts/checkpoints/stable_diffusion/lora_runs/r16' }, 'flir'),
+      ],
+      'lora-sdxl': [
+        mk('lorasdxl-r8', 'sdxl_lora_r8.yaml', 'SDXL base, rank-8 LoRA', '5d ago', 'lora', { 'model.base_model_id': 'stabilityai/stable-diffusion-xl-base-1.0', 'data.resolution': 1024, 'lora.rank': '8', 'output.output_dir': './artifacts/checkpoints/stable_diffusion_xl/lora_runs/r8' }, 'flir'),
+        mk('lorasdxl-r8-generic', 'sdxl_lora_r8_generic.yaml', 'Generic prompt variant', '2d ago', 'lora', { 'model.base_model_id': 'stabilityai/stable-diffusion-xl-base-1.0', 'data.resolution': 1024, 'data.instance_prompt': 'a thermal image' }, 'flir'),
+      ],
+      'stay-fm': [
+        mk('stay-pixel-v2', 'stay_layout_pixel_flir_v2.yaml', 'STAY layout conditioning, pixel-space, v2', '7d ago', 'fm', { 'layout_conditioning.enabled': true, 'layout_conditioning.variant': 'raster_v2' }, 'flir'),
+        mk('stay-latent-512', 'stay_layout_latent_flir_sd15_512.yaml', 'STAY layout, latent space, 512px', '3d ago', 'fm', { 'layout_conditioning.enabled': true, 'data.image_size': 512 }, 'flir'),
+      ],
+      'regiondiff-fm': [
+        mk('regiondiff-fm-default', 'regiondiff_on_fm_default.yaml', 'RegionDiff head on stable_training_t_scaled FM', '4d ago', 'regiondiff', {}),
+        mk('regiondiff-fm-hflip', 'regiondiff_on_fm_hflip_ot.yaml', 'RegionDiff head on hflip_ot FM checkpoint', '1d ago', 'regiondiff', { 'model.base_checkpoint': './artifacts/checkpoints/flow_matching/serious_runs/hflip_ot/best.pt', 'training.epochs': 80 }),
+      ],
+      'regiondiff-sd': [
+        mk('regiondiff-sd-default', 'regiondiff_on_diffusion_default.yaml', 'RegionDiff head on uncond diffusion checkpoint', '6d ago', 'regiondiff', { 'model.base_checkpoint': './artifacts/checkpoints/stable_diffusion_uncond/serious_runs/default/best.pt' }),
+      ],
+      vae: [
+        mk('vae-4x', 'vae_4x.yaml', '4x compression VAE', '11d ago', 'vae', {}),
+        mk('vae-8x', 'vae_8x.yaml', '8x compression, larger latent', '5d ago', 'vae', { 'model.compression': '8x', 'model.latent_channels': 8, 'output.model_dir': './artifacts/checkpoints/vae/vae_runs/vae_8x' }),
+      ],
+      'yolo-ultra': [
+        mk('yolo-expa', 'exp_a_yolo11n.yaml', 'Ultralytics YOLO11n, exp A baseline', '8d ago', 'yolo', {}),
+        mk('yolo-expb-genaug', 'exp_b_yolo11n_genaug.yaml', 'Exp B with synthetic generative augmentation', '2d ago', 'yolo', { 'training.epochs': 200, 'output.name': 'exp_b_genaug', 'augment.mosaic': 0.8 }, 'v18', '2k'),
+      ],
+      'yolo-tiny': [
+        mk('tiny-small', 'simple_yolo_tiny_small.yaml', 'Baseline tiny YOLO, small backbone', '9d ago', 'yolotiny', {}),
+        mk('tiny-small-v4-rareaug', 'simple_yolo_tiny_small_v4_rareaug.yaml', 'v4 with rare-layout augmentation', '1d ago', 'yolotiny', { 'training.epochs': 160, 'output.model_dir': './artifacts/checkpoints/yolo_tiny/exp_v18_simple_yolo_tiny/v4_rareaug' }, 'v18', '5k'),
+      ],
+      ssdlite: [
+        mk('ssdlite-large', 'ssdlite_mobilenet_v3.yaml', 'Baseline SSDLite, MobileNetV3-Large', '6d ago', 'ssdlite', {}),
+        mk('ssdlite-small', 'ssdlite_mobilenet_v3_small.yaml', 'Lighter backbone variant', '3d ago', 'ssdlite', { 'model.backbone': 'mobilenet_v3_small', 'training.epochs': 130 }),
+      ],
+      'bbox-clf': [
+        mk('clf-binary', 'fg_bg_binary.yaml', 'Binary foreground/background classifier', '10d ago', 'classifier', {}),
+        mk('clf-multiclass', 'fg_bg_multiclass.yaml', 'Multiclass variant, 5 categories', '4d ago', 'classifier', { 'data.mode': 'multiclass', 'data.class_names': 'background, person, vehicle, animal, structure', 'model.backbone': 'resnet34' }),
+      ],
+    };
+
+    const initialTypeId = 'uncond-fm';
+    const initialConfigId = 'fm-stable-t';
+    const initialCfg = this.CONFIGS[initialTypeId].find(c => c.id === initialConfigId);
+
+    this.state = {
+      activeTab: 'configs',
+      selectedTypeId: initialTypeId,
+      selectedConfigId: initialConfigId,
+      formState: this.deepClone(initialCfg.values),
+      originalValues: this.deepClone(initialCfg.values),
+      selectedDataset: initialCfg.dataset,
+      selectedSize: initialCfg.size,
+      activeSection: 'training',
+      collapsedFamilies: {},
+      launchModalOpen: false,
+      launchMode: 'once',
+      newConfigName: '',
+      launchTarget: 'Local GPU 0',
+      runsFilter: 'all',
+      expandedRunIds: {},
+      toastMessage: '',
+      runs: [
+        { id: 'run-1', typeId: 'uncond-fm', typeLabel: 'Unconditional Flow Matching', family: 'generative', configFile: 'stable_training_t_scaled.yaml', datasetLabel: 'V18', sizeLabel: 'Full', status: 'running', progress: 0.42, current: 84, total: 200, unit: 'epoch', metricLabel: 'loss', metricValue: 0.0284, elapsedSeconds: 11520, etaSeconds: 15900, target: 'Local GPU 0', tbPort: 6006,
+          logs: ['[03:12:01] epoch 84/200 step 1340 loss=0.0284 lr=1.0e-4', '[03:10:44] saved checkpoint epoch_80.pt', '[03:08:12] eval fid=18.42 mmd=0.0021', '[03:05:00] epoch 80/200 step 1280 loss=0.0301 lr=1.0e-4'] },
+        { id: 'run-2', typeId: 'lora-sd15', typeLabel: 'LoRA SD1.5 Finetune', family: 'generative', configFile: 'sd_lora_r8.yaml', datasetLabel: 'FLIR', sizeLabel: 'Full', status: 'running', progress: 0.71, current: 5680, total: 8000, unit: 'step', metricLabel: 'loss', metricValue: 0.0561, elapsedSeconds: 9000, etaSeconds: 3600, target: 'Local GPU 1', tbPort: 6007,
+          logs: ['[step 5680] loss=0.0561 lr=1.0e-4', '[step 5500] saved checkpoint-5500', '[step 5000] loss=0.0602 lr=1.0e-4'] },
+        { id: 'run-3', typeId: 'yolo-ultra', typeLabel: 'Ultralytics YOLO', family: 'detectors', configFile: 'exp_b_yolo11n_genaug.yaml', datasetLabel: 'V18', sizeLabel: '~2k', status: 'running', progress: 0.18, current: 27, total: 150, unit: 'epoch', metricLabel: 'mAP@50', metricValue: 0.612, elapsedSeconds: 3200, etaSeconds: 14000, target: 'Slurm — killarney (A100x1)', tbPort: 6008,
+          logs: ['[epoch 27/150] mAP50=0.612 box_loss=1.84', '[epoch 24/150] mAP50=0.591 box_loss=1.92', '[epoch 20/150] mAP50=0.554 box_loss=2.05'] },
+        { id: 'run-4', typeId: 'bbox-clf', typeLabel: 'BBox Classifier', family: 'support', configFile: 'fg_bg_binary.yaml', datasetLabel: 'V18', sizeLabel: 'Full', status: 'queued', progress: 0, current: 0, total: 40, unit: 'epoch', metricLabel: 'loss', metricValue: null, elapsedSeconds: 0, etaSeconds: null, target: 'Local GPU 0', tbPort: 6009,
+          logs: ['[00:00:00] job queued', '[00:00:00] waiting for device allocation...'] },
+        { id: 'run-5', typeId: 'vae', typeLabel: 'VAE', family: 'generative', configFile: 'vae_8x.yaml', datasetLabel: 'V18', sizeLabel: 'Full', status: 'completed', progress: 1, current: 200, total: 200, unit: 'epoch', metricLabel: 'recon_loss', metricValue: 0.00812, elapsedSeconds: 30200, etaSeconds: 0, target: 'Local GPU 1', tbPort: 6010,
+          logs: ['[epoch 200/200] recon_loss=0.00812 kl=0.041', 'training complete — best checkpoint saved', '[epoch 195/200] recon_loss=0.00840 kl=0.043'] },
+        { id: 'run-6', typeId: 'ssdlite', typeLabel: 'SSDLite', family: 'detectors', configFile: 'ssdlite_mobilenet_v3_small.yaml', datasetLabel: 'V18', sizeLabel: 'Full', status: 'failed', progress: 0.34, current: 44, total: 130, unit: 'epoch', metricLabel: 'loss', metricValue: null, elapsedSeconds: 5200, etaSeconds: null, target: 'Slurm — killarney (A100x1)', tbPort: 6011,
+          logs: ['[epoch 44/130] loss=nan', 'warning: gradient overflow detected, skipping step', '[epoch 43/130] loss=0.412', '[epoch 40/130] loss=0.487', 'ERROR: training diverged, stopping run'] },
+      ],
+    };
+
+    this.tick = this.tick.bind(this);
+  }
+
+  componentDidMount() {
+    this._interval = setInterval(this.tick, 2500);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this._interval);
+    clearTimeout(this._toastTimer);
+  }
+
+  deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  getPath(obj, path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj); }
+
+  setPath(obj, path, val) {
+    const parts = path.split('.');
+    let cur = obj;
+    for (let i = 0; i < parts.length - 1; i++) cur = cur[parts[i]];
+    cur[parts[parts.length - 1]] = val;
+  }
+
+  deepMergeOverrides(base, overrides) {
+    const clone = this.deepClone(base);
+    Object.keys(overrides).forEach(p => this.setPath(clone, p, overrides[p]));
+    return clone;
+  }
+
+  formatDuration(sec) {
+    if (sec == null) return '—';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+
+  tick() {
+    this.setState(s => ({
+      runs: s.runs.map(r => {
+        if (r.status !== 'running') return r;
+        const step = 0.015 + Math.random() * 0.02;
+        let progress = Math.min(1, r.progress + step);
+        const current = Math.min(r.total, Math.round(progress * r.total));
+        const elapsedSeconds = r.elapsedSeconds + 2.5 + Math.random() * 2;
+        const remainingFrac = 1 - progress;
+        const etaSeconds = progress > 0 ? Math.max(0, (elapsedSeconds / progress) * remainingFrac) : r.etaSeconds;
+        const metricValue = r.metricValue == null ? null : (r.metricLabel.indexOf('mAP') >= 0 ? Math.min(0.98, r.metricValue + Math.random() * 0.004) : Math.max(0.0005, r.metricValue * (0.985 + Math.random() * 0.01)));
+        const status = progress >= 1 ? 'completed' : 'running';
+        const logs = r.logs;
+        return { ...r, progress, current, elapsedSeconds, etaSeconds: status === 'completed' ? 0 : etaSeconds, metricValue, status, logs };
+      }),
+    }));
+  }
+
+  datasetFolder(id) {
+    return { flir: 'flir', v18: 'v18', bigearthnet: 'bigearthnet_s2_b08_5x5_stride3' }[id] || id;
+  }
+
+  computeDatasetOverrides(schemaKey, datasetId, sizeId) {
+    const folder = this.datasetFolder(datasetId);
+    const manifest = sizeId === 'full' ? null : ('configs/datasets/' + folder + '/subset_manifest_' + sizeId + '.json');
+    if (schemaKey === 'yolo') {
+      return { 'data.data_yaml': 'configs/datasets/' + folder + '/' + folder + '.yaml', 'data.subset_manifest': manifest };
+    }
+    if (schemaKey === 'classifier') {
+      return { 'data.instances_dir': './data/derived/bbox_instances/' + folder, 'data.subset_manifest': manifest };
+    }
+    if (schemaKey === 'lora') {
+      return { 'data.train_dir': './data/raw/' + folder + '/train/', 'data.subset_manifest': manifest };
+    }
+    return { 'data.train_dir': './data/raw/' + folder + '/train/', 'data.val_dir': './data/raw/' + folder + '/val/', 'data.subset_manifest': manifest };
+  }
+
+  applyDatasetSize(datasetId, sizeId) {
+    const type = this.TYPES.find(t => t.id === this.state.selectedTypeId);
+    const overrides = this.computeDatasetOverrides(type.schema, datasetId, sizeId);
+    this.setState(s => {
+      const next = this.deepClone(s.formState);
+      Object.keys(overrides).forEach(p => this.setPath(next, p, overrides[p]));
+      return { formState: next, selectedDataset: datasetId, selectedSize: sizeId };
+    });
+  }
+
+  setDataset(datasetId) { this.applyDatasetSize(datasetId, this.state.selectedSize); }
+  setSize(sizeId) { this.applyDatasetSize(this.state.selectedDataset, sizeId); }
+
+  toggleFamily(id) {
+    this.setState(s => ({ collapsedFamilies: { ...s.collapsedFamilies, [id]: !s.collapsedFamilies[id] } }));
+  }
+
+  selectType(typeId) {
+    const cfg = this.CONFIGS[typeId][0];
+    const schema = this.SCHEMAS[this.TYPES.find(t => t.id === typeId).schema];
+    this.setState({
+      selectedTypeId: typeId,
+      selectedConfigId: cfg.id,
+      formState: this.deepClone(cfg.values),
+      originalValues: this.deepClone(cfg.values),
+      selectedDataset: cfg.dataset,
+      selectedSize: cfg.size,
+      activeSection: schema.sections[0].key,
+    });
+  }
+
+  selectConfig(configId) {
+    const cfg = this.CONFIGS[this.state.selectedTypeId].find(c => c.id === configId);
+    this.setState({
+      selectedConfigId: configId,
+      formState: this.deepClone(cfg.values),
+      originalValues: this.deepClone(cfg.values),
+      selectedDataset: cfg.dataset,
+      selectedSize: cfg.size,
+    });
+  }
+
+  setActiveSection(key) { this.setState({ activeSection: key }); }
+
+  updateField(path, rawValue, type) {
+    this.setState(s => {
+      const next = this.deepClone(s.formState);
+      let val = rawValue;
+      if (type === 'number') val = rawValue === '' ? null : Number(rawValue);
+      this.setPath(next, path, val);
+      return { formState: next };
+    });
+  }
+
+  discardChanges() {
+    this.setState(s => ({ formState: this.deepClone(s.originalValues) }));
+  }
+
+  openLaunchModal() {
+    const cfg = this.CONFIGS[this.state.selectedTypeId].find(c => c.id === this.state.selectedConfigId);
+    this.setState({
+      launchModalOpen: true,
+      launchMode: 'once',
+      newConfigName: cfg.file.replace('.yaml', '_v2.yaml'),
+    });
+  }
+
+  closeLaunchModal() { this.setState({ launchModalOpen: false }); }
+  setLaunchMode(mode) { this.setState({ launchMode: mode }); }
+  setLaunchTarget(target) { this.setState({ launchTarget: target }); }
+
+  computeIsDirty() {
+    const type = this.TYPES.find(t => t.id === this.state.selectedTypeId);
+    const schema = this.SCHEMAS[type.schema];
+    let count = 0;
+    const paths = {};
+    schema.sections.forEach(sec => sec.fields.forEach(f => {
+      const path = sec.key + '.' + f.key;
+      const cur = this.getPath(this.state.formState, path);
+      const orig = this.getPath(this.state.originalValues, path);
+      if (JSON.stringify(cur) !== JSON.stringify(orig)) { count++; paths[path] = true; }
+    }));
+    return { count, paths };
+  }
+
+  confirmLaunch() {
+    const s = this.state;
+    const type = this.TYPES.find(t => t.id === s.selectedTypeId);
+    const configsForType = this.CONFIGS[s.selectedTypeId];
+    const idx = configsForType.findIndex(c => c.id === s.selectedConfigId);
+    const dirty = this.computeIsDirty();
+    let runFile = configsForType[idx].file;
+    let newOriginal = s.originalValues;
+    let newSelectedId = s.selectedConfigId;
+
+    if (dirty.count > 0) {
+      if (s.launchMode === 'update') {
+        configsForType[idx] = { ...configsForType[idx], values: this.deepClone(s.formState), modified: 'just now' };
+        newOriginal = this.deepClone(s.formState);
+      } else if (s.launchMode === 'copy') {
+        const file = s.newConfigName || configsForType[idx].file.replace('.yaml', '_copy.yaml');
+        const newCfg = { id: 'cfg-' + Date.now(), name: file.replace('.yaml', ''), file, description: configsForType[idx].description + ' (copy)', modified: 'just now', values: this.deepClone(s.formState) };
+        configsForType.push(newCfg);
+        runFile = newCfg.file;
+        newSelectedId = newCfg.id;
+        newOriginal = this.deepClone(s.formState);
+      }
+    }
+
+    const schemaKey = type.schema;
+    const metricLabel = schemaKey === 'yolo' ? 'mAP@50' : (schemaKey === 'vae' ? 'recon_loss' : 'loss');
+    const total = this.getPath(s.formState, 'training.epochs') || this.getPath(s.formState, 'training.max_train_steps') || 100;
+    const unit = schemaKey === 'lora' ? 'step' : 'epoch';
+
+    const newRun = {
+      id: 'run-' + Date.now(),
+      typeId: type.id,
+      typeLabel: type.label,
+      family: type.family,
+      configFile: runFile,
+      status: 'queued',
+      progress: 0,
+      current: 0,
+      total,
+      unit,
+      metricLabel,
+      metricValue: null,
+      elapsedSeconds: 0,
+      etaSeconds: null,
+      target: s.launchTarget,
+      tbPort: 6006 + Math.floor(Math.random() * 90),
+      datasetLabel: (this.DATASETS.find(d => d.id === s.selectedDataset) || {}).label || s.selectedDataset,
+      sizeLabel: (this.SIZES.find(sz => sz.id === s.selectedSize) || {}).label || s.selectedSize,
+      logs: ['[00:00:00] job queued on ' + s.launchTarget, '[00:00:00] waiting for device allocation...'],
+    };
+
+    this.setState({
+      runs: [newRun, ...s.runs],
+      launchModalOpen: false,
+      activeTab: 'runs',
+      toastMessage: 'Launched ' + runFile + ' on ' + s.launchTarget,
+      selectedConfigId: newSelectedId,
+      originalValues: newOriginal,
+    });
+
+    setTimeout(() => {
+      this.setState(st => ({ runs: st.runs.map(r => r.id === newRun.id ? { ...r, status: 'running', metricValue: schemaKey === 'yolo' ? 0.05 : 1.2 } : r) }));
+    }, 1800);
+
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => this.setState({ toastMessage: '' }), 3800);
+  }
+
+  setRunsFilter(f) { this.setState({ runsFilter: f }); }
+  toggleRunLogs(id) { this.setState(s => ({ expandedRunIds: { ...s.expandedRunIds, [id]: !s.expandedRunIds[id] } })); }
+  stopRun(id) {
+    this.setState(s => ({
+      runs: s.runs.map(r => r.id === id ? { ...r, status: 'stopped', logs: [...r.logs, 'stopped by user'] } : r),
+    }));
+  }
+
+  familyColor(id) {
+    if (id === 'generative') return 'oklch(0.56 0.15 45)';
+    if (id === 'detectors') return 'oklch(0.55 0.14 230)';
+    return 'oklch(0.55 0.14 150)';
+  }
+
+  renderVals() {
+    const s = this.state;
+    const type = this.TYPES.find(t => t.id === s.selectedTypeId);
+    const configsForType = this.CONFIGS[s.selectedTypeId] || [];
+    const selectedConfig = configsForType.find(c => c.id === s.selectedConfigId) || configsForType[0];
+    const schema = this.SCHEMAS[type.schema];
+
+    const dirty = this.computeIsDirty();
+    const isDirty = dirty.count > 0;
+
+    const familiesView = this.FAMILIES.map(fam => ({
+      id: fam.id,
+      label: fam.label,
+      expanded: !s.collapsedFamilies[fam.id],
+      chevron: s.collapsedFamilies[fam.id] ? '▸' : '▾',
+      toggle: () => this.toggleFamily(fam.id),
+      types: this.TYPES.filter(t => t.family === fam.id).map(t => ({
+        id: t.id,
+        label: t.label,
+        count: (this.CONFIGS[t.id] || []).length,
+        dotColor: this.familyColor(fam.id),
+        rowBg: t.id === s.selectedTypeId ? 'oklch(0.94 0.045 45)' : 'transparent',
+        rowColor: t.id === s.selectedTypeId ? 'oklch(0.4 0.15 45)' : 'oklch(0.3 0.012 60)',
+        rowWeight: t.id === s.selectedTypeId ? '600' : '400',
+        select: () => this.selectType(t.id),
+      })),
+    }));
+
+    const datasetOptionsView = this.DATASETS.map(d => ({
+      id: d.id,
+      label: d.label,
+      active: d.id === s.selectedDataset,
+      bg: d.id === s.selectedDataset ? 'oklch(0.56 0.15 45)' : '#ffffff',
+      color: d.id === s.selectedDataset ? '#ffffff' : 'oklch(0.3 0.012 60)',
+      borderColor: d.id === s.selectedDataset ? 'oklch(0.56 0.15 45)' : 'oklch(0.89 0.012 80)',
+      select: () => this.setDataset(d.id),
+    }));
+    const sizeOptionsView = this.SIZES.map(sz => ({
+      id: sz.id,
+      label: sz.label,
+      active: sz.id === s.selectedSize,
+      bg: sz.id === s.selectedSize ? 'oklch(0.56 0.15 45)' : '#ffffff',
+      color: sz.id === s.selectedSize ? '#ffffff' : 'oklch(0.3 0.012 60)',
+      borderColor: sz.id === s.selectedSize ? 'oklch(0.56 0.15 45)' : 'oklch(0.89 0.012 80)',
+      select: () => this.setSize(sz.id),
+    }));
+    const launchDatasetSummary = (this.DATASETS.find(d => d.id === s.selectedDataset) || {}).label + ' · ' + (this.SIZES.find(sz => sz.id === s.selectedSize) || {}).label;
+
+    const configChips = configsForType.map(c => ({
+      id: c.id,
+      name: c.file,
+      active: c.id === selectedConfig.id,
+      bg: c.id === selectedConfig.id ? 'oklch(0.56 0.15 45)' : '#ffffff',
+      color: c.id === selectedConfig.id ? '#ffffff' : 'oklch(0.3 0.012 60)',
+      borderColor: c.id === selectedConfig.id ? 'oklch(0.56 0.15 45)' : 'oklch(0.89 0.012 80)',
+      dirty: c.id === s.selectedConfigId && isDirty,
+      select: () => this.selectConfig(c.id),
+    }));
+
+    const sectionsView = schema.sections.map(sec => ({
+      key: sec.key,
+      label: sec.label,
+      color: sec.key === s.activeSection ? 'oklch(0.3 0.012 60)' : 'oklch(0.58 0.012 60)',
+      borderColor: sec.key === s.activeSection ? 'oklch(0.56 0.15 45)' : 'transparent',
+      select: () => this.setActiveSection(sec.key),
+    }));
+
+    const activeSectionDef = schema.sections.find(sec => sec.key === s.activeSection) || schema.sections[0];
+    const activeSectionFields = activeSectionDef.fields.map(f => {
+      const path = activeSectionDef.key + '.' + f.key;
+      const rawVal = this.getPath(s.formState, path);
+      const fieldDirty = !!dirty.paths[path];
+      const base = {
+        key: path,
+        label: f.label,
+        indicatorColor: fieldDirty ? 'oklch(0.56 0.15 45)' : 'transparent',
+        isBoolean: f.type === 'boolean',
+        isSelect: f.type === 'select',
+        isPlain: f.type !== 'boolean' && f.type !== 'select',
+      };
+      if (f.type === 'boolean') {
+        base.value = !!rawVal;
+        base.onChange = (e) => this.updateField(path, e.target.checked, 'boolean');
+      } else if (f.type === 'select') {
+        base.value = rawVal == null ? '' : String(rawVal);
+        base.options = f.options;
+        base.onChange = (e) => this.updateField(path, e.target.value, 'text');
+      } else {
+        base.value = rawVal == null ? '' : rawVal;
+        base.inputType = f.type === 'number' ? 'number' : 'text';
+        base.step = f.step || 'any';
+        base.onChange = (e) => this.updateField(path, e.target.value, f.type);
+      }
+      return base;
+    });
+
+    const filteredRuns = s.runs.filter(r => s.runsFilter === 'all' || r.status === s.runsFilter);
+    const runsView = filteredRuns.map(r => {
+      const meta = this.STATUS_META[r.status];
+      return {
+        id: r.id,
+        typeLabel: r.typeLabel,
+        configFile: r.configFile,
+        datasetSizeLabel: r.datasetLabel + ' · ' + r.sizeLabel,
+        familyColor: this.familyColor(r.family),
+        statusLabel: meta.label,
+        statusColor: meta.color,
+        statusBg: meta.bg,
+        statusAnim: r.status === 'running' ? 'pulseDot 1.4s ease-in-out infinite' : 'none',
+        progressPct: Math.round(r.progress * 100) + '%',
+        epochLabel: r.status === 'queued' ? 'queued' : (r.current + ' / ' + r.total + ' ' + r.unit + 's'),
+        metricLabel: r.metricLabel,
+        metricValue: r.metricValue == null ? '—' : r.metricValue.toFixed(4),
+        elapsedLabel: this.formatDuration(r.elapsedSeconds),
+        etaLabel: r.status === 'running' ? this.formatDuration(r.etaSeconds) : '—',
+        tbUrl: 'http://localhost:' + r.tbPort,
+        canStop: r.status === 'running' || r.status === 'queued',
+        logsOpen: !!s.expandedRunIds[r.id],
+        logsLabel: s.expandedRunIds[r.id] ? 'Hide logs' : 'View logs',
+        logsText: r.logs.join('\n'),
+        toggleLogs: () => this.toggleRunLogs(r.id),
+        stop: () => this.stopRun(r.id),
+      };
+    });
+
+    const filterDefs = ['all', 'running', 'queued', 'completed', 'failed', 'stopped'];
+    const runsFiltersView = filterDefs.map(f => ({
+      key: f,
+      label: f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1),
+      count: f === 'all' ? s.runs.length : s.runs.filter(r => r.status === f).length,
+      active: f === s.runsFilter,
+      bg: f === s.runsFilter ? 'oklch(0.94 0.045 45)' : '#ffffff',
+      color: f === s.runsFilter ? 'oklch(0.4 0.15 45)' : 'oklch(0.3 0.012 60)',
+      borderColor: f === s.runsFilter ? 'oklch(0.7 0.1 45)' : 'oklch(0.89 0.012 80)',
+      select: () => this.setRunsFilter(f),
+    }));
+
+    const runningCount = s.runs.filter(r => r.status === 'running').length;
+
+    const modeDefs = [
+      { key: 'update', title: 'Update base config', desc: 'Overwrite ' + selectedConfig.file + ' with these changes' },
+      { key: 'copy', title: 'Save as new config', desc: 'Create a new config file with these changes; original stays untouched' },
+      { key: 'once', title: "Don't save — run once", desc: 'Use these values only for this run; nothing is written to disk' },
+    ];
+    const launchModeOptionsView = modeDefs.map(m => ({
+      key: m.key,
+      title: m.title,
+      desc: m.desc,
+      active: m.key === s.launchMode,
+      borderColor: m.key === s.launchMode ? 'oklch(0.56 0.15 45)' : 'oklch(0.89 0.012 80)',
+      bg: m.key === s.launchMode ? 'oklch(0.97 0.025 45)' : '#ffffff',
+      dotBorder: m.key === s.launchMode ? 'oklch(0.56 0.15 45)' : 'oklch(0.75 0.012 60)',
+      select: () => this.setLaunchMode(m.key),
+    }));
+
+    return {
+      isConfigsTab: s.activeTab === 'configs',
+      isRunsTab: s.activeTab === 'runs',
+      configsTabBg: s.activeTab === 'configs' ? 'oklch(0.94 0.045 45)' : 'transparent',
+      configsTabColor: s.activeTab === 'configs' ? 'oklch(0.4 0.15 45)' : 'oklch(0.4 0.012 60)',
+      runsTabBg: s.activeTab === 'runs' ? 'oklch(0.94 0.045 45)' : 'transparent',
+      runsTabColor: s.activeTab === 'runs' ? 'oklch(0.4 0.15 45)' : 'oklch(0.4 0.012 60)',
+      setConfigsTab: () => this.setState({ activeTab: 'configs' }),
+      setRunsTab: () => this.setState({ activeTab: 'runs' }),
+      hasRunning: runningCount > 0,
+      runningCount,
+      familiesView,
+      breadcrumbFamily: this.FAMILIES.find(f => f.id === type.family).label,
+      breadcrumbType: type.label,
+      configChips,
+      datasetOptionsView,
+      sizeOptionsView,
+      launchDatasetSummary,
+      selectedConfig: { file: selectedConfig.file, description: selectedConfig.description, modified: selectedConfig.modified },
+      isDirty,
+      isClean: !isDirty,
+      dirtyCount: dirty.count,
+      discardChanges: () => this.discardChanges(),
+      openLaunchModal: () => this.openLaunchModal(),
+      sectionsView,
+      activeSectionFields,
+      runsView,
+      runsFiltersView,
+      launchModalOpen: s.launchModalOpen,
+      closeLaunchModal: () => this.closeLaunchModal(),
+      stopPropagation: (e) => e.stopPropagation(),
+      launchModeOptionsView,
+      isCopyMode: s.launchMode === 'copy',
+      newConfigNameValue: s.newConfigName,
+      setNewConfigName: (e) => this.setState({ newConfigName: e.target.value }),
+      launchTargetValue: s.launchTarget,
+      launchTargetOptions: ['Local GPU 0', 'Local GPU 1', 'Slurm — killarney (A100x1)', 'Slurm — killarney (A100x4)'],
+      setLaunchTarget: (e) => this.setLaunchTarget(e.target.value),
+      confirmLaunch: () => this.confirmLaunch(),
+      toastVisible: !!s.toastMessage,
+      toastMessage: s.toastMessage,
+    };
+  }
+}
+</script>
+</body>
+</html>
